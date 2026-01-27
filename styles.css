@@ -6,3 +6,65 @@ available in the app when your plugin is enabled.
 If your plugin does not need CSS, delete this file.
 
 */
+/* === Sidenote layout variables === */
+:root {
+	--sidenote-width: 18rem;
+	--sidenote-gap: 2.25rem;
+	--page-offset: clamp(2rem, 20vw, 20rem);
+}
+/* Allow margin overflow but keep vertical scrolling */
+.markdown-source-view.mod-cm6 .cm-scroller {
+	overflow-y: auto !important;
+	overflow-x: visible !important;
+}
+/* Apply page offset ONLY if sidenotes exist */
+@media (min-width: 1300px) {
+	.markdown-source-view.mod-cm6:has(.sidenote) .cm-scroller {
+		padding-left: var(--page-offset) !important;
+	}
+}
+/* Prevent clipping by CM layers */
+.markdown-source-view.mod-cm6 .cm-editor,
+.markdown-source-view.mod-cm6 .cm-content,
+.markdown-source-view.mod-cm6 .cm-sizer,
+.markdown-source-view.mod-cm6 .cm-contentContainer {
+	overflow: visible !important;
+}
+/* Each line is the positioning context */
+.markdown-source-view.mod-cm6 .cm-line {
+	position: relative;
+}
+/* Superscript number in the main text */
+.sidenote-number::after {
+	content: attr(data-sidenote-num);
+	vertical-align: super;
+	font-size: 0.7em;
+	font-weight: bold;
+	margin-right: 0.4rem;
+}
+/* Sidenote block in the left margin */
+.sidenote {
+	position: absolute;
+	top: 0.2em;
+	left: calc(-1 * (var(--sidenote-width) + var(--sidenote-gap)));
+	width: var(--sidenote-width);
+	font-size: 80%;
+	line-height: 1.35;
+	text-align: right;
+	overflow-wrap: break-word;
+	transform: translateY(var(--sidenote-shift, 0px));
+	will-change: transform;
+	z-index: 10;
+	pointer-events: auto;
+}
+/* Number prefix inside the sidenote */
+.sidenote[data-sidenote-num]::before {
+	content: attr(data-sidenote-num) ". ";
+	font-weight: bold;
+}
+/* Hide sidenotes on narrow viewports */
+@media (max-width: 1300px) {
+	.sidenote {
+		display: none;
+	}
+}
