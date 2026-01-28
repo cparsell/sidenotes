@@ -87,16 +87,30 @@ export default class SidenotePlugin extends Plugin {
 	// Track whether current document has any sidenotes
 	private documentHasSidenotes = false;
 
+	// Performance: Debounce/throttle timers
+	private scrollDebounceTimer: number | null = null;
+	private mutationDebounceTimer: number | null = null;
+	private resizeThrottleTime: number = 0;
+
+	// Performance: Layout caching
+	private lastLayoutWidth: number = 0;
+	private lastSidenoteCount: number = 0;
+	private lastMode: string = "";
+
+	// Performance: Collision avoidance caching
+	private lastCollisionHash: string = "";
+
+	// Performance: Visible sidenotes tracking
+	private visibilityObserver: IntersectionObserver | null = null;
+	private visibleSidenotes: Set<HTMLElement> = new Set();
+
 	async onload() {
 		await this.loadSettings();
 
-		// Add settings tab
 		this.addSettingTab(new SidenoteSettingTab(this.app, this));
-
-		// Inject dynamic styles
 		this.injectStyles();
+		this.setupVisibilityObserver();
 
-		// Register post-processor for reading mode
 		this.registerMarkdownPostProcessor((element, context) => {
 			const sidenoteSpans =
 				element.querySelectorAll<HTMLElement>("span.sidenote");
@@ -110,6 +124,7 @@ export default class SidenotePlugin extends Plugin {
 		this.registerEvent(
 			this.app.workspace.on("active-leaf-change", () => {
 				this.resetRegistry();
+				this.invalidateLayoutCache();
 				this.scanDocumentForSidenotes();
 				this.rebindAndSchedule();
 			}),
@@ -122,6 +137,7 @@ export default class SidenotePlugin extends Plugin {
 		this.registerEvent(
 			this.app.workspace.on("file-open", (_file: TFile | null) => {
 				this.resetRegistry();
+				this.invalidateLayoutCache();
 				this.scanDocumentForSidenotes();
 				this.rebindAndSchedule();
 			}),
@@ -129,12 +145,12 @@ export default class SidenotePlugin extends Plugin {
 		this.registerEvent(
 			this.app.workspace.on("editor-change", () => {
 				this.scanDocumentForSidenotes();
-				this.scheduleLayout();
+				this.scheduleLayoutDebounced(100);
 			}),
 		);
 		this.registerDomEvent(window, "resize", () => {
-			this.scheduleLayout();
-			this.scheduleReadingModeLayout();
+			this.scheduleLayoutThrottled(100);
+			this.scheduleReadingModeLayoutThrottled(100);
 		});
 
 		this.scanDocumentForSidenotes();
@@ -142,7 +158,7 @@ export default class SidenotePlugin extends Plugin {
 	}
 
 	onunload() {
-		this.cancelScheduled();
+		this.cancelAllTimers();
 		this.cleanups.forEach((fn) => fn());
 		this.cleanups = [];
 
@@ -151,14 +167,24 @@ export default class SidenotePlugin extends Plugin {
 			this.resizeObserver = null;
 		}
 
-		// Remove injected styles
+		if (this.visibilityObserver) {
+			this.visibilityObserver.disconnect();
+			this.visibilityObserver = null;
+		}
+
 		if (this.styleEl) {
 			this.styleEl.remove();
 			this.styleEl = null;
 		}
 
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-		const cmRoot = view?.containerEl.querySelector<HTMLElement>(
+		this.cleanupView(view);
+	}
+
+	private cleanupView(view: MarkdownView | null) {
+		if (!view) return;
+
+		const cmRoot = view.containerEl.querySelector<HTMLElement>(
 			".markdown-source-view.mod-cm6",
 		);
 		if (cmRoot) {
@@ -175,7 +201,7 @@ export default class SidenotePlugin extends Plugin {
 			cmRoot.dataset.sidenotePosition = "";
 		}
 
-		const readingRoot = view?.containerEl.querySelector<HTMLElement>(
+		const readingRoot = view.containerEl.querySelector<HTMLElement>(
 			".markdown-reading-view",
 		);
 		if (readingRoot) {
@@ -204,15 +230,120 @@ export default class SidenotePlugin extends Plugin {
 	async saveSettings() {
 		await this.saveData(this.settings);
 		this.injectStyles();
-		// Update position data attributes on existing roots
 		this.updatePositionDataAttributes();
+		this.invalidateLayoutCache();
 		this.scheduleLayout();
 		this.scheduleReadingModeLayout();
 	}
 
-	/**
-	 * Update the position data attribute on view roots
-	 */
+	// ==================== Performance Utilities ====================
+
+	private cancelAllTimers() {
+		if (this.rafId !== null) {
+			cancelAnimationFrame(this.rafId);
+			this.rafId = null;
+		}
+		if (this.scrollDebounceTimer !== null) {
+			window.clearTimeout(this.scrollDebounceTimer);
+			this.scrollDebounceTimer = null;
+		}
+		if (this.mutationDebounceTimer !== null) {
+			window.clearTimeout(this.mutationDebounceTimer);
+			this.mutationDebounceTimer = null;
+		}
+	}
+
+	private invalidateLayoutCache() {
+		this.lastLayoutWidth = 0;
+		this.lastSidenoteCount = 0;
+		this.lastMode = "";
+		this.lastCollisionHash = "";
+	}
+
+	private scheduleLayoutDebounced(delay: number = 50) {
+		if (this.mutationDebounceTimer !== null) {
+			window.clearTimeout(this.mutationDebounceTimer);
+		}
+		this.mutationDebounceTimer = window.setTimeout(() => {
+			this.mutationDebounceTimer = null;
+			this.scheduleLayout();
+		}, delay);
+	}
+
+	private scheduleLayoutThrottled(minInterval: number = 100) {
+		const now = Date.now();
+		if (now - this.resizeThrottleTime >= minInterval) {
+			this.resizeThrottleTime = now;
+			this.scheduleLayout();
+		}
+	}
+
+	private scheduleReadingModeLayoutThrottled(minInterval: number = 100) {
+		const now = Date.now();
+		if (now - this.resizeThrottleTime >= minInterval) {
+			this.scheduleReadingModeLayout();
+		}
+	}
+
+	private setupVisibilityObserver() {
+		this.visibilityObserver = new IntersectionObserver(
+			(entries) => {
+				let needsCollisionUpdate = false;
+				for (const entry of entries) {
+					const el = entry.target as HTMLElement;
+					if (entry.isIntersecting) {
+						if (!this.visibleSidenotes.has(el)) {
+							this.visibleSidenotes.add(el);
+							needsCollisionUpdate = true;
+						}
+					} else {
+						if (this.visibleSidenotes.has(el)) {
+							this.visibleSidenotes.delete(el);
+							needsCollisionUpdate = true;
+						}
+					}
+				}
+				if (needsCollisionUpdate) {
+					this.scheduleCollisionUpdate();
+				}
+			},
+			{
+				rootMargin: "100px 0px",
+				threshold: 0,
+			},
+		);
+	}
+
+	private scheduleCollisionUpdate() {
+		if (this.rafId !== null) return;
+		this.rafId = requestAnimationFrame(() => {
+			this.rafId = null;
+			this.updateVisibleCollisions();
+		});
+	}
+
+	private updateVisibleCollisions() {
+		if (this.visibleSidenotes.size === 0) return;
+
+		const visibleArray = Array.from(this.visibleSidenotes);
+		this.avoidCollisions(visibleArray, this.settings.collisionSpacing);
+	}
+
+	private observeSidenoteVisibility(margin: HTMLElement) {
+		if (this.visibilityObserver) {
+			this.visibilityObserver.observe(margin);
+		}
+	}
+
+	private unobserveSidenoteVisibility(margin: HTMLElement) {
+		if (this.visibilityObserver) {
+			this.visibilityObserver.unobserve(margin);
+			this.visibleSidenotes.delete(margin);
+		}
+	}
+
+	// ==================== Style Injection ====================
+
 	private updatePositionDataAttributes() {
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
 		if (!view) return;
@@ -233,9 +364,6 @@ export default class SidenotePlugin extends Plugin {
 		}
 	}
 
-	/**
-	 * Inject dynamic CSS based on settings
-	 */
 	private injectStyles() {
 		if (this.styleEl) {
 			this.styleEl.remove();
@@ -249,7 +377,6 @@ export default class SidenotePlugin extends Plugin {
 			? "transition: width 0.15s ease-out, left 0.15s ease-out, right 0.15s ease-out, opacity 0.15s ease-out;"
 			: "";
 
-		// Default text alignment based on position
 		const defaultAlignment =
 			s.sidenotePosition === "left" ? "right" : "left";
 		const textAlign =
@@ -265,17 +392,14 @@ export default class SidenotePlugin extends Plugin {
 			.markdown-reading-view {
 				--sidenote-base-width: ${s.minSidenoteWidth}rem;
 				--sidenote-max-extra: ${s.maxSidenoteWidth - s.minSidenoteWidth}rem;
-				
 				--sidenote-width: calc(
 					var(--sidenote-base-width) + 
 					(var(--sidenote-max-extra) * var(--sidenote-scale, 0.5))
 				);
-				
 				--sidenote-gap: ${s.sidenoteGap}rem;
-				--page-offset: calc(var(--sidenote-width) + var(--sidenote-gap) + 0.5rem);
+				--page-offset: calc((var(--sidenote-width) + var(--sidenote-gap)) * 0.8);
 			}
 			
-			/* Mode-specific overrides */
 			.markdown-source-view.mod-cm6[data-sidenote-mode="compact"],
 			.markdown-reading-view[data-sidenote-mode="compact"] {
 				--sidenote-base-width: ${Math.max(s.minSidenoteWidth - 2, 6)}rem;
@@ -290,15 +414,12 @@ export default class SidenotePlugin extends Plugin {
 				--sidenote-gap: ${s.sidenoteGap + 1}rem;
 			}
 			
-			/* Allow margin overflow but keep vertical scrolling */
 			.markdown-source-view.mod-cm6 .cm-scroller {
 				overflow-y: auto !important;
 				overflow-x: visible !important;
 			}
 			
-			/* === LEFT POSITION: Sidenotes on left, text offset to the right === */
-			
-			/* Source view - left position */
+			/* LEFT POSITION */
 			.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="compact"] .cm-scroller,
 			.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="normal"] .cm-scroller,
 			.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="full"] .cm-scroller {
@@ -306,7 +427,6 @@ export default class SidenotePlugin extends Plugin {
 				padding-right: 0 !important;
 			}
 			
-			/* Reading view - left position */
 			.markdown-reading-view[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="compact"] .markdown-preview-sizer,
 			.markdown-reading-view[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="normal"] .markdown-preview-sizer,
 			.markdown-reading-view[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="full"] .markdown-preview-sizer {
@@ -314,7 +434,6 @@ export default class SidenotePlugin extends Plugin {
 				padding-right: 0 !important;
 			}
 			
-			/* Sidenote margin positioning - left */
 			.markdown-source-view.mod-cm6[data-sidenote-position="left"] .sidenote-margin,
 			.markdown-reading-view[data-sidenote-position="left"] .sidenote-margin {
 				left: calc(-1 * (var(--sidenote-width) + var(--sidenote-gap)));
@@ -322,9 +441,7 @@ export default class SidenotePlugin extends Plugin {
 				text-align: ${textAlign};
 			}
 			
-			/* === RIGHT POSITION: Sidenotes on right, text offset to the left === */
-			
-			/* Source view - right position */
+			/* RIGHT POSITION */
 			.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="compact"] .cm-scroller,
 			.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="normal"] .cm-scroller,
 			.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="full"] .cm-scroller {
@@ -332,7 +449,6 @@ export default class SidenotePlugin extends Plugin {
 				padding-left: 0 !important;
 			}
 			
-			/* Reading view - right position */
 			.markdown-reading-view[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="compact"] .markdown-preview-sizer,
 			.markdown-reading-view[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="normal"] .markdown-preview-sizer,
 			.markdown-reading-view[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="full"] .markdown-preview-sizer {
@@ -340,7 +456,6 @@ export default class SidenotePlugin extends Plugin {
 				padding-left: 0 !important;
 			}
 			
-			/* Sidenote margin positioning - right */
 			.markdown-source-view.mod-cm6[data-sidenote-position="right"] .sidenote-margin,
 			.markdown-reading-view[data-sidenote-position="right"] .sidenote-margin {
 				right: calc(-1 * (var(--sidenote-width) + var(--sidenote-gap)));
@@ -348,7 +463,6 @@ export default class SidenotePlugin extends Plugin {
 				text-align: ${textAlign};
 			}
 			
-			/* Prevent clipping by CM layers */
 			.markdown-source-view.mod-cm6 .cm-editor,
 			.markdown-source-view.mod-cm6 .cm-content,
 			.markdown-source-view.mod-cm6 .cm-sizer,
@@ -356,12 +470,10 @@ export default class SidenotePlugin extends Plugin {
 				overflow: visible !important;
 			}
 			
-			/* Each line is the positioning context */
 			.markdown-source-view.mod-cm6 .cm-line {
 				position: relative;
 			}
 			
-			/* Positioning context for reading mode */
 			.markdown-reading-view p,
 			.markdown-reading-view li,
 			.markdown-reading-view h1,
@@ -375,7 +487,6 @@ export default class SidenotePlugin extends Plugin {
 				position: relative;
 			}
 			
-			/* Superscript number in the main text */
 			.sidenote-number::after {
 				content: ${s.showSidenoteNumbers ? "attr(data-sidenote-num)" : "none"};
 				vertical-align: super;
@@ -384,7 +495,6 @@ export default class SidenotePlugin extends Plugin {
 				margin-right: 0.4rem;
 			}
 			
-			/* Hide the original span content */
 			.sidenote-number > span.sidenote {
 				display: inline-block;
 				width: 0;
@@ -394,7 +504,6 @@ export default class SidenotePlugin extends Plugin {
 				vertical-align: baseline;
 			}
 			
-			/* Sidenote block in the margin - base styles */
 			.sidenote-margin {
 				position: absolute;
 				top: 0.2em;
@@ -409,39 +518,39 @@ export default class SidenotePlugin extends Plugin {
 				${transitionRule}
 			}
 			
-			/* Compact mode: smaller font */
 			.markdown-source-view.mod-cm6[data-sidenote-mode="compact"] .sidenote-margin,
 			.markdown-reading-view[data-sidenote-mode="compact"] .sidenote-margin {
 				font-size: ${s.fontSizeCompact}%;
 				line-height: ${Math.max(s.lineHeight - 0.1, 1.1)};
 			}
 			
-			/* Number prefix inside the sidenote */
 			.sidenote-margin[data-sidenote-num]::before {
 				content: ${s.showSidenoteNumbers ? 'attr(data-sidenote-num) ". "' : "none"};
 				font-weight: bold;
 			}
 			
-			/* Hide sidenotes when mode is hidden */
 			.markdown-source-view.mod-cm6[data-sidenote-mode="hidden"] .sidenote-margin,
 			.markdown-reading-view[data-sidenote-mode="hidden"] .sidenote-margin {
 				display: none;
 			}
 			
-			/* Hide with opacity for smoother transitions */
 			.markdown-source-view.mod-cm6[data-sidenote-mode=""] .sidenote-margin,
 			.markdown-reading-view[data-sidenote-mode=""] .sidenote-margin {
 				opacity: 0;
 				pointer-events: none;
+			}
+			
+			/* Style internal links in sidenotes */
+			.sidenote-margin a.internal-link {
+				cursor: pointer;
 			}
 		`;
 
 		document.head.appendChild(this.styleEl);
 	}
 
-	/**
-	 * Format a number according to the selected style
-	 */
+	// ==================== Number Formatting ====================
+
 	private formatNumber(num: number): string {
 		switch (this.settings.numberStyle) {
 			case "roman":
@@ -490,9 +599,8 @@ export default class SidenotePlugin extends Plugin {
 		return result;
 	}
 
-	/**
-	 * Process sidenotes in reading mode
-	 */
+	// ==================== Reading Mode Processing ====================
+
 	private processReadingModeSidenotes(element: HTMLElement) {
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
 		if (!view) return;
@@ -543,7 +651,6 @@ export default class SidenotePlugin extends Plugin {
 		const marginNotes: HTMLElement[] = [];
 
 		for (const { el: span } of ordered) {
-			// Handle reset per heading if enabled
 			if (this.settings.resetNumberingPerHeading) {
 				const heading = this.findPrecedingHeading(span);
 				if (heading) {
@@ -572,27 +679,15 @@ export default class SidenotePlugin extends Plugin {
 			wrapper.appendChild(span);
 			wrapper.appendChild(margin);
 
+			this.observeSidenoteVisibility(margin);
 			marginNotes.push(margin);
 		}
 
 		requestAnimationFrame(() => {
-			const allMargins = Array.from(
-				readingRoot.querySelectorAll<HTMLElement>(
-					"small.sidenote-margin",
-				),
-			);
-			if (allMargins.length > 0) {
-				this.avoidCollisions(
-					allMargins,
-					this.settings.collisionSpacing,
-				);
-			}
+			this.updateVisibleCollisions();
 		});
 	}
 
-	/**
-	 * Find the preceding heading element for a sidenote
-	 */
 	private findPrecedingHeading(el: HTMLElement): HTMLElement | null {
 		let current: Element | null = el;
 		while (current) {
@@ -612,9 +707,6 @@ export default class SidenotePlugin extends Plugin {
 		return null;
 	}
 
-	/**
-	 * Get a unique ID for a heading
-	 */
 	private getHeadingId(heading: HTMLElement): string {
 		return (
 			heading.textContent?.trim() ||
@@ -626,32 +718,19 @@ export default class SidenotePlugin extends Plugin {
 	/**
 	 * Clone content from a sidenote span to a margin element,
 	 * preserving links and other HTML elements.
+	 * Also sets up click handlers for internal Obsidian links.
 	 */
 	private cloneContentToMargin(source: HTMLElement, target: HTMLElement) {
 		for (const child of Array.from(source.childNodes)) {
 			const cloned = child.cloneNode(true);
 
 			if (cloned instanceof HTMLAnchorElement) {
-				cloned.rel = "noopener noreferrer";
-				if (
-					cloned.href.startsWith("http://") ||
-					cloned.href.startsWith("https://")
-				) {
-					cloned.target = "_blank";
-				}
+				this.setupLink(cloned);
 			}
 
 			if (cloned instanceof HTMLElement) {
 				const links = cloned.querySelectorAll("a");
-				links.forEach((link) => {
-					link.rel = "noopener noreferrer";
-					if (
-						link.href.startsWith("http://") ||
-						link.href.startsWith("https://")
-					) {
-						link.target = "_blank";
-					}
-				});
+				links.forEach((link) => this.setupLink(link));
 			}
 
 			target.appendChild(cloned);
@@ -659,8 +738,60 @@ export default class SidenotePlugin extends Plugin {
 	}
 
 	/**
-	 * Calculate the sidenote mode based on width
+	 * Set up a link element with proper attributes and click handlers.
+	 * Handles both external links and internal Obsidian links.
 	 */
+	private setupLink(link: HTMLAnchorElement) {
+		// Check if it's an internal Obsidian link
+		const isInternalLink =
+			link.classList.contains("internal-link") ||
+			link.hasAttribute("data-href") ||
+			(link.href &&
+				!link.href.startsWith("http://") &&
+				!link.href.startsWith("https://") &&
+				!link.href.startsWith("mailto:"));
+
+		if (isInternalLink) {
+			// Get the target from data-href (Obsidian's way) or href
+			const target =
+				link.getAttribute("data-href") ||
+				link.getAttribute("href") ||
+				"";
+
+			// Ensure it has the internal-link class
+			link.classList.add("internal-link");
+
+			// Set data-href if not present
+			if (!link.hasAttribute("data-href") && target) {
+				link.setAttribute("data-href", target);
+			}
+
+			// Add click handler for internal navigation
+			link.addEventListener("click", (e) => {
+				e.preventDefault();
+				e.stopPropagation();
+
+				const linkTarget =
+					link.getAttribute("data-href") ||
+					link.getAttribute("href") ||
+					"";
+				if (linkTarget) {
+					this.app.workspace.openLinkText(linkTarget, "", false);
+				}
+			});
+
+			// Don't open in new tab
+			link.removeAttribute("target");
+		} else {
+			// External link - add external-link class for the icon
+			link.classList.add("external-link");
+			link.rel = "noopener noreferrer";
+			link.target = "_blank";
+		}
+	}
+
+	// ==================== Mode Calculation ====================
+
 	private calculateMode(
 		width: number,
 	): "hidden" | "compact" | "normal" | "full" {
@@ -676,9 +807,6 @@ export default class SidenotePlugin extends Plugin {
 		}
 	}
 
-	/**
-	 * Calculate the scale factor based on width
-	 */
 	private calculateScaleFactor(width: number): number {
 		const s = this.settings;
 		if (width < s.hideBelow) {
@@ -687,9 +815,8 @@ export default class SidenotePlugin extends Plugin {
 		return Math.min(1, (width - s.hideBelow) / (s.fullAbove - s.hideBelow));
 	}
 
-	/**
-	 * Schedule a layout update for reading mode
-	 */
+	// ==================== Reading Mode Layout ====================
+
 	private scheduleReadingModeLayout() {
 		requestAnimationFrame(() => {
 			const view = this.app.workspace.getActiveViewOfType(MarkdownView);
@@ -716,23 +843,12 @@ export default class SidenotePlugin extends Plugin {
 				scaleFactor.toFixed(3),
 			);
 
-			const allMargins = Array.from(
-				readingRoot.querySelectorAll<HTMLElement>(
-					"small.sidenote-margin",
-				),
-			);
-			if (allMargins.length > 0) {
-				this.avoidCollisions(
-					allMargins,
-					this.settings.collisionSpacing,
-				);
-			}
+			this.updateVisibleCollisions();
 		});
 	}
 
-	/**
-	 * Scan the current document's source text to determine if it contains any sidenotes.
-	 */
+	// ==================== Document Scanning ====================
+
 	private scanDocumentForSidenotes() {
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
 		if (!view) {
@@ -772,6 +888,8 @@ export default class SidenotePlugin extends Plugin {
 		this.headingSidenoteNumbers.clear();
 	}
 
+	// ==================== Scheduling ====================
+
 	private cancelScheduled() {
 		if (this.rafId !== null) {
 			cancelAnimationFrame(this.rafId);
@@ -792,9 +910,13 @@ export default class SidenotePlugin extends Plugin {
 		this.scheduleLayout();
 	}
 
+	// ==================== Binding ====================
+
 	private rebind() {
 		this.cleanups.forEach((fn) => fn());
 		this.cleanups = [];
+
+		this.visibleSidenotes.clear();
 
 		if (this.resizeObserver) {
 			this.resizeObserver.disconnect();
@@ -817,12 +939,13 @@ export default class SidenotePlugin extends Plugin {
 			: "false";
 		cmRoot.dataset.sidenotePosition = this.settings.sidenotePosition;
 
-		this.resizeObserver = new ResizeObserver((entries) => {
-			for (const entry of entries) {
-				if (entry.target === cmRoot) {
-					this.scheduleLayout();
-				}
-			}
+		let resizeTimeout: number | null = null;
+		this.resizeObserver = new ResizeObserver(() => {
+			if (resizeTimeout !== null) return;
+			resizeTimeout = window.setTimeout(() => {
+				resizeTimeout = null;
+				this.scheduleLayout();
+			}, 100);
 		});
 		this.resizeObserver.observe(cmRoot);
 
@@ -838,7 +961,15 @@ export default class SidenotePlugin extends Plugin {
 		const scroller = cmRoot.querySelector<HTMLElement>(".cm-scroller");
 		if (!scroller) return;
 
-		const onScroll = () => this.scheduleLayout();
+		const onScroll = () => {
+			if (this.scrollDebounceTimer !== null) {
+				window.clearTimeout(this.scrollDebounceTimer);
+			}
+			this.scrollDebounceTimer = window.setTimeout(() => {
+				this.scrollDebounceTimer = null;
+				this.scheduleLayout();
+			}, 50);
+		};
 		scroller.addEventListener("scroll", onScroll, { passive: true });
 		this.cleanups.push(() =>
 			scroller.removeEventListener("scroll", onScroll),
@@ -848,7 +979,7 @@ export default class SidenotePlugin extends Plugin {
 		if (content) {
 			const mo = new MutationObserver(() => {
 				if (this.isMutating) return;
-				this.scheduleLayout();
+				this.scheduleLayoutDebounced(100);
 			});
 			mo.observe(content, {
 				childList: true,
@@ -858,6 +989,8 @@ export default class SidenotePlugin extends Plugin {
 			this.cleanups.push(() => mo.disconnect());
 		}
 	}
+
+	// ==================== Document Position ====================
 
 	private getDocumentPosition(el: HTMLElement): number | null {
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
@@ -889,6 +1022,8 @@ export default class SidenotePlugin extends Plugin {
 		return `${posKey}:${content}`;
 	}
 
+	// ==================== Number Assignment ====================
+
 	private assignSidenoteNumbers(
 		spans: { el: HTMLElement; docPos: number | null }[],
 	): Map<HTMLElement, number> {
@@ -901,17 +1036,9 @@ export default class SidenotePlugin extends Plugin {
 			return a.docPos - b.docPos;
 		});
 
-		const keysInOrder: {
-			el: HTMLElement;
-			key: string;
-			docPos: number | null;
-		}[] = [];
 		for (const { el, docPos } of sorted) {
 			const key = this.getSidenoteKey(el, docPos);
-			keysInOrder.push({ el, key, docPos });
-		}
 
-		for (const { el, key, docPos } of keysInOrder) {
 			if (this.sidenoteRegistry.has(key)) {
 				assignments.set(el, this.sidenoteRegistry.get(key)!);
 			} else {
@@ -963,16 +1090,36 @@ export default class SidenotePlugin extends Plugin {
 		return this.nextSidenoteNumber++;
 	}
 
+	// ==================== Main Layout ====================
+
 	private layout() {
 		const cmRoot = this.cmRoot;
 		if (!cmRoot) return;
 
 		const cmRootRect = cmRoot.getBoundingClientRect();
 		const editorWidth = cmRootRect.width;
+		const mode = this.calculateMode(editorWidth);
+
+		const currentSidenoteCount =
+			cmRoot.querySelectorAll(".sidenote-margin").length;
+		const unwrappedCount = cmRoot.querySelectorAll(
+			"span.sidenote:not(.sidenote-number span.sidenote)",
+		).length;
+
+		if (
+			editorWidth === this.lastLayoutWidth &&
+			mode === this.lastMode &&
+			unwrappedCount === 0 &&
+			currentSidenoteCount === this.lastSidenoteCount
+		) {
+			this.updateVisibleCollisions();
+			return;
+		}
+
+		this.lastLayoutWidth = editorWidth;
+		this.lastMode = mode;
 
 		cmRoot.style.setProperty("--editor-width", `${editorWidth}px`);
-
-		const mode = this.calculateMode(editorWidth);
 		cmRoot.dataset.sidenoteMode = mode;
 		cmRoot.dataset.hasSidenotes = this.documentHasSidenotes
 			? "true"
@@ -990,19 +1137,15 @@ export default class SidenotePlugin extends Plugin {
 		);
 
 		if (unwrappedSpans.length === 0) {
-			const existingMargins = Array.from(
-				cmRoot.querySelectorAll<HTMLElement>("small.sidenote-margin"),
-			);
-			if (existingMargins.length > 0 && mode !== "hidden") {
-				this.avoidCollisions(
-					existingMargins,
-					this.settings.collisionSpacing,
-				);
+			this.lastSidenoteCount = currentSidenoteCount;
+			if (currentSidenoteCount > 0 && mode !== "hidden") {
+				this.updateVisibleCollisions();
 			}
 			return;
 		}
 
 		if (mode === "hidden") {
+			this.lastSidenoteCount = currentSidenoteCount;
 			return;
 		}
 
@@ -1034,78 +1177,142 @@ export default class SidenotePlugin extends Plugin {
 				margin.className = "sidenote-margin";
 				margin.dataset.sidenoteNum = numStr;
 
+				// In source view, parse both markdown links and wiki links
 				const raw = this.normalizeText(span.textContent ?? "");
-				margin.appendChild(this.renderMarkdownLinksToFragment(raw));
+				margin.appendChild(this.renderLinksToFragment(raw));
 
 				span.parentNode?.insertBefore(wrapper, span);
 				wrapper.appendChild(span);
 				wrapper.appendChild(margin);
+
+				this.observeSidenoteVisibility(margin);
 			}
 		} finally {
 			this.isMutating = false;
 		}
 
-		const allMargins = Array.from(
-			cmRoot.querySelectorAll<HTMLElement>("small.sidenote-margin"),
-		);
-		if (allMargins.length > 0) {
-			this.avoidCollisions(allMargins, this.settings.collisionSpacing);
-		}
+		this.lastSidenoteCount =
+			cmRoot.querySelectorAll(".sidenote-margin").length;
+
+		requestAnimationFrame(() => {
+			this.updateVisibleCollisions();
+		});
 	}
 
 	private normalizeText(s: string): string {
 		return (s ?? "").replace(/\s+/g, " ").trim();
 	}
 
-	private renderMarkdownLinksToFragment(text: string): DocumentFragment {
+	/**
+	 * Render both markdown links [text](url) and wiki links [[target]] or [[target|display]]
+	 * in source view where we only have raw text.
+	 */
+	private renderLinksToFragment(text: string): DocumentFragment {
 		const frag = document.createDocumentFragment();
-		const re = /\[([^\]]+)\]\(([^)\s]+)\)/g;
+
+		// Combined regex for both link types:
+		// - Markdown: [text](url)
+		// - Wiki: [[target]] or [[target|display]]
+		const combinedRe =
+			/\[([^\]]+)\]\(([^)\s]+)\)|\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
 
 		let last = 0;
 		let m: RegExpExecArray | null;
 
-		while ((m = re.exec(text)) !== null) {
-			const [full, label, urlRaw] = m;
+		while ((m = combinedRe.exec(text)) !== null) {
 			const start = m.index;
+			const fullMatch = m[0];
 
-			if (start > last)
+			// Add text before the match
+			if (start > last) {
 				frag.appendChild(
 					document.createTextNode(text.slice(last, start)),
 				);
-
-			const url = urlRaw.trim();
-			const isSafe =
-				url.startsWith("http://") ||
-				url.startsWith("https://") ||
-				url.startsWith("mailto:");
-
-			if (isSafe) {
-				const a = document.createElement("a");
-				a.textContent = label;
-				a.href = url;
-				a.rel = "noopener noreferrer";
-				a.target = "_blank";
-				frag.appendChild(a);
-			} else {
-				frag.appendChild(document.createTextNode(full));
 			}
 
-			last = start + full.length;
+			if (m[1] !== undefined && m[2] !== undefined) {
+				// Markdown link: [text](url)
+				const label = m[1];
+				const url = m[2].trim();
+
+				const isExternal =
+					url.startsWith("http://") ||
+					url.startsWith("https://") ||
+					url.startsWith("mailto:");
+
+				const a = document.createElement("a");
+				a.textContent = label;
+
+				if (isExternal) {
+					a.href = url;
+					a.className = "external-link";
+					a.rel = "noopener noreferrer";
+					a.target = "_blank";
+				} else {
+					// Treat as internal link
+					a.className = "internal-link";
+					a.setAttribute("data-href", url);
+					a.addEventListener("click", (e) => {
+						e.preventDefault();
+						e.stopPropagation();
+						this.app.workspace.openLinkText(url, "", false);
+					});
+				}
+				frag.appendChild(a);
+			} else if (m[3] !== undefined) {
+				// Wiki link: [[target]] or [[target|display]]
+				const target = m[3].trim();
+				const display = m[4]?.trim() || target;
+
+				const a = document.createElement("a");
+				a.textContent = display;
+				a.className = "internal-link";
+				a.setAttribute("data-href", target);
+				a.addEventListener("click", (e) => {
+					e.preventDefault();
+					e.stopPropagation();
+					this.app.workspace.openLinkText(target, "", false);
+				});
+				frag.appendChild(a);
+			}
+
+			last = start + fullMatch.length;
 		}
 
-		if (last < text.length)
+		// Add remaining text
+		if (last < text.length) {
 			frag.appendChild(document.createTextNode(text.slice(last)));
+		}
 
 		return frag;
 	}
 
+	// ==================== Collision Avoidance ====================
+
 	private avoidCollisions(nodes: HTMLElement[], spacing: number) {
-		for (const sn of nodes) sn.style.setProperty("--sidenote-shift", "0px");
+		if (nodes.length === 0) return;
+
+		const positionHash = nodes
+			.map((n) => {
+				const rect = n.getBoundingClientRect();
+				return `${Math.round(rect.top)}:${Math.round(rect.height)}`;
+			})
+			.join("|");
+
+		if (positionHash === this.lastCollisionHash) {
+			return;
+		}
+		this.lastCollisionHash = positionHash;
+
+		for (const sn of nodes) {
+			sn.style.setProperty("--sidenote-shift", "0px");
+		}
 
 		const measured = nodes
 			.map((el) => ({ el, rect: el.getBoundingClientRect() }))
 			.sort((a, b) => a.rect.top - b.rect.top);
 
+		const updates: { el: HTMLElement; shift: number }[] = [];
 		let bottom = -Infinity;
 
 		for (const { el, rect } of measured) {
@@ -1114,17 +1321,21 @@ export default class SidenotePlugin extends Plugin {
 			const actualTop = Math.max(desiredTop, minTop);
 
 			const shift = actualTop - desiredTop;
-			if (shift > 0.5)
-				el.style.setProperty("--sidenote-shift", `${shift}px`);
+			if (shift > 0.5) {
+				updates.push({ el, shift });
+			}
 
 			bottom = actualTop + rect.height;
+		}
+
+		for (const { el, shift } of updates) {
+			el.style.setProperty("--sidenote-shift", `${shift}px`);
 		}
 	}
 }
 
-/**
- * Settings tab for the sidenote plugin
- */
+// ==================== Settings Tab ====================
+
 class SidenoteSettingTab extends PluginSettingTab {
 	plugin: SidenotePlugin;
 
@@ -1137,7 +1348,6 @@ class SidenoteSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		// Display Settings
 		containerEl.createEl("h2", { text: "Display" });
 
 		new Setting(containerEl)
@@ -1183,7 +1393,6 @@ class SidenoteSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		// Width & Spacing
 		containerEl.createEl("h2", { text: "Width & Spacing" });
 
 		new Setting(containerEl)
@@ -1230,7 +1439,6 @@ class SidenoteSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		// Breakpoints
 		containerEl.createEl("h2", { text: "Breakpoints" });
 
 		new Setting(containerEl)
@@ -1283,7 +1491,6 @@ class SidenoteSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		// Typography
 		containerEl.createEl("h2", { text: "Typography" });
 
 		new Setting(containerEl)
@@ -1343,7 +1550,6 @@ class SidenoteSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		// Behavior
 		containerEl.createEl("h2", { text: "Behavior" });
 
 		new Setting(containerEl)

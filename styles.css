@@ -10,7 +10,7 @@
 	);
 
 	--sidenote-gap: 2rem;
-	--page-offset: calc(var(--sidenote-width) + var(--sidenote-gap) + 0.5rem);
+	--page-offset: calc((var(--sidenote-width) + var(--sidenote-gap)) * 0.8);
 }
 
 /* Reading view */
@@ -24,7 +24,7 @@
 	);
 
 	--sidenote-gap: 2rem;
-	--page-offset: calc(var(--sidenote-width) + var(--sidenote-gap) + 0.5rem);
+	--page-offset: calc((var(--sidenote-width) + var(--sidenote-gap)) * 0.8);
 }
 
 /* Mode-specific overrides - Source view */
