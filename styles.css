@@ -1,19 +1,14 @@
 /* === Sidenote layout variables === */
 .markdown-source-view.mod-cm6 {
-	/* 
-	 * Sidenote width uses --sidenote-scale (0 to 1) set by plugin
-	 * This creates smooth scaling based on actual editor width
-	 */
-	--sidenote-base-width: 10rem;
-	--sidenote-max-extra: 18rem;
+	--sidenote-base-width: 10rem; /* Minimum sidenote width */
+	--sidenote-max-extra: 8rem; /* Added to base at full scale (total max = 28rem) */
 
-	/* Width scales smoothly from 10rem to 28rem based on editor width */
 	--sidenote-width: calc(
 		var(--sidenote-base-width) +
 			(var(--sidenote-max-extra) * var(--sidenote-scale, 0.5))
 	);
 
-	--sidenote-gap: 1.5rem;
+	--sidenote-gap: 2rem; /* Space between sidenote and main text */
 	--page-offset: calc(var(--sidenote-width) + var(--sidenote-gap) + 0.5rem);
 }
 
@@ -25,9 +20,9 @@
 }
 
 .markdown-source-view.mod-cm6[data-sidenote-mode="full"] {
-	--sidenote-base-width: 14rem;
-	--sidenote-max-extra: 20rem;
-	--sidenote-gap: 2rem;
+	--sidenote-base-width: 18rem;
+	--sidenote-max-extra: 2rem;
+	--sidenote-gap: 3rem;
 }
 
 /* Allow margin overflow but keep vertical scrolling */
@@ -36,14 +31,19 @@
 	overflow-x: visible !important;
 }
 
-/* Apply page offset based on mode (not media query) */
-.markdown-source-view.mod-cm6[data-sidenote-mode="compact"]:has(
-		.sidenote-margin
-	)
+/* 
+ * Apply page offset based on:
+ * 1. Document has sidenotes (data-has-sidenotes="true") - scanned from source, not DOM
+ * 2. Sidenote mode is not hidden
+ * 
+ * This ensures consistent offset throughout the entire document,
+ * regardless of which sidenotes are currently rendered in the virtualized DOM.
+ */
+.markdown-source-view.mod-cm6[data-has-sidenotes="true"][data-sidenote-mode="compact"]
 	.cm-scroller,
-.markdown-source-view.mod-cm6[data-sidenote-mode="normal"]:has(.sidenote-margin)
+.markdown-source-view.mod-cm6[data-has-sidenotes="true"][data-sidenote-mode="normal"]
 	.cm-scroller,
-.markdown-source-view.mod-cm6[data-sidenote-mode="full"]:has(.sidenote-margin)
+.markdown-source-view.mod-cm6[data-has-sidenotes="true"][data-sidenote-mode="full"]
 	.cm-scroller {
 	padding-left: var(--page-offset) !important;
 }
