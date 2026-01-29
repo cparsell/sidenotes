@@ -86,6 +86,7 @@ export default class SidenotePlugin extends Plugin {
 
 	// Track whether current document has any sidenotes
 	private documentHasSidenotes = false;
+	private needsFullRenumber = true;
 
 	// Performance: Debounce/throttle timers
 	private scrollDebounceTimer: number | null = null;
@@ -145,6 +146,9 @@ export default class SidenotePlugin extends Plugin {
 		this.registerEvent(
 			this.app.workspace.on("editor-change", () => {
 				this.scanDocumentForSidenotes();
+				this.needsFullRenumber = true;
+				this.invalidateLayoutCache();
+				this.lastCollisionHash = ""; // Force collision recalculation
 				this.scheduleLayoutDebounced(100);
 			}),
 		);
@@ -320,13 +324,6 @@ export default class SidenotePlugin extends Plugin {
 			this.rafId = null;
 			this.updateVisibleCollisions();
 		});
-	}
-
-	private updateVisibleCollisions() {
-		if (this.visibleSidenotes.size === 0) return;
-
-		const visibleArray = Array.from(this.visibleSidenotes);
-		this.avoidCollisions(visibleArray, this.settings.collisionSpacing);
 	}
 
 	private observeSidenoteVisibility(margin: HTMLElement) {
@@ -683,8 +680,11 @@ export default class SidenotePlugin extends Plugin {
 			marginNotes.push(margin);
 		}
 
+		// Run collision avoidance with double RAF to ensure DOM is settled
 		requestAnimationFrame(() => {
-			this.updateVisibleCollisions();
+			requestAnimationFrame(() => {
+				this.updateVisibleCollisions();
+			});
 		});
 	}
 
@@ -866,6 +866,11 @@ export default class SidenotePlugin extends Plugin {
 		this.documentHasSidenotes = SIDENOTE_PATTERN.test(content);
 		SIDENOTE_PATTERN.lastIndex = 0;
 
+		// Build a complete registry of all sidenotes in the document by their character position
+		if (this.needsFullRenumber) {
+			this.rebuildRegistryFromSource(content);
+		}
+
 		if (this.cmRoot) {
 			this.cmRoot.dataset.hasSidenotes = this.documentHasSidenotes
 				? "true"
@@ -882,10 +887,30 @@ export default class SidenotePlugin extends Plugin {
 		}
 	}
 
-	private resetRegistry() {
+	/**
+	 * Rebuild the sidenote registry by scanning the source document.
+	 * This ensures consistent numbering regardless of what's currently rendered.
+	 */
+	private rebuildRegistryFromSource(content: string) {
 		this.sidenoteRegistry.clear();
-		this.nextSidenoteNumber = 1;
-		this.headingSidenoteNumbers.clear();
+
+		// Find all sidenote spans in the source and assign numbers by position
+		const sidenoteRegex =
+			/<span\s+class\s*=\s*["']sidenote["'][^>]*>[\s\S]*?<\/span>/gi;
+
+		let match: RegExpExecArray | null;
+		let num = 1;
+
+		while ((match = sidenoteRegex.exec(content)) !== null) {
+			const charPos = match.index;
+			// Use character position as the key (multiply by 10000 to match getDocumentPosition format)
+			const key = `pos-${charPos * 10000}`;
+			this.sidenoteRegistry.set(key, num);
+			num++;
+		}
+
+		this.nextSidenoteNumber = num;
+		this.needsFullRenumber = false;
 	}
 
 	// ==================== Scheduling ====================
@@ -1016,19 +1041,66 @@ export default class SidenotePlugin extends Plugin {
 		return pos * 10000 + Math.floor(offsetInLine);
 	}
 
-	private getSidenoteKey(el: HTMLElement, docPos: number | null): string {
-		const content = this.normalizeText(el.textContent ?? "");
-		const posKey = docPos !== null ? docPos.toString() : "unknown";
-		return `${posKey}:${content}`;
+	// ==================== Registry Management ====================
+
+	private resetRegistry() {
+		this.sidenoteRegistry.clear();
+		this.nextSidenoteNumber = 1;
+		this.headingSidenoteNumbers.clear();
+		this.needsFullRenumber = true;
 	}
 
-	// ==================== Number Assignment ====================
+	/**
+	 * Generate a stable key for a sidenote based on its document position.
+	 */
+	private getSidenoteKey(docPos: number | null): string {
+		if (docPos === null) {
+			return `unknown-${Date.now()}-${Math.random()}`;
+		}
+		return `pos-${docPos}`;
+	}
 
+	/**
+	 * Find the closest matching registry key for a given document position.
+	 * This handles slight position variations due to DOM rendering differences.
+	 */
+	private findClosestRegistryKey(docPos: number): string | null {
+		const exactKey = `pos-${docPos}`;
+		if (this.sidenoteRegistry.has(exactKey)) {
+			return exactKey;
+		}
+
+		// Look for a close match (within a reasonable tolerance)
+		// The tolerance accounts for differences between source position and DOM position
+		const tolerance = 50000; // Allows for ~5 characters of variance
+
+		let closestKey: string | null = null;
+		let closestDistance = Infinity;
+
+		for (const key of this.sidenoteRegistry.keys()) {
+			const match = key.match(/^pos-(\d+)$/);
+			if (match && match[1]) {
+				const keyPos = parseInt(match[1], 10);
+				const distance = Math.abs(keyPos - docPos);
+				if (distance < tolerance && distance < closestDistance) {
+					closestDistance = distance;
+					closestKey = key;
+				}
+			}
+		}
+
+		return closestKey;
+	}
+
+	/**
+	 * Assign numbers to sidenotes based on document order.
+	 */
 	private assignSidenoteNumbers(
 		spans: { el: HTMLElement; docPos: number | null }[],
 	): Map<HTMLElement, number> {
 		const assignments = new Map<HTMLElement, number>();
 
+		// Sort by document position
 		const sorted = [...spans].sort((a, b) => {
 			if (a.docPos === null && b.docPos === null) return 0;
 			if (a.docPos === null) return 1;
@@ -1037,12 +1109,24 @@ export default class SidenotePlugin extends Plugin {
 		});
 
 		for (const { el, docPos } of sorted) {
-			const key = this.getSidenoteKey(el, docPos);
+			if (docPos === null) {
+				// Unknown position, use next number
+				const num = this.nextSidenoteNumber++;
+				assignments.set(el, num);
+				continue;
+			}
 
-			if (this.sidenoteRegistry.has(key)) {
-				assignments.set(el, this.sidenoteRegistry.get(key)!);
+			// Try to find an existing registry entry for this position
+			const matchingKey = this.findClosestRegistryKey(docPos);
+
+			if (matchingKey) {
+				const num = this.sidenoteRegistry.get(matchingKey)!;
+				assignments.set(el, num);
 			} else {
-				const num = this.findCorrectNumber(docPos);
+				// No match found - this shouldn't happen if rebuildRegistryFromSource worked
+				// Fall back to calculating based on position
+				const num = this.calculateNumberForPosition(docPos);
+				const key = this.getSidenoteKey(docPos);
 				this.sidenoteRegistry.set(key, num);
 				assignments.set(el, num);
 			}
@@ -1051,40 +1135,55 @@ export default class SidenotePlugin extends Plugin {
 		return assignments;
 	}
 
-	private findCorrectNumber(docPos: number | null): number {
-		if (docPos === null) {
-			return this.nextSidenoteNumber++;
-		}
-
-		const knownPositions: { pos: number; num: number }[] = [];
+	/**
+	 * Calculate the correct number for a sidenote at a given position
+	 * based on existing assignments.
+	 */
+	private calculateNumberForPosition(docPos: number): number {
+		// Get all existing assignments sorted by position
+		const existingAssignments: { pos: number; num: number }[] = [];
 		for (const [key, num] of this.sidenoteRegistry) {
-			const posStr = key.split(":")[0];
-			const pos = parseInt(posStr, 10);
-			if (!isNaN(pos)) {
-				knownPositions.push({ pos, num });
+			const match = key.match(/^pos-(\d+)$/);
+			if (match && match[1]) {
+				existingAssignments.push({
+					pos: parseInt(match[1], 10),
+					num,
+				});
 			}
 		}
 
-		if (knownPositions.length === 0) {
+		if (existingAssignments.length === 0) {
 			return this.nextSidenoteNumber++;
 		}
 
-		knownPositions.sort((a, b) => a.pos - b.pos);
+		existingAssignments.sort((a, b) => a.pos - b.pos);
 
-		let insertIndex = knownPositions.findIndex((kp) => kp.pos > docPos);
+		// Find where this position falls
+		let insertIndex = existingAssignments.findIndex((a) => a.pos > docPos);
+
 		if (insertIndex === -1) {
+			// After all existing
+			const lastItem =
+				existingAssignments[existingAssignments.length - 1];
+			if (lastItem) {
+				const newNum = lastItem.num + 1;
+				if (newNum >= this.nextSidenoteNumber) {
+					this.nextSidenoteNumber = newNum + 1;
+				}
+				return newNum;
+			}
 			return this.nextSidenoteNumber++;
 		}
 
-		const numAtInsert = knownPositions[insertIndex].num;
-
-		let prevNum = 0;
-		if (insertIndex > 0) {
-			prevNum = knownPositions[insertIndex - 1].num;
+		if (insertIndex === 0) {
+			// Before all existing
+			return 1;
 		}
 
-		if (prevNum + 1 < numAtInsert) {
-			return prevNum + 1;
+		// Between two existing assignments
+		const prevItem = existingAssignments[insertIndex - 1];
+		if (prevItem) {
+			return prevItem.num + 1;
 		}
 
 		return this.nextSidenoteNumber++;
@@ -1099,25 +1198,6 @@ export default class SidenotePlugin extends Plugin {
 		const cmRootRect = cmRoot.getBoundingClientRect();
 		const editorWidth = cmRootRect.width;
 		const mode = this.calculateMode(editorWidth);
-
-		const currentSidenoteCount =
-			cmRoot.querySelectorAll(".sidenote-margin").length;
-		const unwrappedCount = cmRoot.querySelectorAll(
-			"span.sidenote:not(.sidenote-number span.sidenote)",
-		).length;
-
-		if (
-			editorWidth === this.lastLayoutWidth &&
-			mode === this.lastMode &&
-			unwrappedCount === 0 &&
-			currentSidenoteCount === this.lastSidenoteCount
-		) {
-			this.updateVisibleCollisions();
-			return;
-		}
-
-		this.lastLayoutWidth = editorWidth;
-		this.lastMode = mode;
 
 		cmRoot.style.setProperty("--editor-width", `${editorWidth}px`);
 		cmRoot.dataset.sidenoteMode = mode;
@@ -1137,15 +1217,20 @@ export default class SidenotePlugin extends Plugin {
 		);
 
 		if (unwrappedSpans.length === 0) {
-			this.lastSidenoteCount = currentSidenoteCount;
-			if (currentSidenoteCount > 0 && mode !== "hidden") {
-				this.updateVisibleCollisions();
+			this.lastSidenoteCount =
+				cmRoot.querySelectorAll(".sidenote-margin").length;
+			if (this.lastSidenoteCount > 0 && mode !== "hidden") {
+				// Always run collision avoidance on existing margins
+				requestAnimationFrame(() => {
+					this.updateVisibleCollisions();
+				});
 			}
 			return;
 		}
 
 		if (mode === "hidden") {
-			this.lastSidenoteCount = currentSidenoteCount;
+			this.lastSidenoteCount =
+				cmRoot.querySelectorAll(".sidenote-margin").length;
 			return;
 		}
 
@@ -1177,7 +1262,6 @@ export default class SidenotePlugin extends Plugin {
 				margin.className = "sidenote-margin";
 				margin.dataset.sidenoteNum = numStr;
 
-				// In source view, parse both markdown links and wiki links
 				const raw = this.normalizeText(span.textContent ?? "");
 				margin.appendChild(this.renderLinksToFragment(raw));
 
@@ -1194,8 +1278,11 @@ export default class SidenotePlugin extends Plugin {
 		this.lastSidenoteCount =
 			cmRoot.querySelectorAll(".sidenote-margin").length;
 
+		// Run collision avoidance after a short delay to ensure DOM is settled
 		requestAnimationFrame(() => {
-			this.updateVisibleCollisions();
+			requestAnimationFrame(() => {
+				this.updateVisibleCollisions();
+			});
 		});
 	}
 
@@ -1289,28 +1376,29 @@ export default class SidenotePlugin extends Plugin {
 
 	// ==================== Collision Avoidance ====================
 
+	/**
+	 * Run collision avoidance on all sidenotes, not just visible ones.
+	 * This is more robust for ensuring proper spacing.
+	 */
 	private avoidCollisions(nodes: HTMLElement[], spacing: number) {
 		if (nodes.length === 0) return;
 
-		const positionHash = nodes
-			.map((n) => {
-				const rect = n.getBoundingClientRect();
-				return `${Math.round(rect.top)}:${Math.round(rect.height)}`;
-			})
-			.join("|");
-
-		if (positionHash === this.lastCollisionHash) {
-			return;
-		}
-		this.lastCollisionHash = positionHash;
-
+		// Always recalculate - remove the hash check for more robustness
+		// Reset all shifts first
 		for (const sn of nodes) {
 			sn.style.setProperty("--sidenote-shift", "0px");
 		}
 
+		// Force a reflow to get accurate measurements after reset
+		void nodes[0]?.offsetHeight;
+
+		// Measure and sort
 		const measured = nodes
 			.map((el) => ({ el, rect: el.getBoundingClientRect() }))
+			.filter((item) => item.rect.height > 0) // Filter out hidden/zero-height elements
 			.sort((a, b) => a.rect.top - b.rect.top);
+
+		if (measured.length === 0) return;
 
 		const updates: { el: HTMLElement; shift: number }[] = [];
 		let bottom = -Infinity;
@@ -1328,8 +1416,50 @@ export default class SidenotePlugin extends Plugin {
 			bottom = actualTop + rect.height;
 		}
 
+		// Apply all updates
 		for (const { el, shift } of updates) {
 			el.style.setProperty("--sidenote-shift", `${shift}px`);
+		}
+
+		// Update hash after successful collision avoidance
+		this.lastCollisionHash = measured
+			.map(
+				(m) => `${Math.round(m.rect.top)}:${Math.round(m.rect.height)}`,
+			)
+			.join("|");
+	}
+
+	/**
+	 * Update collisions for all margin notes in the current view.
+	 * More robust than only updating visible ones.
+	 */
+	private updateVisibleCollisions() {
+		// Get all margin notes from both source and reading views
+		const allMargins: HTMLElement[] = [];
+
+		if (this.cmRoot) {
+			const sourceMargins = this.cmRoot.querySelectorAll<HTMLElement>(
+				"small.sidenote-margin",
+			);
+			allMargins.push(...Array.from(sourceMargins));
+		}
+
+		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+		if (view) {
+			const readingRoot = view.containerEl.querySelector<HTMLElement>(
+				".markdown-reading-view",
+			);
+			if (readingRoot) {
+				const readingMargins =
+					readingRoot.querySelectorAll<HTMLElement>(
+						"small.sidenote-margin",
+					);
+				allMargins.push(...Array.from(readingMargins));
+			}
+		}
+
+		if (allMargins.length > 0) {
+			this.avoidCollisions(allMargins, this.settings.collisionSpacing);
 		}
 	}
 }

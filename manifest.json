@@ -1,10 +1,10 @@
 {
-	"id": "sidenote-helper",
-	"name": "Sidenote Helper",
+	"id": "sidenotes",
+	"name": "Sidenotes",
 	"version": "0.1.0",
-	"minAppVersion": "1.5.0",
-	"description": "Prevents Live Preview sidenotes from overlapping by pushing them down, displays links properly, etc.",
-	"author": "Fried Fishsticks",
-	"authorUrl": "",
+	"minAppVersion": "1.10.0",
+	"description": "Adds ability to create sidenotes in Obsidian with incrementing numbers.",
+	"author": "cparsell",
+	"authorUrl": "https://github.com/cparsell/sidenotes/",
 	"isDesktopOnly": false
 }
