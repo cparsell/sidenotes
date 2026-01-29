@@ -4,7 +4,7 @@ I first discovered sidenotes, at least in a conscious way, on [Gwern.net](https:
 
 My goal is to have the same sidenotes work in both Obsidian and the web published version.
 
-![Screenshot.png]
+![Screenshot](https://github.com/cparsell/sidenotes/blob/main/Screenshot.png)
 
 ### Features:
 
