@@ -2,17 +2,23 @@
 
 I first discovered sidenotes, at least in a conscious way, on [Gwern.net](https://gwern.net/sidenote). He was referencing Edward Tufte's conventions.
 
-My goal is to have the same sidenotes work in both Obsidian and the web published version.
+My goal is to have the same sidenotes work in both Obsidian and the web published version of my notes. 
 
 ![Screenshot](https://github.com/cparsell/sidenotes/blob/main/Screenshot.png)
 
 ### Features:
 
-- **Sidenotes**: Allows you to write sidenotes which show in the left side margin next to a note's main body
-- Links in sidenotes: The plugin makes sure links in sidenotes appear as links.
-- Superscript numbers are added to the text. .e.g. This text^1 and they will count sequentially
-- Width of sidenotes changes dynamically based on the size of the editor
-- Works in _Editing_ and _Reading_ modes
+- **Sidenotes**: Allows you to write sidenotes which show in the left side margin next to a note’s main body. Because these are meant to show in the margins, one can’t really fully use this in mobile.
+- **Customize**:
+	- Show sidenotes in left or right margin
+	- Arabic numbers, Roman, letters, or no numbers
+- 	Customize spacing to tweak how it takes up space in the margin
+- 	Customize font size, line height, text alignment
+- **Links in sidenotes**: The plugin makes sure links in sidenotes appear as links.
+- **Superscript numbers** can be added to the text. The numbers increment automatically.
+- **Dynamic styling**: Font size shrinks as horizontal space get smaller. At a certain breakpoint, sidenotes hide when a window gets too skinny.
+
+Works in Editing and Reading modes
 
 ### Alternatives:
 These are some other strategies I've seen for sidenotes in Obsidian. 
@@ -31,10 +37,11 @@ Large Language Models (LLM) were used in the production and editing of this code
 
 ## Known issues
 
-- Numbers may not update immediately. For example, if the first sidenote is removed, the second one becomes the first but may still be annotated 2. Reopening the note fixes it.
+- Numbers may not update immediately when sequencing changes. For example, if the first sidenote is removed, the second one becomes the first but may still be annotated 2. Reopening the note fixes it.
 
 ## Goals
 
+This is very new so I consider this still a test.
 - **Optional Markdown style syntax:** I'd like an optional Markdown-style mode to enable some sort of coded sidenote like `;;sidenote text;;` or `&&sidenote text&&`. Currently, it only responds to this one HTML tag `<span class="sidenote">`. The benefit of HTML syntax is that it can be made to work in web-published notes as well.
 
 ## Setup
