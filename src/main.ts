@@ -394,7 +394,7 @@ export default class SidenotePlugin extends Plugin {
 					(var(--sidenote-max-extra) * var(--sidenote-scale, 0.5))
 				);
 				--sidenote-gap: ${s.sidenoteGap}rem;
-				--page-offset: calc((var(--sidenote-width) + var(--sidenote-gap)) * 0.8);
+				--page-offset: calc((var(--sidenote-width) + var(--sidenote-gap)) * 1);
 			}
 			
 			.markdown-source-view.mod-cm6[data-sidenote-mode="compact"],
