@@ -15,7 +15,7 @@ My goal is to have the same sidenotes work in both Obsidian and the web publishe
 - Works in _Editing_ and _Reading_ modes
 
 ### Alternatives:
-
+These are some other strategies I've seen for sidenotes in Obsidian. 
 - [SideNote Plugin](https://github.com/mofukuru/SideNote) allows you to add comments to a piece of text, and this is viewable in the side panel.
 - [crnkv/obsidian-sidenote-auto-adjust-module](https://github.com/crnkv/obsidian-sidenote-auto-adjust-module) ([forum post](https://forum.obsidian.md/t/css-snippet-sidenote-auto-adjust-module-four-styles-available/94495))
 - [Collapsible Sidenotes using a CSS trick](https://forum.obsidian.md/t/meta-post-common-css-hacks/1978/341)
