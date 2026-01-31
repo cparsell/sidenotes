@@ -113,7 +113,7 @@
 
 .sidenote-number::after {
 	content: $ {
-		s.showsidenotenumbers?"attr(data-sidenote-num)" : "none";
+		s.showsidenotenumbers?"attr(data-sidenote-num)": "none";
 	}
 	vertical-align: baseline;
 	position: relative;
