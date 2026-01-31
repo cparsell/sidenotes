@@ -629,31 +629,99 @@ export default class SidenotePlugin extends Plugin {
 
 		if (mode === "hidden") return;
 
-		const unwrappedSpans = Array.from(
-			element.querySelectorAll<HTMLElement>("span.sidenote"),
-		).filter(
-			(span) =>
-				!span.parentElement?.classList.contains("sidenote-number"),
-		);
+		// Collect items to process
+		const allItems: {
+			el: HTMLElement;
+			rect: DOMRect;
+			type: "sidenote" | "footnote";
+			text: string;
+		}[] = [];
 
-		if (unwrappedSpans.length === 0) return;
+		// Get sidenote spans - check in the element AND the full reading root
+		// to catch all sidenotes, not just those in the current post-processor element
+		const sidenoteContainers = [element];
+		if (element !== readingRoot) {
+			sidenoteContainers.push(readingRoot);
+		}
 
-		const ordered = unwrappedSpans
-			.map((el) => ({
-				el,
-				rect: el.getBoundingClientRect(),
-			}))
-			.sort((a, b) => a.rect.top - b.rect.top);
+		const processedSidenotes = new Set<HTMLElement>();
 
-		const existingCount =
-			readingRoot.querySelectorAll(".sidenote-number").length;
-		let num = existingCount + 1;
+		for (const container of sidenoteContainers) {
+			const spans = Array.from(
+				container.querySelectorAll<HTMLElement>("span.sidenote"),
+			).filter(
+				(span) =>
+					!span.parentElement?.classList.contains(
+						"sidenote-number",
+					) && !processedSidenotes.has(span),
+			);
+
+			for (const el of spans) {
+				processedSidenotes.add(el);
+				allItems.push({
+					el,
+					rect: el.getBoundingClientRect(),
+					type: "sidenote",
+					text: el.textContent ?? "",
+				});
+			}
+		}
+
+		// Get footnote references if conversion is enabled
+		// if (this.settings.convertFootnotes) {
+		// 	for (const container of sidenoteContainers) {
+		// 		const footnoteRefs = container.querySelectorAll<HTMLElement>(
+		// 			"sup.footnote-ref, .footnote-ref, sup:has(a[href^='#fn']), sup:has(a[href^='#^'])",
+		// 		);
+
+		// 		for (const el of Array.from(footnoteRefs)) {
+		// 			// Skip if already processed
+		// 			if (el.closest(".sidenote-number")) continue;
+
+		// 			// Get the footnote ID from the anchor inside
+		// 			const anchor =
+		// 				el.querySelector("a") ||
+		// 				(el.tagName === "A" ? el : null);
+		// 			if (!anchor) continue;
+
+		// 			const href = anchor.getAttribute("href") ?? "";
+		// 			// Extract ID from various formats: #fn-1, #fn1, #^footnote-id
+		// 			const idMatch = href.match(/#(?:fn-?|[\^])(.+)$/);
+		// 			const id = idMatch ? idMatch[1] : "";
+
+		// 			if (!id) continue;
+
+		// 			// Find the footnote content
+		// 			const footnoteContent = this.findFootnoteContent(
+		// 				readingRoot,
+		// 				id,
+		// 			);
+
+		// 			if (footnoteContent) {
+		// 				allItems.push({
+		// 					el: el as HTMLElement,
+		// 					rect: el.getBoundingClientRect(),
+		// 					type: "footnote",
+		// 					text: footnoteContent,
+		// 				});
+		// 			}
+		// 		}
+		// 	}
+		// }
+
+		if (allItems.length === 0) return;
+
+		// Sort by vertical position in document
+		allItems.sort((a, b) => a.rect.top - b.rect.top);
+
+		// Start numbering from 1, not from existing count
+		let num = 1;
 
 		const marginNotes: HTMLElement[] = [];
 
-		for (const { el: span } of ordered) {
+		for (const item of allItems) {
 			if (this.settings.resetNumberingPerHeading) {
-				const heading = this.findPrecedingHeading(span);
+				const heading = this.findPrecedingHeading(item.el);
 				if (heading) {
 					const headingId = this.getHeadingId(heading);
 					if (!this.headingSidenoteNumbers.has(headingId)) {
@@ -674,20 +742,28 @@ export default class SidenotePlugin extends Plugin {
 			margin.className = "sidenote-margin";
 			margin.dataset.sidenoteNum = numStr;
 
-			this.cloneContentToMargin(span, margin);
+			if (item.type === "sidenote") {
+				this.cloneContentToMargin(item.el, margin);
+			} else {
+				margin.appendChild(
+					this.renderLinksToFragment(this.normalizeText(item.text)),
+				);
+			}
 
-			span.parentNode?.insertBefore(wrapper, span);
-			wrapper.appendChild(span);
+			item.el.parentNode?.insertBefore(wrapper, item.el);
+			wrapper.appendChild(item.el);
 			wrapper.appendChild(margin);
 
 			this.observeSidenoteVisibility(margin);
 			marginNotes.push(margin);
 		}
 
-		// Run collision avoidance with double RAF to ensure DOM is settled
+		// Run collision avoidance after DOM is settled - use longer delay for reading mode
 		requestAnimationFrame(() => {
 			requestAnimationFrame(() => {
-				this.updateVisibleCollisions();
+				requestAnimationFrame(() => {
+					this.avoidCollisionsInReadingMode(readingRoot);
+				});
 			});
 		});
 	}
@@ -847,8 +923,60 @@ export default class SidenotePlugin extends Plugin {
 				scaleFactor.toFixed(3),
 			);
 
-			this.updateVisibleCollisions();
+			// Run collision avoidance for reading mode
+			this.avoidCollisionsInReadingMode(readingRoot);
 		});
+	}
+
+	/**
+	 * Run collision avoidance specifically for reading mode sidenotes.
+	 */
+	private avoidCollisionsInReadingMode(readingRoot: HTMLElement) {
+		const margins = Array.from(
+			readingRoot.querySelectorAll<HTMLElement>("small.sidenote-margin"),
+		);
+
+		if (margins.length === 0) return;
+
+		// Reset all shifts first
+		for (const margin of margins) {
+			margin.style.setProperty("--sidenote-shift", "0px");
+		}
+
+		// Force reflow
+		void margins[0]?.offsetHeight;
+
+		// Measure and sort by position
+		const measured = margins
+			.map((el) => ({ el, rect: el.getBoundingClientRect() }))
+			.filter((item) => item.rect.height > 0)
+			.sort((a, b) => a.rect.top - b.rect.top);
+
+		if (measured.length === 0) return;
+
+		const updates: { el: HTMLElement; shift: number }[] = [];
+		let bottom = -Infinity;
+
+		for (const { el, rect } of measured) {
+			const desiredTop = rect.top;
+			const minTop =
+				bottom === -Infinity
+					? desiredTop
+					: bottom + this.settings.collisionSpacing;
+			const actualTop = Math.max(desiredTop, minTop);
+
+			const shift = actualTop - desiredTop;
+			if (shift > 0.5) {
+				updates.push({ el, shift });
+			}
+
+			bottom = actualTop + rect.height;
+		}
+
+		// Apply all updates
+		for (const { el, shift } of updates) {
+			el.style.setProperty("--sidenote-shift", `${shift}px`);
+		}
 	}
 
 	// ==================== Document Scanning ====================
@@ -1559,35 +1687,32 @@ export default class SidenotePlugin extends Plugin {
 
 	/**
 	 * Update collisions for all margin notes in the current view.
-	 * More robust than only updating visible ones.
 	 */
 	private updateVisibleCollisions() {
-		// Get all margin notes from both source and reading views
-		const allMargins: HTMLElement[] = [];
-
+		// Handle source view
 		if (this.cmRoot) {
-			const sourceMargins = this.cmRoot.querySelectorAll<HTMLElement>(
-				"small.sidenote-margin",
+			const sourceMargins = Array.from(
+				this.cmRoot.querySelectorAll<HTMLElement>(
+					"small.sidenote-margin",
+				),
 			);
-			allMargins.push(...Array.from(sourceMargins));
+			if (sourceMargins.length > 0) {
+				this.avoidCollisions(
+					sourceMargins,
+					this.settings.collisionSpacing,
+				);
+			}
 		}
 
+		// Handle reading view separately
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
 		if (view) {
 			const readingRoot = view.containerEl.querySelector<HTMLElement>(
 				".markdown-reading-view",
 			);
 			if (readingRoot) {
-				const readingMargins =
-					readingRoot.querySelectorAll<HTMLElement>(
-						"small.sidenote-margin",
-					);
-				allMargins.push(...Array.from(readingMargins));
+				this.avoidCollisionsInReadingMode(readingRoot);
 			}
-		}
-
-		if (allMargins.length > 0) {
-			this.avoidCollisions(allMargins, this.settings.collisionSpacing);
 		}
 	}
 }
