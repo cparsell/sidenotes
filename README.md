@@ -2,20 +2,20 @@
 
 I first discovered sidenotes, at least in a conscious way, on [Gwern.net](https://gwern.net/sidenote) which was referencing [Edward Tufte's conventions](https://edwardtufte.github.io/tufte-css/).
 
-My goal is to have the same sidenotes work in both Obsidian and the web published version of my notes. 
+My goal is to have the same sidenotes work in both Obsidian and the web published version of my notes.
 
-![Screenshot](https://github.com/cparsell/sidenotes/blob/main/Screenshot.png)
+![Screenshot](https://github.com/cparsell/sidenotes/blob/main/Screenshot2.png)
 
 ### Features:
 
 - **Sidenotes**: Create a sidenote using an HTML tag. Sidenotes then display in the margin of a note
 - **They are editable in the margin**. Click on it, edit, and press enter.
 - **Customize**:
-	- Show sidenotes in left or right margin
-	- Arabic numbers, Roman, letters, or no numbers
-	- Customize spacing to tweak how it takes up space in the margin
-	- Customize font size, line height, text alignment
-	- **Superscript numbers** can be added to the text. The numbers increment automatically.
+    - Show sidenotes in left or right margin
+    - Arabic numbers, Roman, letters, or no numbers
+    - Customize spacing to tweak how it takes up space in the margin
+    - Customize font size, line height, text alignment
+    - **Superscript numbers** can be added to the text. The numbers increment automatically.
 - **Links in sidenotes**: The plugin makes sure links in sidenotes appear as links.
 - **Dynamic styling**: Font size shrinks as horizontal space get smaller. At a certain breakpoint, sidenotes hide when a window gets too skinny.
 - Works in _Editing_ and _Reading_ modes
@@ -27,7 +27,8 @@ My goal is to have the same sidenotes work in both Obsidian and the web publishe
 
 ## Alternatives:
 
-These are some other strategies I've seen for sidenotes in Obsidian. 
+These are some other strategies I've seen for sidenotes in Obsidian.
+
 - [SideNote Plugin](https://github.com/mofukuru/SideNote) allows you to add comments to a piece of text, and this is viewable in the side panel.
 - [crnkv/obsidian-sidenote-auto-adjust-module](https://github.com/crnkv/obsidian-sidenote-auto-adjust-module) ([forum post](https://forum.obsidian.md/t/css-snippet-sidenote-auto-adjust-module-four-styles-available/94495))
 - [Collapsible Sidenotes using a CSS trick](https://forum.obsidian.md/t/meta-post-common-css-hacks/1978/341)
@@ -55,7 +56,9 @@ Large Language Models (LLM) were used in the production and editing of this code
 Create a sidenote using this:
 
 ```html
-This is a normal sentence.<span class="sidenote">This is a sidenote. See [this link](http://example.com).</span>
+This is a normal sentence.<span class="sidenote"
+	>This is a sidenote. See [this link](http://example.com).</span
+>
 ```
 
 For now, I've set up a snippet that inserts the HTML template of the sidenote. There are Obsidian snippet plugins one could use for this.
