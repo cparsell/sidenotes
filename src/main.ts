@@ -15,7 +15,7 @@ interface SidenoteSettings {
 	sidenotePosition: "left" | "right";
 	showSidenoteNumbers: boolean;
 	numberStyle: "arabic" | "roman" | "letters";
-	numberBadgeStyle: "plain" | "neumorphic";
+	numberBadgeStyle: "plain" | "neumorphic" | "pill";
 	numberColor: string;
 
 	// Width & Spacing
@@ -404,6 +404,8 @@ export default class SidenotePlugin extends Plugin {
 
 	// ==================== Style Injection ====================
 
+	// In injectStyles(), update the badge style sections:
+
 	private injectStyles() {
 		if (this.styleEl) {
 			this.styleEl.remove();
@@ -431,7 +433,7 @@ export default class SidenotePlugin extends Plugin {
 			? `color: ${s.numberColor} !important;`
 			: "";
 
-		// Neumorphic badge styles
+		// Neumorphic badge styles (square/rounded corners)
 		const neumorphicStyles =
 			s.numberBadgeStyle === "neumorphic"
 				? `
@@ -492,7 +494,78 @@ export default class SidenotePlugin extends Plugin {
     `
 				: "";
 
-		// Plain number styles (when not neumorphic)
+		// Pill badge styles (fully rounded, gradient, shadow)
+		const pillStyles =
+			s.numberBadgeStyle === "pill"
+				? `
+        /* Pill badge variables */
+        :root {
+            --sn-pill-bg: linear-gradient(135deg, var(--interactive-accent) 0%, var(--interactive-accent-hover) 100%);
+            --sn-pill-text: #ffffff;
+						--sn-pill-border: rgba(255, 255, 255, 0.1);
+            --sn-pill-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+            --sn-pill-hover-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+        }
+
+        .sidenote-margin[data-sidenote-num]::before {
+            content: attr(data-sidenote-num) !important;
+            display: inline-flex !important;
+            align-items: center;
+            justify-content: center;
+            min-width: 1.5em;
+            height: 1.5em;
+            margin-right: 10px;
+            padding: 0 6px;
+            background: ${s.numberColor ? s.numberColor : "var(--sn-pill-bg)"} !important;
+            border: 1px solid var(--sn-pill-border) !important;
+            border-radius: 999px !important;
+            color: var(--sn-pill-text) !important;
+            font-family: var(--font-monospace) !important;
+            font-size: 0.8em !important;
+            font-weight: 700 !important;
+            vertical-align: middle;
+            line-height: 1;
+            box-shadow: var(--sn-pill-shadow);
+            transition: box-shadow 0.15s ease, transform 0.15s ease;
+        }
+
+        .sidenote-margin:hover[data-sidenote-num]::before {
+            box-shadow: var(--sn-pill-hover-shadow);
+            transform: scale(1.1);
+        }
+
+        .sidenote-margin[data-editing="true"][data-sidenote-num]::before {
+            box-shadow: var(--sn-pill-hover-shadow);
+            transform: scale(1.1);
+        }
+
+        .sidenote-number::after {
+            content: attr(data-sidenote-num);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 1.2em;
+            height: 1.2em;
+            background: ${s.numberColor ? s.numberColor : "var(--sn-pill-bg)"};
+            border: 1px solid var(--sn-pill-border) !important;
+            border-radius: 999px;
+            color: var(--sn-pill-text);
+            font-size: 0.7em;
+            font-weight: 700;
+            margin-left: 2px;
+            margin-right: 0.2rem;
+            vertical-align: super;
+            line-height: 0;
+            box-shadow: var(--sn-pill-shadow);
+        }
+
+        .sidenote-number:hover::after {
+            box-shadow: var(--sn-pill-hover-shadow);
+        }
+    `
+				: "";
+
+		// Plain number styles (when not neumorphic or pill)
 		const plainNumberStyles =
 			s.numberBadgeStyle === "plain"
 				? `
@@ -704,11 +777,11 @@ export default class SidenotePlugin extends Plugin {
 
         ${plainNumberStyles}
         ${neumorphicStyles}
+        ${pillStyles}
     `;
 
 		document.head.appendChild(this.styleEl);
 	}
-
 	// ==================== Number Formatting ====================
 
 	private formatNumber(num: number): string {
@@ -1464,6 +1537,9 @@ export default class SidenotePlugin extends Plugin {
 					// Make margin editable and set up edit handling with the correct index
 					this.setupMarginEditing(margin, span, docPos, index);
 
+					// Add click handler to select only the text content, not the HTML tags
+					this.setupSidenoteClickHandler(wrapper, index);
+
 					span.parentNode?.insertBefore(wrapper, span);
 					wrapper.appendChild(span);
 					wrapper.appendChild(margin);
@@ -1740,6 +1816,65 @@ export default class SidenotePlugin extends Plugin {
 		}
 
 		return frag;
+	}
+
+	/**
+	 * Set up a click handler on the sidenote wrapper to select only the text content,
+	 * not the HTML tags, when clicked in the editor.
+	 */
+	private setupSidenoteClickHandler(
+		wrapper: HTMLElement,
+		sidenoteIndex: number,
+	) {
+		wrapper.addEventListener("click", (e) => {
+			// Only handle clicks on the sidenote span itself, not the margin
+			const target = e.target as HTMLElement;
+			if (target.closest(".sidenote-margin")) {
+				return; // Let the margin editing handler deal with this
+			}
+
+			// Prevent default selection behavior
+			e.preventDefault();
+			e.stopPropagation();
+
+			const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+			if (!view?.editor) return;
+
+			const editor = view.editor;
+			const content = editor.getValue();
+
+			// Find the Nth sidenote in the source
+			const sidenoteRegex =
+				/<span\s+class\s*=\s*["']sidenote["'][^>]*>([\s\S]*?)<\/span>/gi;
+
+			let match: RegExpExecArray | null;
+			let currentIndex = 0;
+
+			while ((match = sidenoteRegex.exec(content)) !== null) {
+				currentIndex++;
+
+				if (currentIndex === sidenoteIndex) {
+					// Found our sidenote - calculate positions for just the text content
+					const fullMatch = match[0];
+					const textContent = match[1] ?? "";
+
+					// Find where the text starts (after the opening tag)
+					const openingTagEnd = fullMatch.indexOf(">") + 1;
+					const textStart = match.index + openingTagEnd;
+					const textEnd = textStart + textContent.length;
+
+					// Convert to editor positions
+					const from = editor.offsetToPos(textStart);
+					const to = editor.offsetToPos(textEnd);
+
+					// Set the selection to just the text content
+					editor.setSelection(from, to);
+					editor.focus();
+
+					return;
+				}
+			}
+		});
 	}
 
 	// ==================== Margin Editing ====================
@@ -2075,14 +2210,14 @@ class SidenoteSettingTab extends PluginSettingTab {
 			.addDropdown((dropdown) =>
 				dropdown
 					.addOption("plain", "Plain (superscript)")
-					.addOption("neumorphic", "Neumorphic (badge)")
+					.addOption("neumorphic", "Neumorphic (subtle badge)")
+					.addOption("pill", "Pill (colored capsule)")
 					.setValue(this.plugin.settings.numberBadgeStyle)
-					.onChange(async (value: "plain" | "neumorphic") => {
+					.onChange(async (value: "plain" | "neumorphic" | "pill") => {
 						this.plugin.settings.numberBadgeStyle = value;
 						await this.plugin.saveSettings();
 					}),
 			);
-
 		new Setting(containerEl)
 			.setName("Number color")
 			.setDesc(
