@@ -6,6 +6,15 @@ import {
 	TFile,
 	App,
 } from "obsidian";
+import {
+	EditorView,
+	ViewUpdate,
+	ViewPlugin,
+	Decoration,
+	DecorationSet,
+	WidgetType,
+} from "@codemirror/view";
+import { EditorState } from "@codemirror/state";
 
 type CleanupFn = () => void;
 
@@ -127,8 +136,10 @@ export default class SidenotePlugin extends Plugin {
 		this.injectStyles();
 		this.setupVisibilityObserver();
 
-		// Add command to insert sidenote
+		// Register the CM6 extension for footnote sidenotes in editing mode
+		this.registerEditorExtension([createFootnoteSidenotePlugin(this)]);
 
+		// Add command to insert sidenote
 		this.addCommand({
 			id: "insert-sidenote",
 			name: "Insert sidenote",
@@ -240,6 +251,25 @@ export default class SidenotePlugin extends Plugin {
 
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
 		this.cleanupView(view);
+	}
+
+	// Add public methods that the widget can call
+	public renderLinksToFragmentPublic(text: string): DocumentFragment {
+		return this.renderLinksToFragment(text);
+	}
+
+	public normalizeTextPublic(s: string): string {
+		return this.normalizeText(s);
+	}
+
+	public parseFootnoteDefinitionsPublic(
+		content: string,
+	): Map<string, string> {
+		return this.parseFootnoteDefinitions(content);
+	}
+
+	public formatNumberPublic(num: number): string {
+		return this.formatNumber(num);
 	}
 
 	private cleanupView(view: MarkdownView | null) {
@@ -521,7 +551,7 @@ export default class SidenotePlugin extends Plugin {
 				? `
         /* Pill badge variables */
         :root {
-            --sn-pill-bg: linear-gradient(135deg, var(--interactive-accent) 0%, var(--interactive-accent-hover) 100%);
+						--sn-pill-bg: rgba(255, 255, 255, 0.05);
             --sn-pill-text: #ffffff;
 						--sn-pill-border: rgba(255, 255, 255, 0.1);
             --sn-pill-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
@@ -571,7 +601,7 @@ export default class SidenotePlugin extends Plugin {
             border: 1px solid var(--sn-pill-border) !important;
             border-radius: 999px;
             color: var(--sn-pill-text);
-            font-size: 0.7em;
+            font-size: 0.66em;
             font-weight: 700;
             margin-left: 2px;
             margin-right: 0.2rem;
@@ -819,6 +849,34 @@ export default class SidenotePlugin extends Plugin {
 				}
 				`
 						: ""
+				}
+
+				/* CM6 footnote sidenote widget */
+				.cm-line .sidenote-number[data-footnote-id] {
+						position: relative;
+						display: inline;
+				}
+
+				.cm-line .sidenote-number[data-footnote-id] .sidenote-margin {
+						position: absolute;
+						top: 0;
+						width: var(--sidenote-width);
+				}
+
+				.markdown-source-view.mod-cm6[data-sidenote-position="left"] .cm-line .sidenote-number[data-footnote-id] .sidenote-margin {
+						left: calc(-1 * (var(--sidenote-width) + var(--sidenote-gap)));
+						right: auto;
+				}
+
+				.markdown-source-view.mod-cm6[data-sidenote-position="right"] .cm-line .sidenote-number[data-footnote-id] .sidenote-margin {
+						right: calc(-1 * (var(--sidenote-width) + var(--sidenote-gap)));
+						left: auto;
+				}
+
+				/* Hide original footnote reference when converted */
+				.cm-line .sidenote-number[data-footnote-id] + .cm-footref,
+				.cm-line .sidenote-number[data-footnote-id] ~ .cm-footref {
+						/* Keep visible but we add our number */
 				}
     `;
 
@@ -2990,18 +3048,15 @@ class SidenoteSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Convert footnotes to sidenotes")
 			.setDesc(
-				"Display standard Obsidian footnotes as sidenotes in the margin (Reading mode only)",
+				"Display standard Obsidian footnotes as sidenotes in the margin",
 			)
 			.addDropdown((dropdown) =>
 				dropdown
 					.addOption("off", "Off")
 					.addOption("reading", "Reading mode only")
-					.setValue(
-						this.plugin.settings.convertFootnotes === "both"
-							? "reading"
-							: this.plugin.settings.convertFootnotes,
-					)
-					.onChange(async (value: "off" | "reading") => {
+					// .addOption("both", "Reading and editing modes")
+					.setValue(this.plugin.settings.convertFootnotes)
+					.onChange(async (value: "off" | "reading" | "both") => {
 						this.plugin.settings.convertFootnotes = value;
 						await this.plugin.saveSettings();
 					}),
@@ -3236,4 +3291,206 @@ class SidenoteSettingTab extends PluginSettingTab {
             <p>Use the command palette to insert sidenotes quickly.</p>
         `;
 	}
+}
+
+// ==================== CodeMirror 6 Footnote Sidenote Widget ====================
+
+/**
+ * Widget that displays a footnote as a sidenote in the margin.
+ */
+class FootnoteSidenoteWidget extends WidgetType {
+	constructor(
+		readonly content: string,
+		readonly numberText: string,
+		readonly footnoteId: string,
+		readonly plugin: SidenotePlugin,
+	) {
+		super();
+	}
+
+	toDOM(): HTMLElement {
+		const wrapper = document.createElement("span");
+		wrapper.className = "sidenote-number";
+		wrapper.dataset.sidenoteNum = this.numberText;
+		wrapper.dataset.footnoteId = this.footnoteId;
+
+		const margin = document.createElement("small");
+		margin.className = "sidenote-margin";
+		margin.dataset.sidenoteNum = this.numberText;
+
+		// Render the content with markdown formatting support
+		const fragment = this.plugin.renderLinksToFragmentPublic(
+			this.plugin.normalizeTextPublic(this.content),
+		);
+		margin.appendChild(fragment);
+
+		wrapper.appendChild(margin);
+
+		return wrapper;
+	}
+
+	eq(other: FootnoteSidenoteWidget): boolean {
+		return (
+			this.content === other.content &&
+			this.numberText === other.numberText &&
+			this.footnoteId === other.footnoteId
+		);
+	}
+
+	ignoreEvent(): boolean {
+		return false;
+	}
+}
+
+/**
+ * CodeMirror 6 ViewPlugin that adds sidenote decorations for footnotes.
+ */
+class FootnoteSidenoteViewPlugin {
+	decorations: DecorationSet;
+
+	constructor(
+		private view: EditorView,
+		private plugin: SidenotePlugin,
+	) {
+		this.decorations = this.buildDecorations(view.state);
+	}
+
+	update(update: ViewUpdate) {
+		if (
+			update.docChanged ||
+			update.viewportChanged ||
+			update.geometryChanged
+		) {
+			this.decorations = this.buildDecorations(update.state);
+		}
+	}
+
+	buildDecorations(state: EditorState): DecorationSet {
+		if (this.plugin.settings.convertFootnotes !== "both") {
+			return Decoration.none;
+		}
+
+		const decorations: { from: number; decoration: Decoration }[] = [];
+		const content = state.doc.toString();
+
+		// Parse footnote definitions first
+		const footnoteDefinitions =
+			this.plugin.parseFootnoteDefinitionsPublic(content);
+
+		// Find all footnote references [^id] (not definitions [^id]:)
+		const referenceRegex = /\[\^([^\]]+)\](?!:)/g;
+		let match: RegExpExecArray | null;
+
+		// Track footnote order for numbering
+		const footnoteOrder: string[] = [];
+
+		// First pass: collect all footnote references in order
+		while ((match = referenceRegex.exec(content)) !== null) {
+			const id = match[1];
+			if (id && !footnoteOrder.includes(id)) {
+				footnoteOrder.push(id);
+			}
+		}
+
+		// Reset regex
+		referenceRegex.lastIndex = 0;
+
+		// Also collect sidenotes for combined numbering
+		const sidenoteRegex =
+			/<span\s+class\s*=\s*["']sidenote["'][^>]*>[\s\S]*?<\/span>/gi;
+		const allItems: {
+			type: "sidenote" | "footnote";
+			pos: number;
+			id?: string;
+		}[] = [];
+
+		let sidenoteMatch: RegExpExecArray | null;
+		while ((sidenoteMatch = sidenoteRegex.exec(content)) !== null) {
+			allItems.push({ type: "sidenote", pos: sidenoteMatch.index });
+		}
+
+		while ((match = referenceRegex.exec(content)) !== null) {
+			const id = match[1];
+			if (id && footnoteDefinitions.has(id)) {
+				allItems.push({ type: "footnote", pos: match.index, id });
+			}
+		}
+
+		// Sort by position
+		allItems.sort((a, b) => a.pos - b.pos);
+
+		// Assign numbers
+		const itemNumbers = new Map<number, number>();
+		let num = 1;
+		for (const item of allItems) {
+			itemNumbers.set(item.pos, num++);
+		}
+
+		// Reset regex again for final pass
+		referenceRegex.lastIndex = 0;
+
+		// Second pass: create decorations
+		while ((match = referenceRegex.exec(content)) !== null) {
+			const from = match.index;
+			const to = from + match[0].length;
+			const id = match[1];
+
+			if (!id) continue;
+
+			const footnoteContent = footnoteDefinitions.get(id);
+			if (!footnoteContent) continue;
+
+			const itemNum = itemNumbers.get(from) ?? 1;
+			const numberText = this.plugin.formatNumberPublic(itemNum);
+
+			decorations.push({
+				from: to,
+				decoration: Decoration.widget({
+					widget: new FootnoteSidenoteWidget(
+						footnoteContent,
+						numberText,
+						id,
+						this.plugin,
+					),
+					side: 1,
+				}),
+			});
+		}
+
+		// Sort by position and create DecorationSet
+		decorations.sort((a, b) => a.from - b.from);
+		return Decoration.set(
+			decorations.map((d) => d.decoration.range(d.from)),
+		);
+	}
+
+	destroy() {
+		// Cleanup if needed
+	}
+}
+
+/**
+ * Create the CodeMirror 6 ViewPlugin for footnote sidenotes.
+ */
+function createFootnoteSidenotePlugin(plugin: SidenotePlugin) {
+	return ViewPlugin.fromClass(
+		class {
+			inner: FootnoteSidenoteViewPlugin;
+
+			constructor(view: EditorView) {
+				this.inner = new FootnoteSidenoteViewPlugin(view, plugin);
+			}
+
+			update(update: ViewUpdate) {
+				this.inner.update(update);
+			}
+
+			destroy() {
+				this.inner.destroy();
+			}
+		},
+		{
+			decorations: (v) => v.inner.decorations,
+		},
+	);
 }

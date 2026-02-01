@@ -1,25 +1,27 @@
 # Sidenotes
 
-I first discovered sidenotes, at least in a conscious way, on [Gwern.net](https://gwern.net/sidenote) which was referencing [Edward Tufte's conventions](https://edwardtufte.github.io/tufte-css/).
+I first discovered sidenotes, in a conscious way, on [Gwern.net](https://gwern.net/sidenote) which was referencing [Edward Tufte's conventions](https://edwardtufte.github.io/tufte-css/).
 
-My goal is to have the same sidenotes work in both Obsidian and the web published version of my notes.
+My goal is to have the same sidenotes work in both Obsidian **and** the web published version of my notes.
 
-![Screenshot](https://github.com/cparsell/sidenotes/blob/main/Screenshot2.png)
+![Sidenotes Basics](https://github.com/cparsell/sidenotes/blob/main/Screenshot2.png)
+
+![Neumorphic badges](https://github.com/cparsell/sidenotes/blob/main/Screenshot-badges.png)
 
 ### Features:
 
 - **Sidenotes**: Sidenotes are displayed in the margin of a note. Run command `Insert Sidenote` to start one. Sidenotes are encoded using a small HTML tag `<span class="sidenote">`.
-	- **External and Internal link support**
-	- **Supports basic Markdown formatting:** **Bold**, *italic*, and `inline code`
-	- Works in _Editing_ and _Reading_ modes
+  - **External and Internal link support**
+  - **Supports basic Markdown formatting:** **Bold**, _italic_, and `inline code`
+  - Works in _Editing_ and _Reading_ modes
 - **They are editable in the margin**. Click on it, edit, and press enter.
 - **Dynamic styling**: Font size shrinks as horizontal space get smaller. At a certain breakpoint, sidenotes hide when a window gets too skinny.
 - **Settings**:
-	- Show sidenotes in left or right margin
-	- Superscript numbers can be added to the text. The numbers increment automatically.
-	- Number styled as Arabic numbers, Roman, letters, or no numbers
-	- Customize spacing to tweak how it takes up space in the margin
-	- Customize font size, line height, text alignment, and color
+  - Show sidenotes in left or right margin
+  - Superscript numbers can be added to the text. The numbers increment automatically.
+  - Number styled as Arabic numbers, Roman, letters, or no numbers
+  - Customize spacing to tweak how it takes up space in the margin
+  - Customize font size, line height, text alignment, and color
 
 ### Goal Features:
 
@@ -56,6 +58,7 @@ These are some other strategies I've seen for sidenotes in Obsidian.
 ## Use
 
 Run the command `Insert Sidenote`. It will insert this:
+
 ```html
 <span class="sidenote">{cursor}</span>
 ```
