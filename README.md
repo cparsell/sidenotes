@@ -12,10 +12,12 @@ _An optional style that highlights references. Useful in long texts_
 
 ### Features:
 
-- **Sidenotes**: Sidenotes are displayed in the margin of a note. Run command `Insert Sidenote` to start one. Sidenotes are encoded using a small HTML tag `<span class="sidenote">`.
+- **Sidenotes**: Sidenotes are displayed in the margin of a note. Run command `Insert Sidenote` to start one.
   - **External and Internal link support**
   - **Supports basic Markdown formatting:** **Bold**, _italic_, and `inline code`
-  - Works in _Editing_ and _Reading_ modes
+  - Sidenotes can be encoded using **footnotes** or an **HTML tag** `<span class="sidenote">`.
+  - HTML Tag sidenotes work in _Editing_ and _Reading_ modes. When using footnotes, this currently only works in Reading Mode.
+
 - **They are editable in the margin**. Click on it, edit, and press enter.
 - **Dynamic styling**: Font size shrinks as horizontal space get smaller. At a certain breakpoint, sidenotes hide when a window gets too skinny.
 - **Settings**:
@@ -33,7 +35,8 @@ _An optional style that highlights references. Useful in long texts_
 
 ### Known issues
 
-- Sidenotes seem to collide with each other in certain circumstances. So far I just see it in Reading Mode.
+- ~~Footnotes, when converted to sidenotes, collide and/or are not positioned properly in the sidenote column.~~ (Tentatively fixed 2/3/26)
+- ~~Sidenotes seem to collide with each other in certain circumstances. So far I just see it in Reading Mode.~~ (Fixed 2/2/26)
 - ~~Numbers may not update immediately when sequencing changes. For example, if the first sidenote is removed, the second one becomes the first but may still be annotated 2. Reopening the note fixes it~~ (Fixed 1/30/26)
 - ~~The cursor is brought to the top of the note after editing in the margin, if one edits/deletes the content in the note.~~ (Fixed 1/31/26)
 - ~~When editing sidenotes in the margin, after pressing enter, the wrong sidenote may get updated if two sidenotes have the same text~~ (Fixed 1/31/26).
