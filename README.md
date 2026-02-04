@@ -7,7 +7,7 @@ My goal is to have the same sidenotes work in both Obsidian **and** the web publ
 ![Sidenotes Basics](https://github.com/cparsell/sidenotes/blob/main/Screenshot2.png)
 _Basic sidenote capabilities demonstrated_
 
-![Neumorphic badges](https://github.com/cparsell/sidenotes/blob/main/Screenshot-badges.png)
+![Neumorphic badges](https://github.com/cparsell/sidenotes/blob/main/Screenshot-badges-multi.png)
 _An optional style that highlights references. Useful in long texts_
 
 ### Features:
@@ -31,7 +31,6 @@ _An optional style that highlights references. Useful in long texts_
 
 - **Optional Markdown style syntax:** I'd like an optional Markdown-style mode to enable some sort of coded sidenote like `;;sidenote text;;` or `&&sidenote text&&`. Currently, it only responds to this one HTML tag `<span class="sidenote">`. The benefit of HTML syntax is that it can be made to work in web-published notes as well.
 - An option to convert footnotes into sidenotes in Reading Mode and in Editing Mode. Current only works in Reading Mode.
-- ~~Add a command for `Create a new sidenote` so it can be hotkeyed~~ (added 1/30/26).
 
 ### Known issues
 
