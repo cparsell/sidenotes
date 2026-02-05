@@ -59,14 +59,21 @@ These are some other strategies I've seen for sidenotes in Obsidian.
 
 1. Add the plugin to Obsidian. If copying manually from this repo, you can copy the contents of `/sidenotes-helper/` into `your-vault/.obsidian/plugins/sidenotes-helper`.
 2. If copying manually, restart Obsidian and then enable the plugin in **Settings**.
+3. Choose some settings that make sense for you.
+
+- Sidenote format: **Footnotes** or HTML
 
 ## Use
 
-Run the command `Insert Sidenote`. It will insert this:
+Run the command `Insert Sidenote`.
+
+**If using HTML** It will insert this:
 
 ```html
 <span class="sidenote">{cursor}</span>
 ```
+
+**If using footnotes**, it will insert `[^1]` and create a sidenote for you to enter text in.
 
 ## Web Publishing
 
