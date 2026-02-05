@@ -29,7 +29,7 @@ _An optional style that highlights references_
 
 ### Goal Features
 
-- None - Submit any suggestions either as an "issue" here or in [this Obsidian Forum post](https://forum.obsidian.md/t/plugin-sidenotes/110632/19).
+- None - Submit any suggestions either as an [issue](https://github.com/cparsell/sidenotes/issues) or in [this Obsidian Forum post](https://forum.obsidian.md/t/plugin-sidenotes/110632/19).
 
 ## Alternatives
 
