@@ -1,7 +1,7 @@
 {
 	"id": "sidenotes",
 	"name": "Sidenotes",
-	"version": "0.1.5",
+	"version": "0.1.6",
 	"minAppVersion": "1.10.0",
 	"description": "Adds ability to create sidenotes in Obsidian with incrementing numbers.",
 	"author": "cparsell",
