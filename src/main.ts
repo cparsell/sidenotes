@@ -19,6 +19,7 @@ import { EditorState } from "@codemirror/state";
 type CleanupFn = () => void;
 
 // Settings interface
+// Settings interface
 interface SidenoteSettings {
 	// Display
 	sidenotePosition: "left" | "right";
@@ -31,6 +32,8 @@ interface SidenoteSettings {
 	minSidenoteWidth: number;
 	maxSidenoteWidth: number;
 	sidenoteGap: number;
+	sidenoteGap2: number;
+	sidenoteAnchor: "text" | "edge";
 	pageOffsetFactor: number;
 
 	// Breakpoints
@@ -65,6 +68,8 @@ const DEFAULT_SETTINGS: SidenoteSettings = {
 	minSidenoteWidth: 10,
 	maxSidenoteWidth: 18,
 	sidenoteGap: 2,
+	sidenoteGap2: 1,
+	sidenoteAnchor: "text",
 	pageOffsetFactor: 0.8,
 
 	// Breakpoints
@@ -749,460 +754,639 @@ export default class SidenotePlugin extends Plugin {
 		const neumorphicStyles =
 			s.numberBadgeStyle === "neumorphic"
 				? `
-        /* Neumorphic badge variables */
-        :root {
-					--sn-badge-bg: rgba(243, 245, 250, 0.05);
-					--sn-badge-text: var(--text-muted);
-					--sn-badge-border: rgba(243, 245, 250, 0.1);
-					--sn-active-bg: rgba(243, 245, 250, 0.1);
-					--sn-active-text: #ffffff;
-        }
+					/* Neumorphic badge variables */
+					:root {
+								--sn-badge-bg: rgba(243, 245, 250, 0.05);
+								--sn-badge-text: var(--text-muted);
+								--sn-badge-border: rgba(243, 245, 250, 0.1);
+								--sn-active-bg: rgba(243, 245, 250, 0.1);
+								--sn-active-text: #ffffff;
+					}
 
-        .sidenote-margin[data-sidenote-num]::before {
-					content: attr(data-sidenote-num) !important;
-					display: inline-flex !important;
-					align-items: center;
-					justify-content: center;
-					min-width: 1.7em;
-					height: 1.7em;
-					margin-right: 8px;
-					padding: 0 4px;
-					background-color: var(--sn-badge-bg) !important;
-					border: 1px solid var(--sn-badge-border) !important;
-					border-radius: 4px !important;
-					color: ${s.numberColor || "var(--sn-badge-text)"} !important;
-					font-family: var(--font-monospace) !important;
-					font-size: 0.85em !important;
-					font-weight: 600 !important;
-					vertical-align: middle;
-					line-height: 1;
-        }
+					.sidenote-margin[data-sidenote-num]::before {
+								content: attr(data-sidenote-num) !important;
+								display: inline-flex !important;
+								align-items: center;
+								justify-content: center;
+								min-width: 1.7em;
+								height: 1.7em;
+								margin-right: 8px;
+								padding: 0 4px;
+								background-color: var(--sn-badge-bg) !important;
+								border: 1px solid var(--sn-badge-border) !important;
+								border-radius: 4px !important;
+								color: ${s.numberColor || "var(--sn-badge-text)"} !important;
+								font-family: var(--font-monospace) !important;
+								font-size: 0.85em !important;
+								font-weight: 600 !important;
+								vertical-align: middle;
+								line-height: 1;
+					}
 
-        .sidenote-margin:hover[data-sidenote-num]::before,
-        .sidenote-margin[data-editing="true"][data-sidenote-num]::before {
-					background-color: var(--sn-active-bg) !important;
-					color: var(--sn-active-text) !important;
-					/* border-color: transparent !important; */
-        }
+					.sidenote-margin:hover[data-sidenote-num]::before,
+					.sidenote-margin[data-editing="true"][data-sidenote-num]::before {
+								background-color: var(--sn-active-bg) !important;
+								color: var(--sn-active-text) !important;
+					}
 
-        .sidenote-number::after {
-					content: attr(data-sidenote-num);
-					display: inline-flex;
-					align-items: center;
-					justify-content: center;
-					min-width: 1.3em;
-					height: 1.4em;
-					background-color: var(--sn-badge-bg);
-					border: 1px solid var(--sn-badge-border);
-					border-radius: 3px;
-					color: ${s.numberColor || "var(--sn-badge-text)"};
-					font-size: 0.7em;
-					font-weight: bold;
-					margin-left: 2px;
-					margin-right: 0.2rem;
-					vertical-align: super;
-					line-height: 0;
-        }
-				
-				.sidenote-number:hover {
-					color: #ffffff;
-	      }
-    `
+					.sidenote-number::after {
+								content: attr(data-sidenote-num);
+								display: inline-flex;
+								align-items: center;
+								justify-content: center;
+								min-width: 1.3em;
+								height: 1.4em;
+								background-color: var(--sn-badge-bg);
+								border: 1px solid var(--sn-badge-border);
+								border-radius: 3px;
+								color: ${s.numberColor || "var(--sn-badge-text)"};
+								font-size: 0.7em;
+								font-weight: bold;
+								margin-left: 2px;
+								margin-right: 0.2rem;
+								vertical-align: super;
+								line-height: 0;
+					}
+							
+							.sidenote-number:hover {
+								color: #ffffff;
+						}
+					`
 				: "";
 
 		// Pill badge styles (fully rounded, gradient, shadow)
 		const pillStyles =
 			s.numberBadgeStyle === "pill"
 				? `
-        /* Pill badge variables */
-        :root {
-					--sn-pill-bg: rgba(255, 255, 255, 0.05);
-					--sn-pill-text: #ffffff;
-					--sn-pill-border: rgba(255, 255, 255, 0.1);
-					--sn-pill-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-					--sn-pill-hover-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
-        }
+					/* Pill badge variables */
+					:root {
+								--sn-pill-bg: rgba(255, 255, 255, 0.05);
+								--sn-pill-text: #ffffff;
+								--sn-pill-border: rgba(255, 255, 255, 0.1);
+								--sn-pill-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+								--sn-pill-hover-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+					}
 
-        .sidenote-margin[data-sidenote-num]::before {
-					content: attr(data-sidenote-num) !important;
-					display: inline-flex !important;
-					align-items: center;
-					justify-content: center;
-					min-width: 1.5em;
-					height: 1.5em;
-					margin-right: 10px;
-					padding: 0 6px;
-					background: ${s.numberColor ? s.numberColor : "var(--sn-pill-bg)"} !important;
-					border: 1px solid var(--sn-pill-border) !important;
-					border-radius: 999px !important;
-					color: var(--sn-pill-text) !important;
-					font-family: var(--font-monospace) !important;
-					font-size: 0.8em !important;
-					font-weight: 700 !important;
-					vertical-align: middle;
-					line-height: 1;
-					box-shadow: var(--sn-pill-shadow);
-					transition: box-shadow 0.15s ease, transform 0.15s ease;
-        }
+					.sidenote-margin[data-sidenote-num]::before {
+								content: attr(data-sidenote-num) !important;
+								display: inline-flex !important;
+								align-items: center;
+								justify-content: center;
+								min-width: 1.5em;
+								height: 1.5em;
+								margin-right: 10px;
+								padding: 0 6px;
+								background: ${s.numberColor ? s.numberColor : "var(--sn-pill-bg)"} !important;
+								border: 1px solid var(--sn-pill-border) !important;
+								border-radius: 999px !important;
+								color: var(--sn-pill-text) !important;
+								font-family: var(--font-monospace) !important;
+								font-size: 0.8em !important;
+								font-weight: 700 !important;
+								vertical-align: middle;
+								line-height: 1;
+								box-shadow: var(--sn-pill-shadow);
+								transition: box-shadow 0.15s ease, transform 0.15s ease;
+					}
 
-        .sidenote-margin:hover[data-sidenote-num]::before {
-					box-shadow: var(--sn-pill-hover-shadow);
-					transform: scale(1.1);
-        }
+					.sidenote-margin:hover[data-sidenote-num]::before {
+								box-shadow: var(--sn-pill-hover-shadow);
+								transform: scale(1.1);
+					}
 
-        .sidenote-margin[data-editing="true"][data-sidenote-num]::before {
-					box-shadow: var(--sn-pill-hover-shadow);
-					transform: scale(1.1);
-        }
+					.sidenote-margin[data-editing="true"][data-sidenote-num]::before {
+								box-shadow: var(--sn-pill-hover-shadow);
+								transform: scale(1.1);
+					}
 
-        .sidenote-number::after {
-					content: attr(data-sidenote-num);
-					display: inline-flex;
-					align-items: center;
-					justify-content: center;
-					min-width: 1.2em;
-					height: 1.2em;
-					background: ${s.numberColor ? s.numberColor : "var(--sn-pill-bg)"};
-					border: 1px solid var(--sn-pill-border) !important;
-					border-radius: 999px;
-					color: var(--sn-pill-text);
-					font-size: 0.66em;
-					font-weight: 700;
-					margin-left: 2px;
-					margin-right: 0.2rem;
-					vertical-align: super;
-					line-height: 0;
-					box-shadow: var(--sn-pill-shadow);
-        }
+					.sidenote-number::after {
+								content: attr(data-sidenote-num);
+								display: inline-flex;
+								align-items: center;
+								justify-content: center;
+								min-width: 1.2em;
+								height: 1.2em;
+								background: ${s.numberColor ? s.numberColor : "var(--sn-pill-bg)"};
+								border: 1px solid var(--sn-pill-border) !important;
+								border-radius: 999px;
+								color: var(--sn-pill-text);
+								font-size: 0.66em;
+								font-weight: 700;
+								margin-left: 2px;
+								margin-right: 0.2rem;
+								vertical-align: super;
+								line-height: 0;
+								box-shadow: var(--sn-pill-shadow);
+					}
 
-        .sidenote-number:hover::after {
-          box-shadow: var(--sn-pill-hover-shadow);
-        }
+					.sidenote-number:hover::after {
+						box-shadow: var(--sn-pill-hover-shadow);
+					}
 
-				.sidenote-number:hover {
-					color: #ffffff;
-				}
-    `
+							.sidenote-number:hover {
+								color: #ffffff;
+							}
+						`
 				: "";
 
 		// Plain number styles (when not neumorphic or pill)
 		const plainNumberStyles =
 			s.numberBadgeStyle === "plain"
 				? `
-        .sidenote-number {
-            line-height: 0;
-        }
+					.sidenote-number {
+						line-height: 0;
+					}
 
-        .sidenote-number::after {
-            content: ${s.showSidenoteNumbers ? "attr(data-sidenote-num)" : "none"};
-            vertical-align: baseline;
-            position: relative;
-            top: -0.5em;
-            font-size: 0.7em;
-            font-weight: bold;
-            margin-right: 0.2rem;
-            line-height: 0;
-            ${numberColorRule}
-        }
+					.sidenote-number::after {
+						content: ${s.showSidenoteNumbers ? "attr(data-sidenote-num)" : "none"};
+						vertical-align: baseline;
+						position: relative;
+						top: -0.5em;
+						font-size: 0.7em;
+						font-weight: bold;
+						margin-right: 0.2rem;
+						line-height: 0;
+						${numberColorRule}
+					}
 
-        .sidenote-margin[data-sidenote-num]::before {
-            content: ${s.showSidenoteNumbers ? 'attr(data-sidenote-num) ". "' : "none"};
-            font-weight: bold;
-            ${numberColorRule}
-        }
-    `
+					.sidenote-margin[data-sidenote-num]::before {
+						content: ${s.showSidenoteNumbers ? 'attr(data-sidenote-num) ". "' : "none"};
+						font-weight: bold;
+						${numberColorRule}
+					}
+				`
 				: "";
 
-		this.styleEl.textContent = `
-        /* === Sidenote layout variables === */
-        .markdown-source-view.mod-cm6,
-        .markdown-reading-view {
-            --sidenote-base-width: ${s.minSidenoteWidth}rem;
-            --sidenote-max-extra: ${s.maxSidenoteWidth - s.minSidenoteWidth}rem;
-            --sidenote-width: calc(
-                var(--sidenote-base-width) + 
-                (var(--sidenote-max-extra) * var(--sidenote-scale, 0.5))
-            );
-            --sidenote-gap: ${s.sidenoteGap}rem;
-            --page-offset: calc((var(--sidenote-width) + var(--sidenote-gap)) * ${s.pageOffsetFactor});
-        }
-        
-        .markdown-source-view.mod-cm6[data-sidenote-mode="compact"],
-        .markdown-reading-view[data-sidenote-mode="compact"] {
-            --sidenote-base-width: ${Math.max(s.minSidenoteWidth - 2, 6)}rem;
-            --sidenote-max-extra: ${Math.max((s.maxSidenoteWidth - s.minSidenoteWidth) / 2, 2)}rem;
-            --sidenote-gap: ${Math.max(s.sidenoteGap - 1, 0.5)}rem;
-        }
-        
-        .markdown-source-view.mod-cm6[data-sidenote-mode="full"],
-        .markdown-reading-view[data-sidenote-mode="full"] {
-            --sidenote-base-width: ${s.maxSidenoteWidth}rem;
-            --sidenote-max-extra: 2rem;
-            --sidenote-gap: ${s.sidenoteGap + 1}rem;
-        }
-        
-        .markdown-source-view.mod-cm6 .cm-scroller {
-            overflow-y: auto !important;
-            overflow-x: visible !important;
-        }
-        
-        /* LEFT POSITION */
-        .markdown-source-view.mod-cm6[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="compact"] .cm-scroller,
-        .markdown-source-view.mod-cm6[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="normal"] .cm-scroller,
-        .markdown-source-view.mod-cm6[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="full"] .cm-scroller {
-            padding-left: var(--page-offset) !important;
-            padding-right: 0 !important;
-        }
-        
-        .markdown-reading-view[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="compact"] .markdown-preview-sizer,
-        .markdown-reading-view[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="normal"] .markdown-preview-sizer,
-        .markdown-reading-view[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="full"] .markdown-preview-sizer {
-            padding-left: var(--page-offset) !important;
-            padding-right: 0 !important;
-        }
-        
-        .markdown-source-view.mod-cm6[data-sidenote-position="left"] .sidenote-margin,
-        .markdown-reading-view[data-sidenote-position="left"] .sidenote-margin {
-            left: calc(-1 * (var(--sidenote-width) + var(--sidenote-gap)));
-            right: auto;
-            text-align: ${textAlign};
-        }
-        
-        /* RIGHT POSITION */
-        .markdown-source-view.mod-cm6[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="compact"] .cm-scroller,
-        .markdown-source-view.mod-cm6[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="normal"] .cm-scroller,
-        .markdown-source-view.mod-cm6[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="full"] .cm-scroller {
-            padding-right: var(--page-offset) !important;
-            padding-left: 0 !important;
-        }
-        
-        .markdown-reading-view[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="compact"] .markdown-preview-sizer,
-        .markdown-reading-view[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="normal"] .markdown-preview-sizer,
-        .markdown-reading-view[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="full"] .markdown-preview-sizer {
-            padding-right: var(--page-offset) !important;
-            padding-left: 0 !important;
-        }
-        
-        .markdown-source-view.mod-cm6[data-sidenote-position="right"] .sidenote-margin,
-        .markdown-reading-view[data-sidenote-position="right"] .sidenote-margin {
-            right: calc(-1 * (var(--sidenote-width) + var(--sidenote-gap)));
-            left: auto;
-            text-align: ${textAlign};
-        }
-        
-        .markdown-source-view.mod-cm6 .cm-editor,
-        .markdown-source-view.mod-cm6 .cm-content,
-        .markdown-source-view.mod-cm6 .cm-sizer,
-        .markdown-source-view.mod-cm6 .cm-contentContainer {
-            overflow: visible !important;
-        }
-        
-        .markdown-source-view.mod-cm6 .cm-line {
-            position: relative;
-        }
-        
-        .markdown-reading-view p,
-        .markdown-reading-view li,
-        .markdown-reading-view h1,
-        .markdown-reading-view h2,
-        .markdown-reading-view h3,
-        .markdown-reading-view h4,
-        .markdown-reading-view h5,
-        .markdown-reading-view h6,
-        .markdown-reading-view blockquote,
-        .markdown-reading-view .callout {
-            position: relative;
-        }
-        
-        .sidenote-number > span.sidenote {
-            display: inline-block;
-            width: 0;
-            max-width: 0;
-            overflow: hidden;
-            white-space: nowrap;
-            vertical-align: baseline;
-        }
-        
-        .sidenote-margin {
-					position: absolute;
-					top: 0.2em;
-					width: var(--sidenote-width);
-					font-size: ${s.fontSize}%;
-					line-height: ${s.lineHeight};
-					overflow-wrap: break-word;
-					transform: translateY(var(--sidenote-shift, 0px));
-					will-change: transform;
-					z-index: 10;
-					pointer-events: auto;
-					${transitionRule}
+		// Generate positioning styles based on anchor mode
+		const anchorMode = s.sidenoteAnchor;
+		const gap1 = s.sidenoteGap;
+		const gap2 = s.sidenoteGap2;
+
+		// For "text" mode: sidenotes positioned relative to text, gap is from text, gap2 is min from edge
+		// For "edge" mode: sidenotes positioned relative to edge, gap is from edge, gap2 is min from text
+
+		// Inside injectStyles(), replace the positioningStyles block with:
+
+		// Replace the positioningStyles variable and related CSS with:
+
+		const positioningStyles = `
+			/* Sidenote positioning - uses --sidenote-offset calculated by JavaScript */
+			
+			/* LEFT POSITION */
+			.markdown-source-view.mod-cm6[data-sidenote-position="left"] .sidenote-margin {
+				left: var(--sidenote-offset, calc(-1 * (var(--sidenote-width) + var(--sidenote-gap))));
+				right: auto;
+				text-align: ${textAlign};
 			}
-        
-        .markdown-source-view.mod-cm6[data-sidenote-mode="compact"] .sidenote-margin,
-        .markdown-reading-view[data-sidenote-mode="compact"] .sidenote-margin {
-            font-size: ${s.fontSizeCompact}%;
-            line-height: ${Math.max(s.lineHeight - 0.1, 1.1)};
-        }
-        
-				/* Ensure margins don't overlap during transition */
-				.markdown-reading-view .sidenote-margin,
-				.markdown-source-view.mod-cm6 .sidenote-margin {
-						isolation: isolate;
-				}
-						
-        .markdown-source-view.mod-cm6[data-sidenote-mode="hidden"] .sidenote-margin,
-        .markdown-reading-view[data-sidenote-mode="hidden"] .sidenote-margin {
-            display: none;
-        }
-        
-        .markdown-source-view.mod-cm6[data-sidenote-mode=""] .sidenote-margin,
-        .markdown-reading-view[data-sidenote-mode=""] .sidenote-margin {
-            opacity: 0;
-            pointer-events: none;
-        }
-        
-        /* Style internal links in sidenotes */
-        .sidenote-margin a.internal-link {
-            cursor: pointer;
-        }
 
-        /* Editable sidenote styling */
-        .sidenote-margin[data-editing="true"] {
-            background: var(--background-modifier-form-field);
-            border-radius: 4px;
-            padding: 4px 6px;
-            outline: 2px solid var(--interactive-accent);
-            cursor: text;
-        }
+			.markdown-reading-view[data-sidenote-position="left"] .sidenote-margin {
+				left: var(--sidenote-offset, calc(-1 * (var(--sidenote-width) + var(--sidenote-gap))));
+				right: auto;
+				text-align: ${textAlign};
+			}
 
-        .sidenote-margin[data-editing="true"]::before {
-            display: none;
-        }
+			/* RIGHT POSITION */
+			.markdown-source-view.mod-cm6[data-sidenote-position="right"] .sidenote-margin {
+				right: var(--sidenote-offset, calc(-1 * (var(--sidenote-width) + var(--sidenote-gap))));
+				left: auto;
+				text-align: ${textAlign};
+			}
 
-        .sidenote-margin[contenteditable="true"] {
-            white-space: pre-wrap;
-        }
+			.markdown-reading-view[data-sidenote-position="right"] .sidenote-margin {
+				right: var(--sidenote-offset, calc(-1 * (var(--sidenote-width) + var(--sidenote-gap))));
+				left: auto;
+				text-align: ${textAlign};
+			}
 
-        /* Markdown formatting in sidenotes */
-        .sidenote-margin strong,
-        .sidenote-margin b {
-            font-weight: bold;
-        }
+			/* CM6 footnote widget - same positioning */
+			.markdown-source-view.mod-cm6[data-sidenote-position="left"] .cm-line .sidenote-number[data-footnote-id] .sidenote-margin {
+				left: var(--sidenote-offset, calc(-1 * (var(--sidenote-width) + var(--sidenote-gap))));
+				right: auto;
+				text-align: ${textAlign};
+			}
 
-        .sidenote-margin em,
-        .sidenote-margin i {
-            font-style: italic;
-        }
+			.markdown-source-view.mod-cm6[data-sidenote-position="right"] .cm-line .sidenote-number[data-footnote-id] .sidenote-margin {
+				right: var(--sidenote-offset, calc(-1 * (var(--sidenote-width) + var(--sidenote-gap))));
+				left: auto;
+				text-align: ${textAlign};
+			}
+		`;
 
-        .sidenote-margin code {
-            font-family: var(--font-monospace);
-            font-size: 0.9em;
-            background-color: var(--code-background);
-            padding: 0.1em 0.3em;
-            border-radius: 3px;
-        }
+		this.styleEl.textContent = `
+	/* === Sidenote layout variables === */
+	.markdown-source-view.mod-cm6,
+	.markdown-reading-view {
+		--sidenote-base-width: ${s.minSidenoteWidth}rem;
+		--sidenote-max-extra: ${s.maxSidenoteWidth - s.minSidenoteWidth}rem;
+		--sidenote-width: calc(
+			var(--sidenote-base-width) + 
+			(var(--sidenote-max-extra) * var(--sidenote-scale, 0.5))
+		);
+		--sidenote-gap: ${gap1}rem;
+		--sidenote-gap2: ${gap2}rem;
+		--page-offset: calc((var(--sidenote-width) + var(--sidenote-gap)) * ${s.pageOffsetFactor});
+		--sidenote-edge-offset: var(--sidenote-gap);
+	}
+	
+	.markdown-source-view.mod-cm6[data-sidenote-mode="compact"],
+	.markdown-reading-view[data-sidenote-mode="compact"] {
+		--sidenote-base-width: ${Math.max(s.minSidenoteWidth - 2, 6)}rem;
+		--sidenote-max-extra: ${Math.max((s.maxSidenoteWidth - s.minSidenoteWidth) / 2, 2)}rem;
+		--sidenote-gap: ${Math.max(gap1 - 1, 0.5)}rem;
+		--sidenote-gap2: ${Math.max(gap2 - 0.5, 0.25)}rem;
+	}
+	
+	.markdown-source-view.mod-cm6[data-sidenote-mode="full"],
+	.markdown-reading-view[data-sidenote-mode="full"] {
+		--sidenote-base-width: ${s.maxSidenoteWidth}rem;
+		--sidenote-max-extra: 2rem;
+		--sidenote-gap: ${gap1 + 1}rem;
+		--sidenote-gap2: ${gap2 + 0.5}rem;
+	}
+	
+	.markdown-source-view.mod-cm6 .cm-scroller {
+		overflow-y: auto !important;
+		overflow-x: visible !important;
+	}
+	
+	/* LEFT POSITION - page offset */
+	.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="compact"] .cm-scroller,
+	.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="normal"] .cm-scroller,
+	.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="full"] .cm-scroller {
+		padding-left: var(--page-offset) !important;
+		padding-right: 0 !important;
+	}
+	
+	.markdown-reading-view[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="compact"] .markdown-preview-sizer,
+	.markdown-reading-view[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="normal"] .markdown-preview-sizer,
+	.markdown-reading-view[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="full"] .markdown-preview-sizer {
+		padding-left: var(--page-offset) !important;
+		padding-right: 0 !important;
+	}
+	
+	/* RIGHT POSITION - page offset */
+	.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="compact"] .cm-scroller,
+	.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="normal"] .cm-scroller,
+	.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="full"] .cm-scroller {
+		padding-right: var(--page-offset) !important;
+		padding-left: 0 !important;
+	}
+	
+	.markdown-reading-view[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="compact"] .markdown-preview-sizer,
+	.markdown-reading-view[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="normal"] .markdown-preview-sizer,
+	.markdown-reading-view[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="full"] .markdown-preview-sizer {
+		padding-right: var(--page-offset) !important;
+		padding-left: 0 !important;
+	}
+	
+	${positioningStyles}
+	
+	.markdown-source-view.mod-cm6 .cm-editor,
+	.markdown-source-view.mod-cm6 .cm-content,
+	.markdown-source-view.mod-cm6 .cm-sizer,
+	.markdown-source-view.mod-cm6 .cm-contentContainer {
+		overflow: visible !important;
+	}
+	
+	.markdown-source-view.mod-cm6 .cm-line {
+		position: relative;
+	}
+	
+	.markdown-reading-view p,
+	.markdown-reading-view li,
+	.markdown-reading-view h1,
+	.markdown-reading-view h2,
+	.markdown-reading-view h3,
+	.markdown-reading-view h4,
+	.markdown-reading-view h5,
+	.markdown-reading-view h6,
+	.markdown-reading-view blockquote,
+	.markdown-reading-view .callout {
+		position: relative;
+	}
+	
+	.sidenote-number > span.sidenote {
+		display: inline-block;
+		width: 0;
+		max-width: 0;
+		overflow: hidden;
+		white-space: nowrap;
+		vertical-align: baseline;
+	}
+	
+	.sidenote-margin {
+				position: absolute;
+				top: 0.2em;
+				width: var(--sidenote-width);
+				font-size: ${s.fontSize}%;
+				line-height: ${s.lineHeight};
+				overflow-wrap: break-word;
+				transform: translateY(var(--sidenote-shift, 0px));
+				will-change: transform;
+				z-index: 10;
+				pointer-events: auto;
+				${transitionRule}
+		}
+	
+	.markdown-source-view.mod-cm6[data-sidenote-mode="compact"] .sidenote-margin,
+	.markdown-reading-view[data-sidenote-mode="compact"] .sidenote-margin {
+		font-size: ${s.fontSizeCompact}%;
+		line-height: ${Math.max(s.lineHeight - 0.1, 1.1)};
+	}
+	
+			/* Ensure margins don't overlap during transition */
+			.markdown-reading-view .sidenote-margin,
+			.markdown-source-view.mod-cm6 .sidenote-margin {
+					isolation: isolate;
+			}
+					
+	.markdown-source-view.mod-cm6[data-sidenote-mode="hidden"] .sidenote-margin,
+	.markdown-reading-view[data-sidenote-mode="hidden"] .sidenote-margin {
+		display: none;
+	}
+	
+	.markdown-source-view.mod-cm6[data-sidenote-mode=""] .sidenote-margin,
+	.markdown-reading-view[data-sidenote-mode=""] .sidenote-margin {
+		opacity: 0;
+		pointer-events: none;
+	}
+	
+	/* Style internal links in sidenotes */
+	.sidenote-margin a.internal-link {
+		cursor: pointer;
+	}
 
-        ${plainNumberStyles}
-        ${neumorphicStyles}
-        ${pillStyles}
+	/* Editable sidenote styling */
+	.sidenote-margin[data-editing="true"] {
+		background: var(--background-modifier-form-field);
+		border-radius: 4px;
+		padding: 4px 6px;
+		outline: 2px solid var(--interactive-accent);
+		cursor: text;
+	}
 
-				/* Hide footnotes section when using footnote formats */
-				${
-					this.settings.sidenoteFormat === "footnote" ||
-					this.settings.sidenoteFormat === "footnote-edit"
-						? `
-				.markdown-reading-view[data-has-sidenotes="true"][data-sidenote-mode="normal"] section.footnotes,
-				.markdown-reading-view[data-has-sidenotes="true"][data-sidenote-mode="compact"] section.footnotes,
-				.markdown-reading-view[data-has-sidenotes="true"][data-sidenote-mode="full"] section.footnotes {
-					display: none;
-				}
+	.sidenote-margin[data-editing="true"]::before {
+		display: none;
+	}
 
-				/* Hide the original footnote number text when converted to sidenote */
-				.sidenote-number sup.footnote-ref a.footnote-link {
-					display: none;
-				}
-				`
-						: ""
-				}
+	.sidenote-margin[contenteditable="true"] {
+		white-space: pre-wrap;
+	}
 
-				/* Hide footnote definitions in editing mode when using footnote-edit */
-				${
-					this.settings.sidenoteFormat === "footnote-edit"
-						? `
-				.markdown-source-view.mod-cm6[data-has-sidenotes="true"][data-sidenote-mode="normal"] .cm-line.HyperMD-footnote,
-				.markdown-source-view.mod-cm6[data-has-sidenotes="true"][data-sidenote-mode="compact"] .cm-line.HyperMD-footnote,
-				.markdown-source-view.mod-cm6[data-has-sidenotes="true"][data-sidenote-mode="full"] .cm-line.HyperMD-footnote {
-					display: none;
-				}
-				`
-						: ""
-				}
+	/* Markdown formatting in sidenotes */
+	.sidenote-margin strong,
+	.sidenote-margin b {
+		font-weight: bold;
+	}
 
-				/* CM6 footnote sidenote widget */
-				.cm-line .sidenote-number[data-footnote-id] {
-					position: static;
-					display: inline;
-				}
+	.sidenote-margin em,
+	.sidenote-margin i {
+		font-style: italic;
+	}
 
-				/* Position margin relative to .cm-line, not the wrapper */
-				.cm-line:has(.sidenote-number[data-footnote-id]) {
-					position: relative;
-				}
+	.sidenote-margin code {
+		font-family: var(--font-monospace);
+		font-size: 0.9em;
+		background-color: var(--code-background);
+		padding: 0.1em 0.3em;
+		border-radius: 3px;
+	}
 
-				.cm-line .sidenote-number[data-footnote-id] .sidenote-margin {
-					position: absolute;
-					top: 0;
-					width: var(--sidenote-width);
-					font-size: ${s.fontSize}%;
-					line-height: ${s.lineHeight};
-					overflow-wrap: break-word;
-					transform: translateY(var(--sidenote-shift, 0px));
-					will-change: transform;
-					z-index: 10;
-					pointer-events: auto;
-					${transitionRule}
-				}
+	${plainNumberStyles}
+	${neumorphicStyles}
+	${pillStyles}
 
-				.markdown-source-view.mod-cm6[data-sidenote-position="left"] .cm-line .sidenote-number[data-footnote-id] .sidenote-margin {
-					left: calc(-1 * (var(--sidenote-width) + var(--sidenote-gap)));
-					right: auto;
-					text-align: ${textAlign};
-				}
+			/* Hide footnotes section when using footnote formats */
+			${
+				this.settings.sidenoteFormat === "footnote" ||
+				this.settings.sidenoteFormat === "footnote-edit"
+					? `
+			.markdown-reading-view[data-has-sidenotes="true"][data-sidenote-mode="normal"] section.footnotes,
+			.markdown-reading-view[data-has-sidenotes="true"][data-sidenote-mode="compact"] section.footnotes,
+			.markdown-reading-view[data-has-sidenotes="true"][data-sidenote-mode="full"] section.footnotes {
+				display: none;
+			}
 
-				.markdown-source-view.mod-cm6[data-sidenote-position="right"] .cm-line .sidenote-number[data-footnote-id] .sidenote-margin {
-					right: calc(-1 * (var(--sidenote-width) + var(--sidenote-gap)));
-					left: auto;
-					text-align: ${textAlign};
-				}
+			/* Hide the original footnote number text when converted to sidenote */
+			.sidenote-number sup.footnote-ref a.footnote-link {
+				display: none;
+			}
+			`
+					: ""
+			}
 
-				/* Hide original footnote reference when converted to sidenote in editing mode */
-				${
-					this.settings.sidenoteFormat === "footnote-edit"
-						? `
-				.cm-line:has(.sidenote-number[data-footnote-id]) .cm-footref {
-					display: none;
-				}
-				`
-						: ""
-				}
+			/* Hide footnote definitions in editing mode when using footnote-edit */
+			${
+				this.settings.sidenoteFormat === "footnote-edit"
+					? `
+			.markdown-source-view.mod-cm6[data-has-sidenotes="true"][data-sidenote-mode="normal"] .cm-line.HyperMD-footnote,
+			.markdown-source-view.mod-cm6[data-has-sidenotes="true"][data-sidenote-mode="compact"] .cm-line.HyperMD-footnote,
+			.markdown-source-view.mod-cm6[data-has-sidenotes="true"][data-sidenote-mode="full"] .cm-line.HyperMD-footnote {
+				display: none;
+			}
+			`
+					: ""
+			}
 
-				/* Hide footnote definitions in editing mode when using footnote-edit */
-				${
-					this.settings.sidenoteFormat === "footnote-edit"
-						? `
-				.markdown-source-view.mod-cm6[data-has-sidenotes="true"][data-sidenote-mode="normal"] .cm-line.HyperMD-footnote,
-				.markdown-source-view.mod-cm6[data-has-sidenotes="true"][data-sidenote-mode="compact"] .cm-line.HyperMD-footnote,
-				.markdown-source-view.mod-cm6[data-has-sidenotes="true"][data-sidenote-mode="full"] .cm-line.HyperMD-footnote {
-					display: none;
-				}
-				`
-						: ""
-				}
-    `;
+			/* CM6 footnote sidenote widget */
+			.cm-line .sidenote-number[data-footnote-id] {
+				position: static;
+				display: inline;
+			}
+
+			/* Position margin relative to .cm-line, not the wrapper */
+			.cm-line:has(.sidenote-number[data-footnote-id]) {
+				position: relative;
+			}
+
+			.cm-line .sidenote-number[data-footnote-id] .sidenote-margin {
+				position: absolute;
+				top: 0;
+				width: var(--sidenote-width);
+				font-size: ${s.fontSize}%;
+				line-height: ${s.lineHeight};
+				overflow-wrap: break-word;
+				transform: translateY(var(--sidenote-shift, 0px));
+				will-change: transform;
+				z-index: 10;
+				pointer-events: auto;
+				${transitionRule}
+			}
+
+			/* Hide original footnote reference when converted to sidenote in editing mode */
+			${
+				this.settings.sidenoteFormat === "footnote-edit"
+					? `
+			.cm-line:has(.sidenote-number[data-footnote-id]) .cm-footref {
+				display: none;
+			}
+			`
+					: ""
+			}
+
+			/* Hide footnote definitions in editing mode when using footnote-edit */
+			${
+				this.settings.sidenoteFormat === "footnote-edit"
+					? `
+			.markdown-source-view.mod-cm6[data-has-sidenotes="true"][data-sidenote-mode="normal"] .cm-line.HyperMD-footnote,
+			.markdown-source-view.mod-cm6[data-has-sidenotes="true"][data-sidenote-mode="compact"] .cm-line.HyperMD-footnote,
+			.markdown-source-view.mod-cm6[data-has-sidenotes="true"][data-sidenote-mode="full"] .cm-line.HyperMD-footnote {
+				display: none;
+			}
+			`
+					: ""
+			}
+`;
 
 		try {
 			document.head.appendChild(this.styleEl);
 		} catch (error) {
 			console.error("Sidenote plugin: Failed to inject styles", error);
+		}
+	}
+
+	/**
+	 * Calculate and apply sidenote positioning based on anchor mode and gaps.
+	 *
+	 * For LEFT sidenotes:
+	 * - TEXT ANCHOR: Sidenote's right edge is gap1 away from text. As editor widens,
+	 *   gap between sidenote and editor edge increases.
+	 * - EDGE ANCHOR: Sidenote's left edge is gap2 away from editor edge. As editor widens,
+	 *   gap between sidenote and text increases.
+	 *
+	 * Both modes respect both gap constraints as minimums.
+	 */
+	private updateSidenotePositioning(
+		root: HTMLElement,
+		isReadingMode: boolean,
+	) {
+		const s = this.settings;
+		const position = s.sidenotePosition;
+		const anchorMode = s.sidenoteAnchor;
+
+		// Get rem to px conversion
+		const remToPx =
+			parseFloat(getComputedStyle(document.documentElement).fontSize) ||
+			16;
+		const gap1 = s.sidenoteGap * remToPx; // gap between sidenote and text
+		const gap2 = s.sidenoteGap2 * remToPx; // gap between sidenote and edge
+
+		// Get root element rect
+		const rootRect = root.getBoundingClientRect();
+
+		// Find a representative line/paragraph to measure from
+		// This is the element that sidenotes are positioned relative to
+		let refLine: HTMLElement | null = null;
+		if (isReadingMode) {
+			refLine = root.querySelector<HTMLElement>(
+				".markdown-preview-sizer > div > p, .markdown-preview-sizer > div > .sidenote-number",
+			);
+			if (!refLine) {
+				refLine = root.querySelector<HTMLElement>(
+					".markdown-preview-sizer",
+				);
+			}
+		} else {
+			refLine = root.querySelector<HTMLElement>(".cm-line");
+		}
+
+		if (!refLine) return;
+
+		const refRect = refLine.getBoundingClientRect();
+
+		// Get sidenote width from computed styles
+		const computedStyle = getComputedStyle(root);
+		const sidenoteWidthStr = computedStyle
+			.getPropertyValue("--sidenote-width")
+			.trim();
+		let sidenoteWidth = s.minSidenoteWidth * remToPx;
+
+		if (sidenoteWidthStr) {
+			const tempEl = document.createElement("div");
+			tempEl.style.width = sidenoteWidthStr;
+			tempEl.style.position = "absolute";
+			tempEl.style.visibility = "hidden";
+			root.appendChild(tempEl);
+			sidenoteWidth = tempEl.getBoundingClientRect().width;
+			tempEl.remove();
+		}
+
+		if (position === "left") {
+			// Available space between editor left edge and the text (refLine left edge)
+			const availableSpace = refRect.left - rootRect.left;
+
+			// Calculate the CSS left value (negative = to the left of refLine)
+			let cssLeft: number;
+
+			if (anchorMode === "text") {
+				// TEXT ANCHOR MODE:
+				// Position sidenote so its right edge is exactly gap1 from text
+				// sidenote.right = refLine.left - gap1
+				// sidenote.left = sidenote.right - sidenoteWidth = refLine.left - gap1 - sidenoteWidth
+				// cssLeft (relative to refLine.left) = -(gap1 + sidenoteWidth)
+				cssLeft = -(gap1 + sidenoteWidth);
+
+				// Constraint: sidenote.left must be at least gap2 from editor edge
+				// sidenote.left (absolute) = refLine.left + cssLeft
+				// sidenote.left >= rootRect.left + gap2
+				// refLine.left + cssLeft >= rootRect.left + gap2
+				// cssLeft >= rootRect.left + gap2 - refLine.left = gap2 - availableSpace
+				const minCssLeft = gap2 - availableSpace;
+				if (cssLeft < minCssLeft) {
+					// Not enough space - pull sidenote towards text to maintain gap2 from edge
+					cssLeft = minCssLeft;
+				}
+			} else {
+				// EDGE ANCHOR MODE:
+				// Position sidenote so its left edge is exactly gap2 from editor edge
+				// sidenote.left (absolute) = rootRect.left + gap2
+				// cssLeft (relative to refLine.left) = sidenote.left - refLine.left = rootRect.left + gap2 - refLine.left = gap2 - availableSpace
+				cssLeft = gap2 - availableSpace;
+
+				// Constraint: sidenote.right must be at least gap1 from text
+				// sidenote.right = refLine.left + cssLeft + sidenoteWidth
+				// sidenote.right <= refLine.left - gap1
+				// cssLeft + sidenoteWidth <= -gap1
+				// cssLeft <= -(gap1 + sidenoteWidth)
+				const maxCssLeft = -(gap1 + sidenoteWidth);
+				if (cssLeft > maxCssLeft) {
+					// Not enough space - push sidenote away from text to maintain gap1
+					cssLeft = maxCssLeft;
+				}
+			}
+
+			root.style.setProperty("--sidenote-offset", `${cssLeft}px`);
+		} else {
+			// RIGHT POSITION
+			// Available space between text (refLine right edge) and editor right edge
+			const availableSpace = rootRect.right - refRect.right;
+
+			let cssRight: number;
+
+			if (anchorMode === "text") {
+				// TEXT ANCHOR MODE:
+				// Position sidenote so its left edge is exactly gap1 from text
+				// cssRight works inversely: negative moves element to the right
+				cssRight = -(gap1 + sidenoteWidth);
+
+				// Constraint: sidenote.right must be at least gap2 from editor edge
+				const minCssRight = gap2 - availableSpace;
+				if (cssRight < minCssRight) {
+					cssRight = minCssRight;
+				}
+			} else {
+				// EDGE ANCHOR MODE:
+				// Position sidenote so its right edge is exactly gap2 from editor edge
+				cssRight = gap2 - availableSpace;
+
+				// Constraint: sidenote.left must be at least gap1 from text
+				const maxCssRight = -(gap1 + sidenoteWidth);
+				if (cssRight > maxCssRight) {
+					cssRight = maxCssRight;
+				}
+			}
+
+			root.style.setProperty("--sidenote-offset", `${cssRight}px`);
 		}
 	}
 	// ==================== Number Formatting ====================
@@ -1275,6 +1459,7 @@ export default class SidenotePlugin extends Plugin {
 		const mode = this.calculateMode(width);
 		readingRoot.dataset.sidenoteMode = mode;
 		readingRoot.dataset.sidenotePosition = this.settings.sidenotePosition;
+		readingRoot.dataset.sidenoteAnchor = this.settings.sidenoteAnchor;
 
 		const scaleFactor = this.calculateScaleFactor(width);
 		readingRoot.style.setProperty(
@@ -1458,6 +1643,9 @@ export default class SidenotePlugin extends Plugin {
 			requestAnimationFrame(() => {
 				if (!readingRoot.isConnected) return;
 
+				// Calculate and apply sidenote positioning
+				this.updateSidenotePositioning(readingRoot, true);
+
 				this.resolveCollisions(
 					marginNotes.filter((m) => m.isConnected),
 					this.settings.collisionSpacing,
@@ -1514,175 +1702,6 @@ export default class SidenotePlugin extends Plugin {
 	}
 
 	/**
-	 * Collect footnote references and their content for reading mode.
-	 */
-	private collectFootnotesForReading(readingRoot: HTMLElement): {
-		el: HTMLElement;
-		rect: DOMRect;
-		text: string;
-		footnoteId: string;
-	}[] {
-		const items: {
-			el: HTMLElement;
-			rect: DOMRect;
-			text: string;
-			footnoteId: string;
-		}[] = [];
-
-		const processedIds = new Set<string>();
-
-		// Find footnote references - try multiple selectors
-		// Obsidian uses different markup depending on version/settings
-		const footnoteSups = readingRoot.querySelectorAll<HTMLElement>(
-			"sup.footnote-ref, sup[data-footnote-id], .footnote-ref",
-		);
-
-		// Debug: log what we find
-		console.debug(
-			"Sidenote plugin: Found footnote refs:",
-			footnoteSups.length,
-		);
-
-		for (const sup of Array.from(footnoteSups)) {
-			// Skip if already wrapped in a sidenote
-			if (sup.closest(".sidenote-number")) continue;
-
-			// Get footnote ID using multiple methods
-			const fnId = this.getFootnoteId(sup);
-
-			console.debug(
-				"Sidenote plugin: Processing footnote ref, id:",
-				fnId,
-				"element:",
-				sup,
-			);
-
-			if (!fnId || processedIds.has(fnId)) continue;
-			processedIds.add(fnId);
-
-			// Find the footnote content
-			const content = this.findFootnoteContentById(readingRoot, fnId);
-
-			console.debug(
-				"Sidenote plugin: Footnote content for",
-				fnId,
-				":",
-				content,
-			);
-
-			if (!content) continue;
-
-			items.push({
-				el: sup,
-				rect: sup.getBoundingClientRect(),
-				text: content,
-				footnoteId: fnId,
-			});
-		}
-
-		console.debug("Sidenote plugin: Collected footnotes:", items.length);
-
-		return items;
-	}
-
-	/**
-	 * Extract footnote ID from a sup element.
-	 */
-	private getFootnoteId(sup: HTMLElement): string | null {
-		// Try data attribute first
-		if (sup.dataset.footnoteId) {
-			return sup.dataset.footnoteId;
-		}
-
-		// Try id attribute (fnref-X-HASH -> fn-X-HASH)
-		if (sup.id) {
-			return sup.id.replace(/^fnref-/, "fn-");
-		}
-
-		// Try href from child link
-		const link = sup.querySelector<HTMLAnchorElement>("a[href^='#fn']");
-		if (link) {
-			const href = link.getAttribute("href");
-			if (href) {
-				return href.replace(/^#/, "");
-			}
-		}
-
-		return null;
-	}
-
-	/**
-	 * Find footnote content by its ID.
-	 */
-	private findFootnoteContentById(
-		root: HTMLElement,
-		fnId: string,
-	): string | null {
-		// Try direct ID lookup
-		let li: HTMLElement | null = null;
-
-		try {
-			li = root.querySelector<HTMLElement>(`li#${CSS.escape(fnId)}`);
-		} catch {
-			li = root.querySelector<HTMLElement>(`li[id="${fnId}"]`);
-		}
-
-		if (li) {
-			return this.extractFootnoteText(li);
-		}
-
-		// Try finding in footnotes section by index
-		const numMatch = fnId.match(/fn-?(\d+)/);
-		if (numMatch && numMatch[1]) {
-			const index = parseInt(numMatch[1], 10) - 1;
-			const footnotesList = root.querySelector<HTMLElement>(
-				"section.footnotes ol, .footnotes ol",
-			);
-			if (footnotesList) {
-				const items = footnotesList.querySelectorAll<HTMLElement>("li");
-				if (index >= 0 && index < items.length && items[index]) {
-					return this.extractFootnoteText(items[index]);
-				}
-			}
-		}
-
-		return null;
-	}
-
-	/**
-	 * Schedule collision avoidance for reading mode with proper timing.
-	 * Uses multiple techniques to ensure layout is complete before measuring.
-	 */
-	private scheduleReadingModeCollisionAvoidance(
-		readingRoot: HTMLElement,
-		marginNotes: HTMLElement[],
-	) {
-		// Cancel any pending collision update
-		if (this.rafId !== null) {
-			cancelAnimationFrame(this.rafId);
-			this.rafId = null;
-		}
-
-		// Use a combination of RAFs and timeout to ensure layout is complete
-		// First RAF: browser has accepted our DOM changes
-		requestAnimationFrame(() => {
-			// Second RAF: browser has likely computed styles
-			requestAnimationFrame(() => {
-				// Short timeout: ensures any pending layout is flushed
-				setTimeout(() => {
-					// Verify elements are still in DOM
-					if (!readingRoot.isConnected) return;
-
-					const validMargins = marginNotes.filter((m) => m.isConnected);
-					if (validMargins.length === 0) return;
-
-					this.avoidCollisionsInReadingMode(readingRoot);
-				}, 20);
-			});
-		});
-	}
-
-	/**
 	 * Remove all sidenote markup from reading mode to allow fresh processing.
 	 */
 	private removeAllSidenoteMarkupFromReadingMode(root: HTMLElement) {
@@ -1726,23 +1745,6 @@ export default class SidenotePlugin extends Plugin {
 
 			wrapper.remove();
 		}
-	}
-
-	/**
-	 * Extract text content from a footnote li element, removing backref links.
-	 */
-	private extractFootnoteText(li: HTMLElement): string | null {
-		const clone = li.cloneNode(true) as HTMLElement;
-
-		// Remove all backref links
-		clone
-			.querySelectorAll(
-				"a.footnote-backref, a[class*='backref'], a[href^='#fnref']",
-			)
-			.forEach((el) => el.remove());
-
-		const text = clone.textContent?.trim();
-		return text || null;
 	}
 
 	private findPrecedingHeading(el: HTMLElement): HTMLElement | null {
@@ -1892,6 +1894,7 @@ export default class SidenotePlugin extends Plugin {
 			readingRoot.dataset.sidenoteMode = mode;
 			readingRoot.dataset.sidenotePosition =
 				this.settings.sidenotePosition;
+			readingRoot.dataset.sidenoteAnchor = this.settings.sidenoteAnchor;
 
 			const scaleFactor = this.calculateScaleFactor(width);
 			readingRoot.style.setProperty(
@@ -1899,7 +1902,7 @@ export default class SidenotePlugin extends Plugin {
 				scaleFactor.toFixed(3),
 			);
 
-			// Check if we have sidenotes - if using footnotes, we need to check for those
+			// Check if we have sidenotes
 			const hasMargins =
 				readingRoot.querySelectorAll("small.sidenote-margin").length > 0;
 
@@ -1909,9 +1912,10 @@ export default class SidenotePlugin extends Plugin {
 				return;
 			}
 
-			// Run collision avoidance for reading mode if not hidden
+			// Update positioning and run collision avoidance
 			if (mode !== "hidden" && hasMargins) {
 				requestAnimationFrame(() => {
+					this.updateSidenotePositioning(readingRoot, true);
 					this.updateReadingModeCollisions();
 				});
 			}
@@ -2092,6 +2096,7 @@ export default class SidenotePlugin extends Plugin {
 			? "true"
 			: "false";
 		cmRoot.dataset.sidenotePosition = this.settings.sidenotePosition;
+		// cmRoot.dataset.sidenoteAnchor = this.settings.sidenoteAnchor;
 
 		let resizeTimeout: number | null = null;
 		this.resizeObserver = new ResizeObserver((entries) => {
@@ -2121,6 +2126,7 @@ export default class SidenotePlugin extends Plugin {
 			this.resizeObserver.observe(readingRoot);
 			readingRoot.dataset.sidenotePosition =
 				this.settings.sidenotePosition;
+			readingRoot.dataset.sidenoteAnchor = this.settings.sidenoteAnchor;
 
 			// Add scroll listener for reading mode collision updates
 			const readingScroller =
@@ -2230,6 +2236,7 @@ export default class SidenotePlugin extends Plugin {
 		cmRoot.style.setProperty("--editor-width", `${editorWidth}px`);
 		cmRoot.dataset.sidenoteMode = mode;
 		cmRoot.dataset.sidenotePosition = this.settings.sidenotePosition;
+		cmRoot.dataset.sidenoteAnchor = this.settings.sidenoteAnchor;
 
 		const scaleFactor = this.calculateScaleFactor(editorWidth);
 		cmRoot.style.setProperty("--sidenote-scale", scaleFactor.toFixed(3));
@@ -2246,13 +2253,13 @@ export default class SidenotePlugin extends Plugin {
 				? "true"
 				: "false";
 
-			// Run collision avoidance for widget-created margins after a delay
-			// to ensure widgets are rendered
+			// Run positioning and collision avoidance for widget-created margins
 			if (mode !== "hidden" && this.documentHasSidenotes) {
 				setTimeout(() => {
 					requestAnimationFrame(() => {
 						requestAnimationFrame(() => {
 							if (!cmRoot.isConnected) return;
+							this.updateSidenotePositioning(cmRoot, false);
 							this.updateEditingModeCollisions();
 						});
 					});
@@ -2363,10 +2370,11 @@ export default class SidenotePlugin extends Plugin {
 			this.lastSidenoteCount =
 				cmRoot.querySelectorAll(".sidenote-margin").length;
 
-			// Run collision avoidance after DOM is settled
+			// Run positioning and collision avoidance after DOM is settled
 			requestAnimationFrame(() => {
 				requestAnimationFrame(() => {
 					if (!cmRoot.isConnected) return;
+					this.updateSidenotePositioning(cmRoot, false);
 					this.updateEditingModeCollisions();
 				});
 			});
@@ -2376,10 +2384,11 @@ export default class SidenotePlugin extends Plugin {
 				cmRoot.querySelectorAll(".sidenote-margin").length;
 
 			if (this.lastSidenoteCount > 0 && mode !== "hidden") {
-				// Still run collision avoidance for existing sidenotes
+				// Still run positioning and collision avoidance for existing sidenotes
 				requestAnimationFrame(() => {
 					requestAnimationFrame(() => {
 						if (!cmRoot.isConnected) return;
+						this.updateSidenotePositioning(cmRoot, false);
 						this.updateEditingModeCollisions();
 					});
 				});
@@ -3157,6 +3166,22 @@ class SidenoteSettingTab extends PluginSettingTab {
 		containerEl.createEl("h2", { text: "Width & Spacing" });
 
 		new Setting(containerEl)
+			.setName("Sidenote anchor")
+			.setDesc(
+				"Whether sidenotes are positioned relative to the text body or the editor edge",
+			)
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOption("text", "Anchor to text (traditional)")
+					.addOption("edge", "Anchor to editor edge")
+					.setValue(this.plugin.settings.sidenoteAnchor)
+					.onChange(async (value: "text" | "edge") => {
+						this.plugin.settings.sidenoteAnchor = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
 			.setName("Minimum sidenote width")
 			.setDesc("Base width of sidenotes in rem (default: 10)")
 			.addSlider((slider) =>
@@ -3185,7 +3210,7 @@ class SidenoteSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Gap between sidenote and text")
+			.setName("Minimum Gap between sidenote and text")
 			.setDesc(
 				"Space between the margin and body text in rem (default: 2)",
 			)
@@ -3196,6 +3221,22 @@ class SidenoteSettingTab extends PluginSettingTab {
 					.setDynamicTooltip()
 					.onChange(async (value) => {
 						this.plugin.settings.sidenoteGap = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Minimum gap between sidenote and editor edge")
+			.setDesc(
+				"When anchored to text: minimum distance from editor edge. When anchored to edge: minimum distance from text body. (rem, default: 1)",
+			)
+			.addSlider((slider) =>
+				slider
+					.setLimits(0, 10, 0.5)
+					.setValue(this.plugin.settings.sidenoteGap2)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.settings.sidenoteGap2 = value;
 						await this.plugin.saveSettings();
 					}),
 			);
