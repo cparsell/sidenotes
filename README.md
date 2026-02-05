@@ -59,9 +59,11 @@ These are some other strategies I've seen for sidenotes in Obsidian.
 
 1. Add the plugin to Obsidian. If copying manually from this repo, you can copy the contents of `/sidenotes-helper/` into `your-vault/.obsidian/plugins/sidenotes-helper`.
 2. If copying manually, restart Obsidian and then enable the plugin in **Settings**.
-3. Choose some settings that make sense for you.
+3. Choose some settings that make sense for you:
 
-- Sidenote format: **Footnotes** or HTML
+- Sidenote format:
+  - **Footnotes**: Traditional Markdown footnotes will become sidenotes
+  - **HTML**: uses `<span>` elements to format the sidenotes. I originally designed using this because it was an easy way for me to set up CSS styles in Obsidian as well as CSS styles in my web-published notes
 
 ## Use
 
