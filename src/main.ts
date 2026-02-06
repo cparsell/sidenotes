@@ -94,9 +94,6 @@ const DEFAULT_SETTINGS: SidenoteSettings = {
 
 // Regex to detect sidenote spans in source text
 const SIDENOTE_PATTERN = /<span\s+class\s*=\s*["']sidenote["'][^>]*>/gi;
-const RESIZE_DEBOUNCE_MS = 100;
-const FOOTNOTE_RENDER_DELAY_MS = 100;
-const SCROLL_DEBOUNCE_MS = 50;
 
 // ======================================================
 // ================= Main Plugin Class ==================
@@ -142,7 +139,16 @@ export default class SidenotePlugin extends Plugin {
 
 	private pendingFootnoteEdit: string | null = null;
 	private pendingFootnoteEditRetries = 0;
-	private readonly MAX_FOOTNOTE_EDIT_RETRIES = 10;
+
+	// Timing constants (in milliseconds)
+	private static readonly RESIZE_DEBOUNCE = 100;
+	private static readonly SCROLL_DEBOUNCE = 50;
+	private static readonly MUTATION_DEBOUNCE = 100;
+	private static readonly FOOTNOTE_RENDER_DELAY = 100;
+	private static readonly WIDGET_LAYOUT_DELAY = 50;
+	private static readonly EDIT_TRIGGER_DELAY = 50;
+	private static readonly INSERT_SIDENOTE_DELAY = 150;
+	private static readonly MAX_FOOTNOTE_EDIT_RETRIES = 10;
 
 	async onload() {
 		await this.loadSettings();
@@ -250,7 +256,7 @@ export default class SidenotePlugin extends Plugin {
 					// Schedule the auto-edit after widgets are rendered
 					setTimeout(() => {
 						this.triggerPendingFootnoteEdit();
-					}, 150);
+					}, SidenotePlugin.INSERT_SIDENOTE_DELAY);
 				}
 			},
 		});
@@ -270,7 +276,10 @@ export default class SidenotePlugin extends Plugin {
 
 			if (hasContent) {
 				// Use a longer delay for footnotes to ensure section is rendered
-				const delay = this.settings.sidenoteFormat !== "html" ? 100 : 0;
+				const delay =
+					this.settings.sidenoteFormat !== "html"
+						? SidenotePlugin.FOOTNOTE_RENDER_DELAY
+						: 0;
 
 				setTimeout(() => {
 					requestAnimationFrame(() => {
@@ -314,11 +323,11 @@ export default class SidenotePlugin extends Plugin {
 				this.scanDocumentForSidenotes();
 				this.needsFullRenumber = true;
 				this.invalidateLayoutCache();
-				this.scheduleLayoutDebounced(RESIZE_DEBOUNCE_MS);
+				this.scheduleLayoutDebounced(SidenotePlugin.MUTATION_DEBOUNCE);
 			}),
 		);
 		this.registerDomEvent(window, "resize", () => {
-			this.scheduleLayoutThrottled(RESIZE_DEBOUNCE_MS);
+			this.scheduleLayoutThrottled(SidenotePlugin.RESIZE_DEBOUNCE);
 			this.scheduleReadingModeLayoutThrottled(100);
 		});
 
@@ -552,7 +561,7 @@ export default class SidenotePlugin extends Plugin {
 					this.processReadingModeSidenotes(readingRoot);
 				});
 			});
-		}, 100);
+		}, SidenotePlugin.FOOTNOTE_RENDER_DELAY);
 	}
 
 	/**
@@ -575,13 +584,14 @@ export default class SidenotePlugin extends Plugin {
 		if (!wrapper) {
 			// Widget might not be rendered yet, try again (with limit)
 			if (
-				this.pendingFootnoteEditRetries < this.MAX_FOOTNOTE_EDIT_RETRIES
+				this.pendingFootnoteEditRetries <
+				SidenotePlugin.MAX_FOOTNOTE_EDIT_RETRIES
 			) {
 				this.pendingFootnoteEdit = footnoteId;
 				this.pendingFootnoteEditRetries++;
 				setTimeout(() => {
 					this.triggerPendingFootnoteEdit();
-				}, 100);
+				}, SidenotePlugin.FOOTNOTE_RENDER_DELAY);
 			} else {
 				// Give up after max retries
 				this.pendingFootnoteEditRetries = 0;
@@ -607,7 +617,7 @@ export default class SidenotePlugin extends Plugin {
 				selection.removeAllRanges();
 				selection.addRange(range);
 			}
-		}, 50);
+		}, SidenotePlugin.EDIT_TRIGGER_DELAY);
 	}
 
 	// ==================== Performance Utilities ====================
@@ -634,7 +644,9 @@ export default class SidenotePlugin extends Plugin {
 		// this.lastCollisionHash = "";
 	}
 
-	private scheduleLayoutDebounced(delay: number = 50) {
+	private scheduleLayoutDebounced(
+		delay: number = SidenotePlugin.MUTATION_DEBOUNCE,
+	) {
 		if (this.mutationDebounceTimer !== null) {
 			window.clearTimeout(this.mutationDebounceTimer);
 		}
@@ -644,7 +656,9 @@ export default class SidenotePlugin extends Plugin {
 		}, delay);
 	}
 
-	private scheduleLayoutThrottled(minInterval: number = 100) {
+	private scheduleLayoutThrottled(
+		minInterval: number = SidenotePlugin.RESIZE_DEBOUNCE,
+	) {
 		const now = Date.now();
 		if (now - this.resizeThrottleTime >= minInterval) {
 			this.resizeThrottleTime = now;
@@ -652,7 +666,9 @@ export default class SidenotePlugin extends Plugin {
 		}
 	}
 
-	private scheduleReadingModeLayoutThrottled(minInterval: number = 100) {
+	private scheduleReadingModeLayoutThrottled(
+		minInterval: number = SidenotePlugin.RESIZE_DEBOUNCE,
+	) {
 		const now = Date.now();
 		if (now - this.resizeThrottleTime >= minInterval) {
 			this.scheduleReadingModeLayout();
@@ -705,28 +721,6 @@ export default class SidenotePlugin extends Plugin {
 		if (this.visibilityObserver) {
 			this.visibilityObserver.unobserve(margin);
 			this.visibleSidenotes.delete(margin);
-		}
-	}
-
-	// ==================== Style Injection ====================
-
-	private updatePositionDataAttributes() {
-		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-		if (!view) return;
-
-		const cmRoot = view.containerEl.querySelector<HTMLElement>(
-			".markdown-source-view.mod-cm6",
-		);
-		if (cmRoot) {
-			cmRoot.dataset.sidenotePosition = this.settings.sidenotePosition;
-		}
-
-		const readingRoot = view.containerEl.querySelector<HTMLElement>(
-			".markdown-reading-view",
-		);
-		if (readingRoot) {
-			readingRoot.dataset.sidenotePosition =
-				this.settings.sidenotePosition;
 		}
 	}
 
@@ -2158,7 +2152,7 @@ export default class SidenotePlugin extends Plugin {
 			this.scrollDebounceTimer = window.setTimeout(() => {
 				this.scrollDebounceTimer = null;
 				this.scheduleLayout();
-			}, 50);
+			}, SidenotePlugin.SCROLL_DEBOUNCE);
 		};
 		scroller.addEventListener("scroll", onScroll, { passive: true });
 		this.cleanups.push(() =>
@@ -2169,7 +2163,7 @@ export default class SidenotePlugin extends Plugin {
 		if (content) {
 			const mo = new MutationObserver(() => {
 				if (this.isMutating) return;
-				this.scheduleLayoutDebounced(100);
+				this.scheduleLayoutDebounced(SidenotePlugin.MUTATION_DEBOUNCE);
 			});
 			mo.observe(content, {
 				childList: true,
@@ -2255,7 +2249,7 @@ export default class SidenotePlugin extends Plugin {
 							this.updateEditingModeCollisions();
 						});
 					});
-				}, 50);
+				}, SidenotePlugin.WIDGET_LAYOUT_DELAY);
 			}
 			return;
 		}
