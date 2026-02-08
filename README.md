@@ -10,6 +10,9 @@ _Basic sidenote capabilities demonstrated_
 ![Neumorphic badges](https://github.com/cparsell/sidenotes/blob/main/Screenshot-badges-multi.png)
 _An optional style that highlights references_
 
+![Neumorphic badges](https://github.com/cparsell/sidenotes/blob/main/Screen-Record-Editing.gif)
+_Editing a sidenote in the margin_
+
 ### Features
 
 - **Sidenotes**: Sidenotes are displayed in the margin of a note. Run command `Insert Sidenote` to start one.
