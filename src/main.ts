@@ -150,6 +150,11 @@ export default class SidenotePlugin extends Plugin {
 	private static readonly INSERT_SIDENOTE_DELAY = 150;
 	private static readonly MAX_FOOTNOTE_EDIT_RETRIES = 10;
 
+	private activeEditingMargin: HTMLElement | null = null;
+
+	// Track which footnote is being edited (by footnote ID)
+	private activeFootnoteEdit: string | null = null;
+
 	async onload() {
 		await this.loadSettings();
 
@@ -344,6 +349,9 @@ export default class SidenotePlugin extends Plugin {
 		this.pendingFootnoteEdit = null;
 		this.pendingFootnoteEditRetries = 0;
 
+		// Clear active footnote edit
+		this.activeFootnoteEdit = null;
+
 		// Clean up footnote processing timer
 		if (this.footnoteProcessingTimer !== null) {
 			window.clearTimeout(this.footnoteProcessingTimer);
@@ -396,6 +404,18 @@ export default class SidenotePlugin extends Plugin {
 
 	public scheduleEditingModeCollisionUpdate() {
 		this.scheduleCollisionUpdate();
+	}
+
+	public getActiveFootnoteEdit(): string | null {
+		return this.activeFootnoteEdit;
+	}
+
+	public setActiveFootnoteEdit(footnoteId: string | null) {
+		this.activeFootnoteEdit = footnoteId;
+	}
+
+	public isFootnoteBeingEdited(): boolean {
+		return this.activeFootnoteEdit !== null;
 	}
 
 	private cleanupView(view: MarkdownView | null) {
@@ -980,232 +1000,108 @@ export default class SidenotePlugin extends Plugin {
 		`;
 
 		this.styleEl.textContent = `
-	/* === Sidenote layout variables === */
-	.markdown-source-view.mod-cm6,
-	.markdown-reading-view {
-		--sidenote-base-width: ${s.minSidenoteWidth}rem;
-		--sidenote-max-extra: ${s.maxSidenoteWidth - s.minSidenoteWidth}rem;
-		--sidenote-width: calc(
-			var(--sidenote-base-width) + 
-			(var(--sidenote-max-extra) * var(--sidenote-scale, 0.5))
-		);
-		--sidenote-gap: ${gap1}rem;
-		--sidenote-gap2: ${gap2}rem;
-		--page-offset: calc((var(--sidenote-width) + var(--sidenote-gap)) * ${s.pageOffsetFactor});
-		--sidenote-edge-offset: var(--sidenote-gap);
-	}
-	
-	.markdown-source-view.mod-cm6[data-sidenote-mode="compact"],
-	.markdown-reading-view[data-sidenote-mode="compact"] {
-		--sidenote-base-width: ${Math.max(s.minSidenoteWidth - 2, 6)}rem;
-		--sidenote-max-extra: ${Math.max((s.maxSidenoteWidth - s.minSidenoteWidth) / 2, 2)}rem;
-		--sidenote-gap: ${Math.max(gap1 - 1, 0.5)}rem;
-		--sidenote-gap2: ${Math.max(gap2 - 0.5, 0.25)}rem;
-	}
-	
-	.markdown-source-view.mod-cm6[data-sidenote-mode="full"],
-	.markdown-reading-view[data-sidenote-mode="full"] {
-		--sidenote-base-width: ${s.maxSidenoteWidth}rem;
-		--sidenote-max-extra: 2rem;
-		--sidenote-gap: ${gap1 + 1}rem;
-		--sidenote-gap2: ${gap2 + 0.5}rem;
-	}
-	
-	.markdown-source-view.mod-cm6 .cm-scroller {
-		overflow-y: auto !important;
-		overflow-x: visible !important;
-	}
-	
-	/* LEFT POSITION - page offset */
-	.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="compact"] .cm-scroller,
-	.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="normal"] .cm-scroller,
-	.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="full"] .cm-scroller {
-		padding-left: var(--page-offset) !important;
-		padding-right: 0 !important;
-	}
-	
-	.markdown-reading-view[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="compact"] .markdown-preview-sizer,
-	.markdown-reading-view[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="normal"] .markdown-preview-sizer,
-	.markdown-reading-view[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="full"] .markdown-preview-sizer {
-		padding-left: var(--page-offset) !important;
-		padding-right: 0 !important;
-	}
-	
-	/* RIGHT POSITION - page offset */
-	.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="compact"] .cm-scroller,
-	.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="normal"] .cm-scroller,
-	.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="full"] .cm-scroller {
-		padding-right: var(--page-offset) !important;
-		padding-left: 0 !important;
-	}
-	
-	.markdown-reading-view[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="compact"] .markdown-preview-sizer,
-	.markdown-reading-view[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="normal"] .markdown-preview-sizer,
-	.markdown-reading-view[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="full"] .markdown-preview-sizer {
-		padding-right: var(--page-offset) !important;
-		padding-left: 0 !important;
-	}
-	
-	${positioningStyles}
-	
-	.markdown-source-view.mod-cm6 .cm-editor,
-	.markdown-source-view.mod-cm6 .cm-content,
-	.markdown-source-view.mod-cm6 .cm-sizer,
-	.markdown-source-view.mod-cm6 .cm-contentContainer {
-		overflow: visible !important;
-	}
-	
-	.markdown-source-view.mod-cm6 .cm-line {
-		position: relative;
-	}
-	
-	.markdown-reading-view p,
-	.markdown-reading-view li,
-	.markdown-reading-view h1,
-	.markdown-reading-view h2,
-	.markdown-reading-view h3,
-	.markdown-reading-view h4,
-	.markdown-reading-view h5,
-	.markdown-reading-view h6,
-	.markdown-reading-view blockquote,
-	.markdown-reading-view .callout {
-		position: relative;
-	}
-	
-	.sidenote-number > span.sidenote {
-		display: inline-block;
-		width: 0;
-		max-width: 0;
-		overflow: hidden;
-		white-space: nowrap;
-		vertical-align: baseline;
-	}
-	
-	.sidenote-margin {
-		position: absolute;
-		top: 0;
-		width: var(--sidenote-width);
-		font-size: ${s.fontSize}%;
-		line-height: ${s.lineHeight};
-		overflow-wrap: break-word;
-		transform: translateY(calc(var(--sidenote-line-offset, 0px) + var(--sidenote-shift, 0px)));
-		will-change: transform;
-		z-index: 10;
-		pointer-events: auto;
-		${transitionRule}
-	}
-	
-	.markdown-source-view.mod-cm6[data-sidenote-mode="compact"] .sidenote-margin,
-	.markdown-reading-view[data-sidenote-mode="compact"] .sidenote-margin {
-		font-size: ${s.fontSizeCompact}%;
-		line-height: ${Math.max(s.lineHeight - 0.1, 1.1)};
-	}
-	
-			/* Ensure margins don't overlap during transition */
-			.markdown-reading-view .sidenote-margin,
-			.markdown-source-view.mod-cm6 .sidenote-margin {
-					isolation: isolate;
+			/* === Sidenote layout variables === */
+			.markdown-source-view.mod-cm6,
+			.markdown-reading-view {
+				--sidenote-base-width: ${s.minSidenoteWidth}rem;
+				--sidenote-max-extra: ${s.maxSidenoteWidth - s.minSidenoteWidth}rem;
+				--sidenote-width: calc(
+					var(--sidenote-base-width) + 
+					(var(--sidenote-max-extra) * var(--sidenote-scale, 0.5))
+				);
+				--sidenote-gap: ${gap1}rem;
+				--sidenote-gap2: ${gap2}rem;
+				--page-offset: calc((var(--sidenote-width) + var(--sidenote-gap)) * ${s.pageOffsetFactor});
+				--sidenote-edge-offset: var(--sidenote-gap);
 			}
-					
-	.markdown-source-view.mod-cm6[data-sidenote-mode="hidden"] .sidenote-margin,
-	.markdown-reading-view[data-sidenote-mode="hidden"] .sidenote-margin {
-		display: none;
-	}
-	
-	.markdown-source-view.mod-cm6[data-sidenote-mode=""] .sidenote-margin,
-	.markdown-reading-view[data-sidenote-mode=""] .sidenote-margin {
-		opacity: 0;
-		pointer-events: none;
-	}
-	
-	/* Style internal links in sidenotes */
-	.sidenote-margin a.internal-link {
-		cursor: pointer;
-	}
-
-	/* Editable sidenote styling */
-	.sidenote-margin[data-editing="true"] {
-		background: var(--background-modifier-form-field);
-		border-radius: 4px;
-		padding: 4px 6px;
-		outline: 2px solid var(--interactive-accent);
-		cursor: text;
-	}
-
-	.sidenote-margin[data-editing="true"]::before {
-		display: none;
-	}
-
-	.sidenote-margin[contenteditable="true"] {
-		white-space: pre-wrap;
-	}
-
-	/* Markdown formatting in sidenotes */
-	.sidenote-margin strong,
-	.sidenote-margin b {
-		font-weight: bold;
-	}
-
-	.sidenote-margin em,
-	.sidenote-margin i {
-		font-style: italic;
-	}
-
-	.sidenote-margin code {
-		font-family: var(--font-monospace);
-		font-size: 0.9em;
-		background-color: var(--code-background);
-		padding: 0.1em 0.3em;
-		border-radius: 3px;
-	}
-
-	${plainNumberStyles}
-	${neumorphicStyles}
-	${pillStyles}
-
-			/* Footnote-edit mode styles */
-			${
-				this.settings.sidenoteFormat === "footnote-edit"
-					? `
-			/* === LIVE PREVIEW MODE === */
-			/* Hide footnote definitions - only in Live Preview */
-			.markdown-source-view.mod-cm6.is-live-preview[data-has-sidenotes="true"][data-sidenote-mode="normal"] .cm-line.HyperMD-footnote,
-			.markdown-source-view.mod-cm6.is-live-preview[data-has-sidenotes="true"][data-sidenote-mode="compact"] .cm-line.HyperMD-footnote,
-			.markdown-source-view.mod-cm6.is-live-preview[data-has-sidenotes="true"][data-sidenote-mode="full"] .cm-line.HyperMD-footnote {
-				/* display: none; */
+			
+			.markdown-source-view.mod-cm6[data-sidenote-mode="compact"],
+			.markdown-reading-view[data-sidenote-mode="compact"] {
+				--sidenote-base-width: ${Math.max(s.minSidenoteWidth - 2, 6)}rem;
+				--sidenote-max-extra: ${Math.max((s.maxSidenoteWidth - s.minSidenoteWidth) / 2, 2)}rem;
+				--sidenote-gap: ${Math.max(gap1 - 1, 0.5)}rem;
+				--sidenote-gap2: ${Math.max(gap2 - 0.5, 0.25)}rem;
 			}
-
-			/* Hide original [^1] reference - only in Live Preview */
-			.markdown-source-view.mod-cm6.is-live-preview .cm-line:has(.sidenote-number[data-footnote-id]) .cm-footref {
-				display: none;
+			
+			.markdown-source-view.mod-cm6[data-sidenote-mode="full"],
+			.markdown-reading-view[data-sidenote-mode="full"] {
+				--sidenote-base-width: ${s.maxSidenoteWidth}rem;
+				--sidenote-max-extra: 2rem;
+				--sidenote-gap: ${gap1 + 1}rem;
+				--sidenote-gap2: ${gap2 + 0.5}rem;
 			}
-
-			/* === SOURCE MODE === */
-			/* Hide sidenote widgets in Source mode - show raw markdown */
-			.markdown-source-view.mod-cm6:not(.is-live-preview) .sidenote-number[data-footnote-id] {
-				display: none;
+			
+			.markdown-source-view.mod-cm6 .cm-scroller {
+				overflow-y: auto !important;
+				overflow-x: visible !important;
 			}
-
-			/* Show the footnote reference in Source mode */
-			.markdown-source-view.mod-cm6:not(.is-live-preview) .cm-footref {
-				display: inline !important;
+			
+			/* LEFT POSITION - page offset */
+			.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="compact"] .cm-scroller,
+			.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="normal"] .cm-scroller,
+			.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="full"] .cm-scroller {
+				padding-left: var(--page-offset) !important;
+				padding-right: 0 !important;
 			}
-			`
-					: ""
+			
+			.markdown-reading-view[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="compact"] .markdown-preview-sizer,
+			.markdown-reading-view[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="normal"] .markdown-preview-sizer,
+			.markdown-reading-view[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="full"] .markdown-preview-sizer {
+				padding-left: var(--page-offset) !important;
+				padding-right: 0 !important;
 			}
-
-			/* CM6 footnote sidenote widget */
-			.cm-line .sidenote-number[data-footnote-id] {
-				position: static;
-				display: inline;
+			
+			/* RIGHT POSITION - page offset */
+			.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="compact"] .cm-scroller,
+			.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="normal"] .cm-scroller,
+			.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="full"] .cm-scroller {
+				padding-right: var(--page-offset) !important;
+				padding-left: 0 !important;
 			}
-
-			/* Position margin relative to .cm-line, not the wrapper */
-			.cm-line:has(.sidenote-number[data-footnote-id]) {
+			
+			.markdown-reading-view[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="compact"] .markdown-preview-sizer,
+			.markdown-reading-view[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="normal"] .markdown-preview-sizer,
+			.markdown-reading-view[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="full"] .markdown-preview-sizer {
+				padding-right: var(--page-offset) !important;
+				padding-left: 0 !important;
+			}
+			
+			${positioningStyles}
+			
+			.markdown-source-view.mod-cm6 .cm-editor,
+			.markdown-source-view.mod-cm6 .cm-content,
+			.markdown-source-view.mod-cm6 .cm-sizer,
+			.markdown-source-view.mod-cm6 .cm-contentContainer {
+				overflow: visible !important;
+			}
+			
+			.markdown-source-view.mod-cm6 .cm-line {
 				position: relative;
 			}
-
-			.cm-line .sidenote-number[data-footnote-id] .sidenote-margin {
+			
+			.markdown-reading-view p,
+			.markdown-reading-view li,
+			.markdown-reading-view h1,
+			.markdown-reading-view h2,
+			.markdown-reading-view h3,
+			.markdown-reading-view h4,
+			.markdown-reading-view h5,
+			.markdown-reading-view h6,
+			.markdown-reading-view blockquote,
+			.markdown-reading-view .callout {
+				position: relative;
+			}
+			
+			.sidenote-number > span.sidenote {
+				display: inline-block;
+				width: 0;
+				max-width: 0;
+				overflow: hidden;
+				white-space: nowrap;
+				vertical-align: baseline;
+			}
+			
+			.sidenote-margin {
 				position: absolute;
 				top: 0;
 				width: var(--sidenote-width);
@@ -1218,7 +1114,131 @@ export default class SidenotePlugin extends Plugin {
 				pointer-events: auto;
 				${transitionRule}
 			}
-`;
+			
+			.markdown-source-view.mod-cm6[data-sidenote-mode="compact"] .sidenote-margin,
+			.markdown-reading-view[data-sidenote-mode="compact"] .sidenote-margin {
+				font-size: ${s.fontSizeCompact}%;
+				line-height: ${Math.max(s.lineHeight - 0.1, 1.1)};
+			}
+			
+					/* Ensure margins don't overlap during transition */
+					.markdown-reading-view .sidenote-margin,
+					.markdown-source-view.mod-cm6 .sidenote-margin {
+							isolation: isolate;
+					}
+							
+			.markdown-source-view.mod-cm6[data-sidenote-mode="hidden"] .sidenote-margin,
+			.markdown-reading-view[data-sidenote-mode="hidden"] .sidenote-margin {
+				display: none;
+			}
+			
+			.markdown-source-view.mod-cm6[data-sidenote-mode=""] .sidenote-margin,
+			.markdown-reading-view[data-sidenote-mode=""] .sidenote-margin {
+				opacity: 0;
+				pointer-events: none;
+			}
+			
+			/* Style internal links in sidenotes */
+			.sidenote-margin a.internal-link {
+				cursor: pointer;
+			}
+
+			/* Editable sidenote styling */
+			.sidenote-margin[data-editing="true"] {
+				background: var(--background-modifier-form-field);
+				border-radius: 4px;
+				padding: 4px 6px;
+				outline: 2px solid var(--interactive-accent);
+				cursor: text;
+			}
+
+			.sidenote-margin[data-editing="true"]::before {
+				display: none;
+			}
+
+			.sidenote-margin[contenteditable="true"] {
+				white-space: pre-wrap;
+			}
+
+			/* Markdown formatting in sidenotes */
+			.sidenote-margin strong,
+			.sidenote-margin b {
+				font-weight: bold;
+			}
+
+			.sidenote-margin em,
+			.sidenote-margin i {
+				font-style: italic;
+			}
+
+			.sidenote-margin code {
+				font-family: var(--font-monospace);
+				font-size: 0.9em;
+				background-color: var(--code-background);
+				padding: 0.1em 0.3em;
+				border-radius: 3px;
+			}
+
+			${plainNumberStyles}
+			${neumorphicStyles}
+			${pillStyles}
+
+					/* Footnote-edit mode styles */
+					${
+						this.settings.sidenoteFormat === "footnote-edit"
+							? `
+					/* === LIVE PREVIEW MODE === */
+					/* Hide footnote definitions - only in Live Preview */
+					.markdown-source-view.mod-cm6.is-live-preview[data-has-sidenotes="true"][data-sidenote-mode="normal"] .cm-line.HyperMD-footnote,
+					.markdown-source-view.mod-cm6.is-live-preview[data-has-sidenotes="true"][data-sidenote-mode="compact"] .cm-line.HyperMD-footnote,
+					.markdown-source-view.mod-cm6.is-live-preview[data-has-sidenotes="true"][data-sidenote-mode="full"] .cm-line.HyperMD-footnote {
+						/* display: none; */
+					}
+
+					/* Hide original [^1] reference - only in Live Preview */
+					.markdown-source-view.mod-cm6.is-live-preview .cm-line:has(.sidenote-number[data-footnote-id]) .cm-footref {
+						display: none;
+					}
+
+					/* === SOURCE MODE === */
+					/* Hide sidenote widgets in Source mode - show raw markdown */
+					.markdown-source-view.mod-cm6:not(.is-live-preview) .sidenote-number[data-footnote-id] {
+						display: none;
+					}
+
+					/* Show the footnote reference in Source mode */
+					.markdown-source-view.mod-cm6:not(.is-live-preview) .cm-footref {
+						display: inline !important;
+					}
+					`
+							: ""
+					}
+
+					/* CM6 footnote sidenote widget */
+					.cm-line .sidenote-number[data-footnote-id] {
+						position: static;
+						display: inline;
+					}
+
+					/* Position margin relative to .cm-line, not the wrapper */
+					.cm-line:has(.sidenote-number[data-footnote-id]) {
+						position: relative;
+					}
+
+					.cm-line .sidenote-number[data-footnote-id] .sidenote-margin {
+						position: absolute;
+						top: 0;
+						width: var(--sidenote-width);
+						font-size: ${s.fontSize}%;
+						line-height: ${s.lineHeight};
+						overflow-wrap: break-word;
+						transform: translateY(calc(var(--sidenote-line-offset, 0px) + var(--sidenote-shift, 0px)));
+						will-change: transform;
+						z-index: 10;
+						pointer-events: auto;
+						${transitionRule}
+					}
+		`;
 
 		try {
 			document.head.appendChild(this.styleEl);
@@ -1614,17 +1634,28 @@ export default class SidenotePlugin extends Plugin {
 				if (item.footnoteId) {
 					const footnoteId = item.footnoteId;
 
+					// Initialize editing state
+					margin.dataset.editing = "false";
+
 					margin.addEventListener("mousedown", (e) => {
+						// When editing, allow normal mousedown behavior for cursor positioning
+						if (margin.contentEditable === "true") {
+							return;
+						}
 						e.stopPropagation();
+						e.preventDefault();
 					});
 
 					margin.addEventListener("click", (e) => {
+						// When editing, allow normal click behavior
+						if (margin.contentEditable === "true") {
+							e.stopPropagation();
+							return;
+						}
+
 						e.preventDefault();
 						e.stopPropagation();
-
-						if (margin.dataset.editing !== "true") {
-							this.startReadingModeMarginEdit(margin, footnoteId);
-						}
+						this.startReadingModeMarginEdit(margin, footnoteId, e);
 					});
 				}
 			}
@@ -1643,18 +1674,23 @@ export default class SidenotePlugin extends Plugin {
 						return;
 					}
 
+					// Don't trigger if already editing
+					if (margin.contentEditable === "true") {
+						return;
+					}
+
 					e.preventDefault();
 					e.stopPropagation();
 
-					// Start editing the margin
-					if (margin.dataset.editing !== "true") {
-						this.startReadingModeMarginEdit(margin, footnoteId);
-					}
+					this.startReadingModeMarginEdit(margin, footnoteId);
 				});
 
 				wrapper.addEventListener("mousedown", (e) => {
 					if ((e.target as HTMLElement).closest(".sidenote-margin")) {
-						return;
+						// If margin is being edited, allow normal behavior
+						if (margin.contentEditable === "true") {
+							return;
+						}
 					}
 					e.stopPropagation();
 				});
@@ -1732,7 +1768,17 @@ export default class SidenotePlugin extends Plugin {
 	private startReadingModeMarginEdit(
 		margin: HTMLElement,
 		footnoteId: string,
+		clickEvent?: MouseEvent,
 	) {
+		// Don't re-initialize if already editing
+		if (margin.contentEditable === "true") {
+			// If we have a click event, just position the cursor
+			if (clickEvent) {
+				this.placeCursorAtClickPosition(margin, clickEvent);
+			}
+			return;
+		}
+
 		margin.dataset.editing = "true";
 
 		// Get the current content
@@ -1744,20 +1790,62 @@ export default class SidenotePlugin extends Plugin {
 		margin.textContent = currentText;
 		margin.focus();
 
-		// Select all text
-		const selection = window.getSelection();
-		const range = document.createRange();
-		range.selectNodeContents(margin);
-		selection?.removeAllRanges();
-		selection?.addRange(range);
+		// Place cursor at click position, or at end if no click event
+		if (clickEvent) {
+			this.placeCursorAtClickPosition(margin, clickEvent);
+		} else {
+			// Place cursor at end
+			const selection = window.getSelection();
+			const range = document.createRange();
+			range.selectNodeContents(margin);
+			range.collapse(false);
+			selection?.removeAllRanges();
+			selection?.addRange(range);
+		}
 
 		const onKeyDown = (e: KeyboardEvent) => {
 			e.stopPropagation();
+			e.stopImmediatePropagation();
+
+			const isMod = e.ctrlKey || e.metaKey;
+
+			// Handle formatting shortcuts
+			if (isMod) {
+				const key = e.key.toLowerCase();
+
+				if (key === "b") {
+					e.preventDefault();
+					this.applyMarkdownFormatting(margin, "**");
+					return;
+				}
+				if (key === "i") {
+					e.preventDefault();
+					this.applyMarkdownFormatting(margin, "*");
+					return;
+				}
+				if (key === "k") {
+					e.preventDefault();
+					this.applyMarkdownFormatting(margin, "", "", true);
+					return;
+				}
+				if (key === "a") {
+					e.preventDefault();
+					const selection = window.getSelection();
+					const range = document.createRange();
+					range.selectNodeContents(margin);
+					selection?.removeAllRanges();
+					selection?.addRange(range);
+					return;
+				}
+			}
 
 			if (e.key === "Enter" && !e.shiftKey) {
 				e.preventDefault();
 				margin.blur();
-			} else if (e.key === "Escape") {
+				return;
+			}
+
+			if (e.key === "Escape") {
 				e.preventDefault();
 				margin.dataset.editing = "false";
 				margin.contentEditable = "false";
@@ -1769,6 +1857,76 @@ export default class SidenotePlugin extends Plugin {
 				margin.removeEventListener("keydown", onKeyDown);
 				margin.removeEventListener("keyup", onKeyUp);
 				margin.removeEventListener("keypress", onKeyPress);
+				return;
+			}
+
+			// Handle arrow keys - prevent cursor from leaving the margin
+			if (
+				["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)
+			) {
+				const selection = window.getSelection();
+				if (!selection || selection.rangeCount === 0) return;
+
+				const range = selection.getRangeAt(0);
+
+				// Check if at start
+				const atStart =
+					range.collapsed &&
+					range.startOffset === 0 &&
+					(range.startContainer === margin ||
+						range.startContainer === margin.firstChild);
+
+				// Check if at end
+				let atEnd = false;
+				if (range.collapsed) {
+					if (range.startContainer === margin) {
+						atEnd = range.startOffset === margin.childNodes.length;
+					} else if (range.startContainer.nodeType === Node.TEXT_NODE) {
+						const containerLength =
+							range.startContainer.textContent?.length ?? 0;
+						atEnd =
+							range.startOffset === containerLength &&
+							(range.startContainer === margin.lastChild ||
+								range.startContainer.parentNode === margin);
+					}
+				}
+
+				// Block left/right movement out of the margin
+				if (atStart && e.key === "ArrowLeft") {
+					e.preventDefault();
+					return;
+				}
+				if (atEnd && e.key === "ArrowRight") {
+					e.preventDefault();
+					return;
+				}
+
+				// For up/down, we need to check if the movement would leave the margin
+				if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+					// Get current cursor position
+					const cursorRect = range.getBoundingClientRect();
+					const marginRect = margin.getBoundingClientRect();
+
+					// Check if we're on the first line (for ArrowUp) or last line (for ArrowDown)
+					const lineHeight =
+						parseFloat(getComputedStyle(margin).lineHeight) || 20;
+
+					if (e.key === "ArrowUp") {
+						// If cursor is near the top of the margin, block
+						if (cursorRect.top - marginRect.top < lineHeight) {
+							e.preventDefault();
+							return;
+						}
+					}
+
+					if (e.key === "ArrowDown") {
+						// If cursor is near the bottom of the margin, block
+						if (marginRect.bottom - cursorRect.bottom < lineHeight) {
+							e.preventDefault();
+							return;
+						}
+					}
+				}
 			}
 		};
 
@@ -1826,24 +1984,47 @@ export default class SidenotePlugin extends Plugin {
 		const content = editor.getValue();
 
 		// The footnoteId from reading mode is like "fn-1-abc123", we need just the number/id part
-		// Extract the actual footnote identifier
-		const idMatch = footnoteId.match(/^fn-(.+?)(?:-[a-f0-9]+)?$/i);
-		const actualId = idMatch?.[1] ?? footnoteId.replace(/^fn-/, "");
+		// Extract the actual footnote identifier - try multiple patterns
+		let actualId = footnoteId;
+
+		// Pattern 1: fn-X-HASH
+		const fnHashMatch = footnoteId.match(/^fn-(.+?)-[a-f0-9]+$/i);
+		if (fnHashMatch && fnHashMatch[1]) {
+			actualId = fnHashMatch[1];
+		} else {
+			// Pattern 2: fn-X
+			const fnMatch = footnoteId.match(/^fn-(.+)$/i);
+			if (fnMatch && fnMatch[1]) {
+				actualId = fnMatch[1];
+			}
+		}
+
+		console.log(
+			"Reading mode: footnoteId =",
+			footnoteId,
+			"actualId =",
+			actualId,
+		);
 
 		// Find and replace the footnote definition
 		const escapedId = actualId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 		const footnoteDefRegex = new RegExp(
-			`^(\\[\\^${escapedId}\\]:\\s*)(.+(?:\\n(?:[ \\t]+.+)*)?)$`,
+			`^(\\[\\^${escapedId}\\]:\\s*)(.*)$`,
 			"gm",
 		);
 
 		const match = footnoteDefRegex.exec(content);
+		console.log("Reading mode: match =", match);
+
 		if (match) {
 			const prefix = match[1] ?? "";
 			const from = editor.offsetToPos(match.index + prefix.length);
 			const to = editor.offsetToPos(match.index + match[0].length);
 
 			editor.replaceRange(newText, from, to);
+			console.log("Reading mode: replaced successfully");
+		} else {
+			console.log("Reading mode: no match found for [^" + actualId + "]:");
 		}
 	}
 
@@ -2955,18 +3136,26 @@ export default class SidenotePlugin extends Plugin {
 		margin.dataset.editing = "false";
 		margin.dataset.sidenoteIndex = String(sidenoteIndex);
 
-		// Use named functions so they can be removed on cleanup
 		const onMouseDown = (e: MouseEvent) => {
+			// When editing, allow normal mousedown behavior for cursor positioning
+			if (margin.dataset.editing === "true") {
+				// Don't stop propagation or prevent default - let browser handle cursor
+				return;
+			}
 			e.stopPropagation();
+			e.preventDefault();
 		};
 
 		const onClick = (e: MouseEvent) => {
+			// When editing, allow normal click behavior
+			if (margin.dataset.editing === "true") {
+				e.stopPropagation(); // Still prevent clicks from bubbling to parent elements
+				return;
+			}
+
 			e.preventDefault();
 			e.stopPropagation();
-
-			if (margin.dataset.editing === "true") return;
-
-			this.startMarginEdit(margin, sourceSpan, sidenoteIndex);
+			this.startMarginEdit(margin, sourceSpan, sidenoteIndex, e);
 		};
 
 		margin.addEventListener("mousedown", onMouseDown);
@@ -2986,7 +3175,16 @@ export default class SidenotePlugin extends Plugin {
 		margin: HTMLElement,
 		sourceSpan: HTMLElement,
 		sidenoteIndex: number,
+		clickEvent?: MouseEvent,
 	) {
+		// Don't re-initialize if already editing
+		if (
+			margin.dataset.editing === "true" &&
+			margin.contentEditable === "true"
+		) {
+			return;
+		}
+
 		margin.dataset.editing = "true";
 
 		// Get the raw text content (without the number prefix)
@@ -2998,12 +3196,18 @@ export default class SidenotePlugin extends Plugin {
 		margin.textContent = currentText;
 		margin.focus();
 
-		// Select all text
-		const selection = window.getSelection();
-		const range = document.createRange();
-		range.selectNodeContents(margin);
-		selection?.removeAllRanges();
-		selection?.addRange(range);
+		// Place cursor at click position, or at end if no click event
+		if (clickEvent) {
+			this.placeCursorAtClickPosition(margin, clickEvent);
+		} else {
+			// Place cursor at end
+			const selection = window.getSelection();
+			const range = document.createRange();
+			range.selectNodeContents(margin);
+			range.collapse(false);
+			selection?.removeAllRanges();
+			selection?.addRange(range);
+		}
 
 		// Handle blur (save changes)
 		const onBlur = () => {
@@ -3014,10 +3218,48 @@ export default class SidenotePlugin extends Plugin {
 
 		// Handle keyboard
 		const onKeydown = (e: KeyboardEvent) => {
+			e.stopPropagation();
+			e.stopImmediatePropagation();
+
+			const isMod = e.ctrlKey || e.metaKey;
+
+			// Handle formatting shortcuts
+			if (isMod) {
+				const key = e.key.toLowerCase();
+
+				if (key === "b") {
+					e.preventDefault();
+					this.applyMarkdownFormatting(margin, "**");
+					return;
+				}
+				if (key === "i") {
+					e.preventDefault();
+					this.applyMarkdownFormatting(margin, "*");
+					return;
+				}
+				if (key === "k") {
+					e.preventDefault();
+					this.applyMarkdownFormatting(margin, "", "", true);
+					return;
+				}
+				if (key === "a") {
+					e.preventDefault();
+					const selection = window.getSelection();
+					const range = document.createRange();
+					range.selectNodeContents(margin);
+					selection?.removeAllRanges();
+					selection?.addRange(range);
+					return;
+				}
+			}
+
 			if (e.key === "Enter" && !e.shiftKey) {
 				e.preventDefault();
 				margin.blur();
-			} else if (e.key === "Escape") {
+				return;
+			}
+
+			if (e.key === "Escape") {
 				e.preventDefault();
 				// Restore original content without saving
 				margin.dataset.editing = "false";
@@ -3030,11 +3272,126 @@ export default class SidenotePlugin extends Plugin {
 				);
 				margin.removeEventListener("blur", onBlur);
 				margin.removeEventListener("keydown", onKeydown);
+				return;
+			}
+
+			// Handle arrow keys - prevent cursor from leaving the margin
+			if (
+				["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)
+			) {
+				const selection = window.getSelection();
+				if (!selection || selection.rangeCount === 0) return;
+
+				const range = selection.getRangeAt(0);
+
+				// Check if at start
+				const atStart =
+					range.collapsed &&
+					range.startOffset === 0 &&
+					(range.startContainer === margin ||
+						range.startContainer === margin.firstChild);
+
+				// Check if at end
+				let atEnd = false;
+				if (range.collapsed) {
+					if (range.startContainer === margin) {
+						atEnd = range.startOffset === margin.childNodes.length;
+					} else if (range.startContainer.nodeType === Node.TEXT_NODE) {
+						const containerLength =
+							range.startContainer.textContent?.length ?? 0;
+						atEnd =
+							range.startOffset === containerLength &&
+							(range.startContainer === margin.lastChild ||
+								range.startContainer.parentNode === margin);
+					}
+				}
+
+				// Block left/right movement out of the margin
+				if (atStart && e.key === "ArrowLeft") {
+					e.preventDefault();
+					return;
+				}
+				if (atEnd && e.key === "ArrowRight") {
+					e.preventDefault();
+					return;
+				}
+
+				// For up/down, we need to check if the movement would leave the margin
+				if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+					// Get current cursor position
+					const cursorRect = range.getBoundingClientRect();
+					const marginRect = margin.getBoundingClientRect();
+
+					// Check if we're on the first line (for ArrowUp) or last line (for ArrowDown)
+					const lineHeight =
+						parseFloat(getComputedStyle(margin).lineHeight) || 20;
+
+					if (e.key === "ArrowUp") {
+						// If cursor is near the top of the margin, block
+						if (cursorRect.top - marginRect.top < lineHeight) {
+							e.preventDefault();
+							return;
+						}
+					}
+
+					if (e.key === "ArrowDown") {
+						// If cursor is near the bottom of the margin, block
+						if (marginRect.bottom - cursorRect.bottom < lineHeight) {
+							e.preventDefault();
+							return;
+						}
+					}
+				}
 			}
 		};
 
 		margin.addEventListener("blur", onBlur);
 		margin.addEventListener("keydown", onKeydown);
+	}
+
+	/**
+	 * Place the cursor at the position where the user clicked within a contenteditable element.
+	 */
+	private placeCursorAtClickPosition(
+		element: HTMLElement,
+		clickEvent: MouseEvent,
+	) {
+		const selection = window.getSelection();
+		if (!selection) return;
+
+		// Use caretRangeFromPoint or caretPositionFromPoint depending on browser support
+		let range: Range | null = null;
+
+		if (document.caretRangeFromPoint) {
+			// Chrome, Safari, Edge
+			range = document.caretRangeFromPoint(
+				clickEvent.clientX,
+				clickEvent.clientY,
+			);
+		} else if ((document as any).caretPositionFromPoint) {
+			// Firefox
+			const caretPos = (document as any).caretPositionFromPoint(
+				clickEvent.clientX,
+				clickEvent.clientY,
+			);
+			if (caretPos) {
+				range = document.createRange();
+				range.setStart(caretPos.offsetNode, caretPos.offset);
+				range.collapse(true);
+			}
+		}
+
+		if (range) {
+			selection.removeAllRanges();
+			selection.addRange(range);
+		} else {
+			// Fallback: place cursor at end
+			range = document.createRange();
+			range.selectNodeContents(element);
+			range.collapse(false);
+			selection.removeAllRanges();
+			selection.addRange(range);
+		}
 	}
 
 	/**
@@ -3274,6 +3631,193 @@ export default class SidenotePlugin extends Plugin {
 		);
 
 		this.resolveCollisions(margins, this.settings.collisionSpacing);
+	}
+
+	/**
+	 * Apply markdown formatting to the current selection or cursor position in a contenteditable element.
+	 * @param element The contenteditable element
+	 * @param prefix The prefix to add (e.g., "**" for bold, "*" for italic)
+	 * @param suffix The suffix to add (defaults to prefix)
+	 * @param linkMode If true, handle as a link with [text](url) format
+	 */
+	private applyMarkdownFormatting(
+		element: HTMLElement,
+		prefix: string,
+		suffix: string = prefix,
+		linkMode: boolean = false,
+	) {
+		// Ensure focus is on the element
+		element.focus();
+
+		const selection = window.getSelection();
+		if (!selection || selection.rangeCount === 0) return;
+
+		const range = selection.getRangeAt(0);
+
+		// Check if selection is within the element
+		if (
+			!element.contains(range.startContainer) ||
+			!element.contains(range.endContainer)
+		) {
+			// Selection is outside - just insert at end of element
+			const textContent = element.textContent || "";
+			if (linkMode) {
+				element.textContent = textContent + "[link text](url)";
+			} else {
+				element.textContent = textContent + prefix + suffix;
+			}
+			// Place cursor appropriately
+			const newRange = document.createRange();
+			const textNode = element.firstChild || element;
+			const pos = textContent.length + prefix.length;
+			try {
+				newRange.setStart(textNode, pos);
+				newRange.setEnd(textNode, pos);
+				selection.removeAllRanges();
+				selection.addRange(newRange);
+			} catch (e) {
+				// Ignore
+			}
+			return;
+		}
+
+		const selectedText = range.toString();
+
+		// Get the text content and cursor positions relative to the element's text
+		const fullText = element.textContent || "";
+
+		// Calculate the start offset within the full text
+		let startOffset = 0;
+		let endOffset = 0;
+
+		// Walk through text nodes to find the actual offsets
+		const walker = document.createTreeWalker(
+			element,
+			NodeFilter.SHOW_TEXT,
+			null,
+		);
+		let currentOffset = 0;
+		let foundStart = false;
+		let foundEnd = false;
+		let node: Text | null;
+
+		while ((node = walker.nextNode() as Text | null)) {
+			const nodeLength = node.textContent?.length || 0;
+
+			if (!foundStart && node === range.startContainer) {
+				startOffset = currentOffset + range.startOffset;
+				foundStart = true;
+			}
+			if (!foundEnd && node === range.endContainer) {
+				endOffset = currentOffset + range.endOffset;
+				foundEnd = true;
+			}
+
+			if (foundStart && foundEnd) break;
+			currentOffset += nodeLength;
+		}
+
+		// Handle case where container is the element itself
+		if (!foundStart && range.startContainer === element) {
+			startOffset = 0;
+			for (
+				let i = 0;
+				i < range.startOffset && i < element.childNodes.length;
+				i++
+			) {
+				startOffset += element.childNodes[i]?.textContent?.length ?? 0;
+			}
+		}
+		if (!foundEnd && range.endContainer === element) {
+			endOffset = 0;
+			for (
+				let i = 0;
+				i < range.endOffset && i < element.childNodes.length;
+				i++
+			) {
+				endOffset += element.childNodes[i]?.textContent?.length ?? 0;
+			}
+		}
+
+		// Build the new text
+		let newText: string;
+		let newCursorStart: number;
+		let newCursorEnd: number;
+
+		if (linkMode) {
+			const linkText = selectedText || "link text";
+			const replacement = `[${linkText}](url)`;
+			newText =
+				fullText.slice(0, startOffset) +
+				replacement +
+				fullText.slice(endOffset);
+			// Select "url"
+			newCursorStart = startOffset + 1 + linkText.length + 2; // [linkText](
+			newCursorEnd = newCursorStart + 3; // url
+		} else if (selectedText) {
+			// Wrap selection
+			const replacement = `${prefix}${selectedText}${suffix}`;
+			newText =
+				fullText.slice(0, startOffset) +
+				replacement +
+				fullText.slice(endOffset);
+			// Select the wrapped text
+			newCursorStart = startOffset + prefix.length;
+			newCursorEnd = newCursorStart + selectedText.length;
+		} else {
+			// Insert at cursor
+			newText =
+				fullText.slice(0, startOffset) +
+				prefix +
+				suffix +
+				fullText.slice(endOffset);
+			// Place cursor between prefix and suffix
+			newCursorStart = startOffset + prefix.length;
+			newCursorEnd = newCursorStart;
+		}
+
+		// Update the element
+		element.textContent = newText;
+
+		// Restore cursor position
+		requestAnimationFrame(() => {
+			element.focus();
+			const sel = window.getSelection();
+			if (!sel) return;
+
+			const textNode = element.firstChild;
+			if (!textNode) return;
+
+			try {
+				const newRange = document.createRange();
+				newRange.setStart(
+					textNode,
+					Math.min(newCursorStart, newText.length),
+				);
+				newRange.setEnd(textNode, Math.min(newCursorEnd, newText.length));
+				sel.removeAllRanges();
+				sel.addRange(newRange);
+			} catch (e) {
+				// Fallback - place at end
+				const fallbackRange = document.createRange();
+				fallbackRange.selectNodeContents(element);
+				fallbackRange.collapse(false);
+				sel.removeAllRanges();
+				sel.addRange(fallbackRange);
+			}
+		});
+	}
+
+	/**
+	 * Public version for widget to use.
+	 */
+	public applyMarkdownFormattingPublic(
+		element: HTMLElement,
+		prefix: string,
+		suffix: string = prefix,
+		linkMode: boolean = false,
+	) {
+		this.applyMarkdownFormatting(element, prefix, suffix, linkMode);
 	}
 }
 
@@ -3699,19 +4243,24 @@ class FootnoteSidenoteWidget extends WidgetType {
 				return;
 			}
 
+			// Don't trigger if margin is already being edited
+			if (margin.contentEditable === "true") {
+				return;
+			}
+
 			e.preventDefault();
 			e.stopPropagation();
 
-			// Trigger editing on the margin
-			if (margin.dataset.editing !== "true") {
-				this.startMarginEdit(margin);
-			}
+			this.startMarginEdit(margin);
 		});
 
 		// Prevent mousedown from propagating to CM6 editor
 		wrapper.addEventListener("mousedown", (e) => {
 			if ((e.target as HTMLElement).closest(".sidenote-margin")) {
-				return;
+				// If margin is being edited, allow normal behavior
+				if (margin.contentEditable === "true") {
+					return;
+				}
 			}
 			e.stopPropagation();
 		});
@@ -3741,77 +4290,224 @@ class FootnoteSidenoteWidget extends WidgetType {
 	private setupMarginEditing(margin: HTMLElement) {
 		margin.dataset.editing = "false";
 
+		// Check if this footnote is already being edited (widget was recreated)
+		if (this.plugin.getActiveFootnoteEdit() === this.footnoteId) {
+			// Restore editing state
+			margin.dataset.editing = "true";
+			margin.contentEditable = "true";
+			margin.innerHTML = "";
+			margin.textContent = this.content;
+
+			// Re-setup event listeners
+			this.attachEditingListeners(margin);
+
+			// Set up click handlers that just handle cursor positioning (already editing)
+			margin.addEventListener("mousedown", (e: MouseEvent) => {
+				// Allow normal behavior for cursor positioning
+				e.stopPropagation();
+			});
+
+			margin.addEventListener("click", (e: MouseEvent) => {
+				e.stopPropagation();
+				// Cursor positioning is handled by the browser
+			});
+
+			// Focus and place cursor at end
+			requestAnimationFrame(() => {
+				margin.focus();
+			});
+			return;
+		}
+
 		const onMouseDown = (e: MouseEvent) => {
+			if (margin.contentEditable === "true") {
+				// Allow normal behavior but stop propagation to CM6
+				e.stopPropagation();
+				return;
+			}
 			e.stopPropagation();
 			e.preventDefault();
 		};
 
 		const onClick = (e: MouseEvent) => {
+			if (margin.contentEditable === "true") {
+				e.stopPropagation();
+				return;
+			}
+
 			e.preventDefault();
 			e.stopPropagation();
-
-			if (margin.dataset.editing === "true") return;
-
-			this.startMarginEdit(margin);
+			this.startMarginEdit(margin, e);
 		};
 
 		margin.addEventListener("mousedown", onMouseDown);
 		margin.addEventListener("click", onClick);
 	}
 
-	private startMarginEdit(margin: HTMLElement) {
+	private startMarginEdit(margin: HTMLElement, clickEvent?: MouseEvent) {
+		// Don't re-initialize if already editing
+		if (margin.contentEditable === "true") {
+			if (clickEvent) {
+				this.placeCursorAtClickPosition(margin, clickEvent);
+			}
+			return;
+		}
+
+		// Mark this footnote as being edited
+		this.plugin.setActiveFootnoteEdit(this.footnoteId);
+
 		margin.dataset.editing = "true";
 
-		// Get the raw text content
 		const currentText = this.content;
 
-		// Clear margin and make it a simple text editor
 		margin.innerHTML = "";
 		margin.contentEditable = "true";
 		margin.textContent = currentText;
 		margin.focus();
 
-		// Select all text
-		const selection = window.getSelection();
-		const range = document.createRange();
-		range.selectNodeContents(margin);
-		selection?.removeAllRanges();
-		selection?.addRange(range);
+		if (clickEvent) {
+			this.placeCursorAtClickPosition(margin, clickEvent);
+		} else {
+			const selection = window.getSelection();
+			const range = document.createRange();
+			range.selectNodeContents(margin);
+			range.collapse(false);
+			selection?.removeAllRanges();
+			selection?.addRange(range);
+		}
 
-		// Prevent keyboard events from reaching the editor
+		this.attachEditingListeners(margin);
+	}
+
+	private attachEditingListeners(margin: HTMLElement) {
 		const onKeyDown = (e: KeyboardEvent) => {
 			e.stopPropagation();
+			e.stopImmediatePropagation();
+
+			const isMod = e.ctrlKey || e.metaKey;
+
+			// Handle formatting shortcuts
+			if (isMod) {
+				const key = e.key.toLowerCase();
+
+				if (key === "b") {
+					e.preventDefault();
+					this.plugin.applyMarkdownFormattingPublic(margin, "**");
+					return;
+				}
+				if (key === "i") {
+					e.preventDefault();
+					this.plugin.applyMarkdownFormattingPublic(margin, "*");
+					return;
+				}
+				if (key === "k") {
+					e.preventDefault();
+					this.plugin.applyMarkdownFormattingPublic(margin, "", "", true);
+					return;
+				}
+				if (key === "a") {
+					e.preventDefault();
+					const selection = window.getSelection();
+					const range = document.createRange();
+					range.selectNodeContents(margin);
+					selection?.removeAllRanges();
+					selection?.addRange(range);
+					return;
+				}
+			}
 
 			if (e.key === "Enter" && !e.shiftKey) {
 				e.preventDefault();
 				margin.blur();
-			} else if (e.key === "Escape") {
+				return;
+			}
+
+			if (e.key === "Escape") {
 				e.preventDefault();
-				// Restore original content without saving
-				margin.dataset.editing = "false";
-				margin.contentEditable = "false";
-				margin.innerHTML = "";
-				margin.appendChild(
-					this.plugin.renderLinksToFragmentPublic(
-						this.plugin.normalizeTextPublic(this.content),
-					),
-				);
-				margin.removeEventListener("blur", onBlur);
-				margin.removeEventListener("keydown", onKeyDown);
-				margin.removeEventListener("keyup", onKeyUp);
-				margin.removeEventListener("keypress", onKeyPress);
+				this.cancelEdit(margin);
+				return;
+			}
+
+			// Handle arrow keys - prevent cursor from leaving the margin
+			if (
+				["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)
+			) {
+				const selection = window.getSelection();
+				if (!selection || selection.rangeCount === 0) return;
+
+				const range = selection.getRangeAt(0);
+
+				// Check if at start
+				const atStart =
+					range.collapsed &&
+					range.startOffset === 0 &&
+					(range.startContainer === margin ||
+						range.startContainer === margin.firstChild);
+
+				// Check if at end
+				let atEnd = false;
+				if (range.collapsed) {
+					if (range.startContainer === margin) {
+						atEnd = range.startOffset === margin.childNodes.length;
+					} else if (range.startContainer.nodeType === Node.TEXT_NODE) {
+						const containerLength =
+							range.startContainer.textContent?.length ?? 0;
+						atEnd =
+							range.startOffset === containerLength &&
+							(range.startContainer === margin.lastChild ||
+								range.startContainer.parentNode === margin);
+					}
+				}
+
+				// Block left/right movement out of the margin
+				if (atStart && e.key === "ArrowLeft") {
+					e.preventDefault();
+					return;
+				}
+				if (atEnd && e.key === "ArrowRight") {
+					e.preventDefault();
+					return;
+				}
+
+				// For up/down, we need to check if the movement would leave the margin
+				if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+					// Get current cursor position
+					const cursorRect = range.getBoundingClientRect();
+					const marginRect = margin.getBoundingClientRect();
+
+					// Check if we're on the first line (for ArrowUp) or last line (for ArrowDown)
+					const lineHeight =
+						parseFloat(getComputedStyle(margin).lineHeight) || 20;
+
+					if (e.key === "ArrowUp") {
+						// If cursor is near the top of the margin, block
+						if (cursorRect.top - marginRect.top < lineHeight) {
+							e.preventDefault();
+							return;
+						}
+					}
+
+					if (e.key === "ArrowDown") {
+						// If cursor is near the bottom of the margin, block
+						if (marginRect.bottom - cursorRect.bottom < lineHeight) {
+							e.preventDefault();
+							return;
+						}
+					}
+				}
 			}
 		};
 
 		const onKeyUp = (e: KeyboardEvent) => {
 			e.stopPropagation();
+			e.stopImmediatePropagation();
 		};
 
 		const onKeyPress = (e: KeyboardEvent) => {
 			e.stopPropagation();
+			e.stopImmediatePropagation();
 		};
 
-		// Handle blur (save changes)
 		const onBlur = () => {
 			this.finishMarginEdit(margin);
 			margin.removeEventListener("blur", onBlur);
@@ -3826,13 +4522,68 @@ class FootnoteSidenoteWidget extends WidgetType {
 		margin.addEventListener("keypress", onKeyPress);
 	}
 
+	private cancelEdit(margin: HTMLElement) {
+		margin.dataset.editing = "false";
+		margin.contentEditable = "false";
+		margin.innerHTML = "";
+		margin.appendChild(
+			this.plugin.renderLinksToFragmentPublic(
+				this.plugin.normalizeTextPublic(this.content),
+			),
+		);
+		this.plugin.setActiveFootnoteEdit(null);
+	}
+
+	/**
+	 * Place the cursor at the position where the user clicked within a contenteditable element.
+	 */
+	private placeCursorAtClickPosition(
+		element: HTMLElement,
+		clickEvent: MouseEvent,
+	) {
+		const selection = window.getSelection();
+		if (!selection) return;
+
+		let range: Range | null = null;
+
+		if (document.caretRangeFromPoint) {
+			range = document.caretRangeFromPoint(
+				clickEvent.clientX,
+				clickEvent.clientY,
+			);
+		} else if ((document as any).caretPositionFromPoint) {
+			const caretPos = (document as any).caretPositionFromPoint(
+				clickEvent.clientX,
+				clickEvent.clientY,
+			);
+			if (caretPos) {
+				range = document.createRange();
+				range.setStart(caretPos.offsetNode, caretPos.offset);
+				range.collapse(true);
+			}
+		}
+
+		if (range) {
+			selection.removeAllRanges();
+			selection.addRange(range);
+		} else {
+			range = document.createRange();
+			range.selectNodeContents(element);
+			range.collapse(false);
+			selection.removeAllRanges();
+			selection.addRange(range);
+		}
+	}
+
 	private finishMarginEdit(margin: HTMLElement) {
 		const newText = margin.textContent ?? "";
 
 		margin.dataset.editing = "false";
 		margin.contentEditable = "false";
 
-		// If no change, just restore the rendered content
+		// Clear the active edit tracking so decorations can rebuild
+		this.plugin.setActiveFootnoteEdit(null);
+
 		if (newText === this.content) {
 			margin.innerHTML = "";
 			margin.appendChild(
@@ -3843,7 +4594,6 @@ class FootnoteSidenoteWidget extends WidgetType {
 			return;
 		}
 
-		// Update the source document - find and replace the footnote definition
 		const view =
 			this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
 		if (!view?.editor) {
@@ -3859,8 +4609,6 @@ class FootnoteSidenoteWidget extends WidgetType {
 		const editor = view.editor;
 		const content = editor.getValue();
 
-		// Find and replace the footnote definition
-		// Match: [^id]: text (possibly multiline)
 		const escapedId = this.footnoteId.replace(
 			/[.*+?^${}()|[\]\\]/g,
 			"\\$&",
@@ -3877,9 +4625,11 @@ class FootnoteSidenoteWidget extends WidgetType {
 			const to = editor.offsetToPos(match.index + match[0].length);
 
 			editor.replaceRange(newText, from, to);
+			// Let CM6 rebuild the widget with new content - don't update margin manually
+			return;
 		}
 
-		// Restore the margin display (the widget will be recreated by CM6)
+		// Only reach here if we couldn't find the footnote definition
 		margin.innerHTML = "";
 		margin.appendChild(
 			this.plugin.renderLinksToFragmentPublic(
@@ -3916,6 +4666,12 @@ class FootnoteSidenoteViewPlugin {
 	}
 
 	update(update: ViewUpdate) {
+		// Don't rebuild decorations while a footnote is being edited
+		// This prevents the widget from being recreated mid-edit
+		if (this.plugin.isFootnoteBeingEdited()) {
+			return;
+		}
+
 		if (
 			update.docChanged ||
 			update.viewportChanged ||
