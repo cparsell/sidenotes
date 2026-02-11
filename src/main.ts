@@ -17,8 +17,9 @@ import {
 	DecorationSet,
 	WidgetType,
 	keymap,
+	Command,
 } from "@codemirror/view";
-import { EditorState } from "@codemirror/state";
+import { EditorState, EditorSelection } from "@codemirror/state";
 
 // CM6 building blocks for proper shortcuts + undo
 import {
@@ -175,8 +176,6 @@ export default class SidenotePlugin extends Plugin {
 
 	async onload() {
 		await this.loadSettings();
-
-		// this.debugHotkeys();
 
 		this.addSettingTab(new SidenoteSettingTab(this.app, this));
 		this.injectStyles();
@@ -3870,49 +3869,6 @@ export default class SidenotePlugin extends Plugin {
 	}
 
 	/**
-	 * Debug: Explore Obsidian's hotkey system
-	 */
-	private debugHotkeys() {
-		const app = this.app as any;
-
-		console.log("app.hotkeyManager:", app.hotkeyManager);
-		console.log("app.commands:", app.commands);
-		console.log("app.scope:", app.scope);
-
-		if (app.hotkeyManager) {
-			console.log("hotkeyManager keys:", Object.keys(app.hotkeyManager));
-			console.log("hotkeyManager.hotkeys:", app.hotkeyManager.hotkeys);
-			console.log(
-				"hotkeyManager.defaultHotkeys:",
-				app.hotkeyManager.defaultHotkeys,
-			);
-			console.log(
-				"hotkeyManager.customHotkeys:",
-				app.hotkeyManager.customHotkeys,
-			);
-		}
-
-		if (app.commands) {
-			console.log("commands keys:", Object.keys(app.commands));
-			console.log("commands.commands:", app.commands.commands);
-
-			// Look for bold command
-			const commands = app.commands.commands;
-			if (commands) {
-				for (const [id, cmd] of Object.entries(commands)) {
-					if (
-						id.includes("bold") ||
-						id.includes("italic") ||
-						id.includes("link")
-					) {
-						console.log("Found command:", id, cmd);
-					}
-				}
-			}
-		}
-	}
-
-	/**
 	 * Set up keyboard interception that prevents CM6 from seeing ANY key events
 	 * while a margin is being edited.
 	 *
@@ -4596,6 +4552,122 @@ function setWorkspaceActiveEditor(
 	};
 }
 
+function wrapSelection(view: EditorView, left: string, right: string) {
+	const changes: { from: number; to: number; insert: string }[] = [];
+	const ranges: { anchor: number; head: number }[] = [];
+
+	for (const range of view.state.selection.ranges) {
+		const from = Math.min(range.from, range.to);
+		const to = Math.max(range.from, range.to);
+		const selected = view.state.sliceDoc(from, to);
+
+		const insert = left + selected + right;
+		changes.push({ from, to, insert });
+
+		// place cursor inside markers when no selection; otherwise keep selection
+		if (from === to) {
+			const cursor = from + left.length;
+			ranges.push({ anchor: cursor, head: cursor });
+		} else {
+			ranges.push({
+				anchor: from + left.length,
+				head: to + left.length,
+			});
+		}
+	}
+
+	view.dispatch({
+		changes,
+		selection: EditorSelection.create(
+			ranges.map((r) => EditorSelection.range(r.anchor, r.head)),
+		),
+		userEvent: "input",
+	});
+}
+
+const mdBold: Command = (view) => {
+	wrapSelection(view, "**", "**");
+	return true;
+};
+
+const mdItalic: Command = (view) => {
+	wrapSelection(view, "*", "*");
+	return true;
+};
+
+const mdLink: Command = (view) => {
+	// If selection: [text]()
+	// If none: []() and cursor inside []
+	const changes: { from: number; to: number; insert: string }[] = [];
+	const ranges: { anchor: number; head: number }[] = [];
+
+	for (const range of view.state.selection.ranges) {
+		const from = Math.min(range.from, range.to);
+		const to = Math.max(range.from, range.to);
+		const selected = view.state.sliceDoc(from, to);
+
+		const insert = `[${selected}]()`;
+		changes.push({ from, to, insert });
+
+		if (from === to) {
+			// cursor between [ ]
+			const cursor = from + 1;
+			ranges.push({ anchor: cursor, head: cursor });
+		} else {
+			// keep selection on the text inside []
+			ranges.push({
+				anchor: from + 1,
+				head: from + 1 + selected.length,
+			});
+		}
+	}
+
+	view.dispatch({
+		changes,
+		selection: EditorSelection.create(
+			ranges.map((r) => EditorSelection.range(r.anchor, r.head)),
+		),
+		userEvent: "input",
+	});
+
+	return true;
+};
+
+const markdownEditHotkeys = keymap.of([
+	{ key: "Mod-b", run: mdBold, preventDefault: true },
+	{ key: "Mod-i", run: mdItalic, preventDefault: true },
+	{ key: "Mod-k", run: mdLink, preventDefault: true },
+]);
+
+const sidenoteEditorTheme = EditorView.theme({
+	// Root editor element
+	".cm-editor": {
+		color: "blue !important",
+		backgroundColor: "black !important",
+		padding: "0px", // remove outer padding
+		marginLeft: "0px",
+	},
+
+	// The text content area
+	".cm-content": {
+		marginLeft: "0px",
+		paddingLeft: "0px", // ✅ reduce left inset
+		paddingRight: "0px",
+		paddingTop: "2px",
+		paddingBottom: "2px",
+	},
+
+	// Each line
+	".cm-line": {
+		paddingLeft: "0px", // sometimes needed depending on theme
+	},
+
+	// Avoid an extra gutter-like inset
+	".cm-scroller": {
+		paddingLeft: "0px",
+	},
+});
+
 // ======================================================
 // ========CodeMirror 6 Footnote Sidenote Widget ========
 // ======================================================
@@ -4697,6 +4769,28 @@ class FootnoteSidenoteWidget extends WidgetType {
 					file: this.plugin.app.workspace.getActiveFile(),
 				}
 			: null;
+	}
+
+	private makeCommitKeymap(margin: HTMLElement) {
+		return keymap.of([
+			{
+				key: "Enter",
+				run: () => {
+					this.closeMarginEditor(margin, { commit: true });
+					return true; // handled
+				},
+				preventDefault: true,
+			},
+			{
+				key: "Shift-Enter",
+				run: (view) => {
+					// Allow newline insertion
+					view.dispatch(view.state.replaceSelection("\n"));
+					return true;
+				},
+				preventDefault: true,
+			},
+		]);
 	}
 
 	private closeMarginEditor(
@@ -4804,11 +4898,16 @@ class FootnoteSidenoteWidget extends WidgetType {
 		margin.dataset.editing = "true";
 		margin.innerHTML = "";
 
+		const commitKeymap = this.makeCommitKeymap(margin);
+
 		const state = EditorState.create({
 			doc: this.content,
 			extensions: [
+				commitKeymap,
+				sidenoteEditorTheme,
 				history(),
 				markdown(),
+				markdownEditHotkeys,
 				// keep Obsidian’s own hotkey routing possible
 				keymap.of(defaultKeymap),
 				keymap.of(historyKeymap),
@@ -4829,6 +4928,7 @@ class FootnoteSidenoteWidget extends WidgetType {
 
 		const cm = new EditorView({ state, parent: margin });
 		this.cmView = cm;
+		cm.dom.classList.add("sidenote-cm-editor");
 
 		// Route Obsidian commands to margin editor while it has focus
 		cm.dom.addEventListener(
