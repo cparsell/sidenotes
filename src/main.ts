@@ -6,6 +6,8 @@ import {
 	TFile,
 	App,
 	Editor,
+	EditorPosition,
+	EditorRange,
 } from "obsidian";
 import {
 	EditorView,
@@ -4494,8 +4496,56 @@ class SidenoteSettingTab extends PluginSettingTab {
 	}
 }
 
-function cmEditorAdapter(view: EditorView): Editor {
+function cmToPos(view: EditorView, offset: number): EditorPosition {
+	const line = view.state.doc.lineAt(offset);
+	return { line: line.number - 1, ch: offset - line.from };
+}
+
+function posToCm(view: EditorView, pos: EditorPosition): number {
+	const line = view.state.doc.line(pos.line + 1);
+	return Math.max(line.from, Math.min(line.to, line.from + pos.ch));
+}
+
+export function cmEditorAdapter(view: EditorView): Editor {
 	return {
+		getValue() {
+			return view.state.doc.toString();
+		},
+
+		getLine(line: number) {
+			return view.state.doc.line(line + 1).text;
+		},
+
+		lineCount() {
+			return view.state.doc.lines;
+		},
+
+		getCursor() {
+			return cmToPos(view, view.state.selection.main.head);
+		},
+
+		setCursor(pos: EditorPosition) {
+			const off = posToCm(view, pos);
+			view.dispatch({ selection: { anchor: off } });
+		},
+
+		listSelections() {
+			// Obsidian expects EditorRange-like objects
+			const sel = view.state.selection.main;
+			return [
+				{
+					anchor: cmToPos(view, sel.anchor),
+					head: cmToPos(view, sel.head),
+				},
+			] as any;
+		},
+
+		setSelection(anchor: EditorPosition, head?: EditorPosition) {
+			const a = posToCm(view, anchor);
+			const h = posToCm(view, head ?? anchor);
+			view.dispatch({ selection: { anchor: a, head: h } });
+		},
+
 		getSelection() {
 			const sel = view.state.selection.main;
 			return view.state.sliceDoc(sel.from, sel.to);
@@ -4508,18 +4558,26 @@ function cmEditorAdapter(view: EditorView): Editor {
 			});
 		},
 
-		getCursor() {
-			// Obsidian Editor interface is CM5-ish; returning a number is tolerated by many commands,
-			// but some expect { line, ch }. We’ll handle only the common command path here.
-			// If you hit a command that requires line/ch, we can extend this adapter.
-			return view.state.selection.main.head as any;
+		getRange(from: EditorPosition, to: EditorPosition) {
+			const a = posToCm(view, from);
+			const b = posToCm(view, to);
+			return view.state.sliceDoc(Math.min(a, b), Math.max(a, b));
 		},
 
-		setCursor(pos: any) {
-			const n = typeof pos === "number" ? pos : 0;
-			view.dispatch({ selection: { anchor: n } });
+		replaceRange(text: string, from: EditorPosition, to?: EditorPosition) {
+			const a = posToCm(view, from);
+			const b = posToCm(view, to ?? from);
+			view.dispatch({
+				changes: {
+					from: Math.min(a, b),
+					to: Math.max(a, b),
+					insert: text,
+				},
+			});
 		},
-	} as Editor;
+
+		// Many commands don’t need more than this set.
+	} as any;
 }
 
 function setWorkspaceActiveEditor(
@@ -4629,6 +4687,88 @@ class FootnoteSidenoteWidget extends WidgetType {
 	}
 
 	private cmView: EditorView | null = null;
+	private outsidePointerDown?: (ev: PointerEvent) => void;
+	private originalText: string = "";
+
+	private setActiveEditorForMargin(cm: EditorView | null) {
+		(this.plugin.app.workspace as any).activeEditor = cm
+			? {
+					editor: cmEditorAdapter(cm),
+					file: this.plugin.app.workspace.getActiveFile(),
+				}
+			: null;
+	}
+
+	private closeMarginEditor(
+		margin: HTMLElement,
+		opts: { commit: boolean },
+	) {
+		const cm = this.cmView;
+		if (!cm) return;
+
+		const newText = cm.state.doc.toString();
+		const textToUse = opts.commit ? newText : this.originalText;
+
+		// cleanup listeners
+		if (this.outsidePointerDown) {
+			document.removeEventListener(
+				"pointerdown",
+				this.outsidePointerDown,
+				true,
+			);
+			this.outsidePointerDown = undefined;
+		}
+
+		// destroy CM first
+		this.cmView = null;
+		cm.destroy();
+
+		// restore routing + state
+		this.setActiveEditorForMargin(null);
+		this.plugin.setActiveFootnoteEdit(null);
+		margin.dataset.editing = "false";
+
+		// If committing, write back to footnote definition in the note.
+		// If canceling, just re-render original.
+		if (opts.commit && textToUse !== this.content) {
+			this.commitFootnoteText(textToUse);
+		}
+
+		// Re-render the sidenote display view
+		margin.innerHTML = "";
+		margin.appendChild(
+			this.plugin.renderLinksToFragmentPublic(
+				this.plugin.normalizeTextPublic(this.content),
+			),
+		);
+	}
+
+	private commitFootnoteText(newText: string) {
+		const view =
+			this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
+		if (!view?.editor) return;
+
+		const editor = view.editor;
+		const content = editor.getValue();
+
+		const escapedId = this.footnoteId.replace(
+			/[.*+?^${}()|[\]\\]/g,
+			"\\$&",
+		);
+		const footnoteDefRegex = new RegExp(
+			`^(\\[\\^${escapedId}\\]:\\s*)(.+(?:\\n(?:[ \\t]+.+)*)?)$`,
+			"gm",
+		);
+
+		const match = footnoteDefRegex.exec(content);
+		if (!match) return;
+
+		const prefix = match[1] ?? "";
+		const from = editor.offsetToPos(match.index + prefix.length);
+		const to = editor.offsetToPos(match.index + match[0].length);
+
+		editor.replaceRange(newText, from, to);
+	}
 
 	private setupMarginEditing(margin: HTMLElement) {
 		margin.dataset.editing = "false";
@@ -4656,13 +4796,12 @@ class FootnoteSidenoteWidget extends WidgetType {
 	}
 
 	private startMarginEdit(margin: HTMLElement) {
-		// Don’t re-init if already editing
 		if (this.cmView) return;
+
+		this.originalText = this.content;
 
 		this.plugin.setActiveFootnoteEdit(this.footnoteId);
 		margin.dataset.editing = "true";
-
-		// Clear rendered markdown and mount a CM6 editor inside the margin
 		margin.innerHTML = "";
 
 		const state = EditorState.create({
@@ -4670,40 +4809,60 @@ class FootnoteSidenoteWidget extends WidgetType {
 			extensions: [
 				history(),
 				markdown(),
+				// keep Obsidian’s own hotkey routing possible
 				keymap.of(defaultKeymap),
 				keymap.of(historyKeymap),
 				EditorView.lineWrapping,
+
+				// ESC to close (cancel)
+				keymap.of([
+					{
+						key: "Escape",
+						run: () => {
+							this.closeMarginEditor(margin, { commit: false });
+							return true;
+						},
+					},
+				]),
 			],
 		});
 
-		const cm = new EditorView({
-			state,
-			parent: margin,
-		});
-
+		const cm = new EditorView({ state, parent: margin });
 		this.cmView = cm;
 
-		// Make Obsidian route commands (Cmd+B etc.) to this margin editor while focused
+		// Route Obsidian commands to margin editor while it has focus
 		cm.dom.addEventListener(
 			"focusin",
-			() => {
-				setWorkspaceActiveEditor(this.plugin, cm);
-			},
+			() => this.setActiveEditorForMargin(cm),
 			true,
 		);
 
-		// Commit on blur *out of the editor*, not internal focus moves
 		cm.dom.addEventListener(
 			"focusout",
-			(ev: FocusEvent) => {
-				const related = ev.relatedTarget as Node | null;
-				if (related && cm.dom.contains(related)) return;
-				this.commitAndCloseMarginEditor(margin);
+			() => {
+				// Don’t close here — focusout is not reliable for “click outside” with CM.
+				// Just drop activeEditor routing.
+				this.setActiveEditorForMargin(null);
 			},
 			true,
 		);
 
-		// Focus the CM editor
+		// Click anywhere outside -> commit and close (reliable)
+		this.outsidePointerDown = (ev: PointerEvent) => {
+			const target = ev.target as Node | null;
+			if (!target) return;
+
+			// If click is inside the CM editor or the margin container, ignore
+			if (cm.dom.contains(target) || margin.contains(target)) return;
+
+			this.closeMarginEditor(margin, { commit: true });
+		};
+		document.addEventListener(
+			"pointerdown",
+			this.outsidePointerDown,
+			true,
+		);
+
 		requestAnimationFrame(() => cm.focus());
 	}
 
