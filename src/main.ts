@@ -1,3 +1,4 @@
+/* eslint-disable obsidianmd/ui/sentence-case */
 import {
 	MarkdownView,
 	Plugin,
@@ -30,6 +31,29 @@ import {
 import { markdown } from "@codemirror/lang-markdown";
 
 type CleanupFn = () => void;
+
+// Near the top of the file, with your other type definitions
+interface SidenoteMarginElement extends HTMLElement {
+	_sidenoteCleanup?: () => void;
+}
+
+/** Minimal subset of Obsidian's Editor interface backed by a CM6 EditorView. */
+interface MinimalEditor {
+	getValue(): string;
+	getLine(line: number): string;
+	lineCount(): number;
+	getCursor(): EditorPosition;
+	setCursor(pos: EditorPosition): void;
+	setSelection(anchor: EditorPosition, head?: EditorPosition): void;
+	getSelection(): string;
+	replaceSelection(text: string): void;
+	getRange(from: EditorPosition, to: EditorPosition): string;
+	replaceRange(
+		text: string,
+		from: EditorPosition,
+		to?: EditorPosition,
+	): void;
+}
 
 // Settings interface
 interface SidenoteSettings {
@@ -401,6 +425,20 @@ export default class SidenotePlugin extends Plugin {
 
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
 		this.cleanupView(view);
+
+		// Remove CSS custom properties and data attributes
+		const root = document.documentElement;
+		const propsToRemove = Array.from(root.style).filter((p) =>
+			p.startsWith("--sn-"),
+		);
+		for (const prop of propsToRemove) {
+			root.style.removeProperty(prop);
+		}
+		delete root.dataset.snBadgeStyle;
+		delete root.dataset.snShowNumbers;
+		delete root.dataset.snFormat;
+		delete root.dataset.snHideFootnotes;
+		delete root.dataset.snHideFootnoteNumbers;
 	}
 
 	// Add public methods that the widget can call
@@ -775,23 +813,61 @@ export default class SidenotePlugin extends Plugin {
 	// ==================== Style Injection ====================
 
 	private injectStyles() {
-		if (this.styleEl) {
-			try {
-				this.styleEl.remove();
-			} catch (e) {
-				// Element may already be removed
-			}
-			this.styleEl = null;
-		}
-
-		this.styleEl = document.createElement("style");
-		this.styleEl.id = "sidenote-plugin-styles";
-
 		const s = this.settings;
-		const transitionRule = s.enableTransitions
-			? "transition: width 0.15s ease-out, left 0.15s ease-out, right 0.15s ease-out, opacity 0.15s ease-out;"
-			: "";
+		const root = document.documentElement;
 
+		// Layout variables
+		root.style.setProperty("--sn-base-width", `${s.minSidenoteWidth}rem`);
+		root.style.setProperty(
+			"--sn-max-extra",
+			`${s.maxSidenoteWidth - s.minSidenoteWidth}rem`,
+		);
+		root.style.setProperty("--sn-gap", `${s.sidenoteGap}rem`);
+		root.style.setProperty("--sn-gap2", `${s.sidenoteGap2}rem`);
+		root.style.setProperty(
+			"--sn-page-offset-factor",
+			`${s.pageOffsetFactor}`,
+		);
+
+		// Compact mode
+		root.style.setProperty(
+			"--sn-base-width-compact",
+			`${Math.max(s.minSidenoteWidth - 2, 6)}rem`,
+		);
+		root.style.setProperty(
+			"--sn-max-extra-compact",
+			`${Math.max((s.maxSidenoteWidth - s.minSidenoteWidth) / 2, 2)}rem`,
+		);
+		root.style.setProperty(
+			"--sn-gap-compact",
+			`${Math.max(s.sidenoteGap - 1, 0.5)}rem`,
+		);
+		root.style.setProperty(
+			"--sn-gap2-compact",
+			`${Math.max(s.sidenoteGap2 - 0.5, 0.25)}rem`,
+		);
+
+		// Full mode
+		root.style.setProperty(
+			"--sn-base-width-full",
+			`${s.maxSidenoteWidth}rem`,
+		);
+		root.style.setProperty("--sn-gap-full", `${s.sidenoteGap + 1}rem`);
+		root.style.setProperty("--sn-gap2-full", `${s.sidenoteGap2 + 0.5}rem`);
+
+		// Typography
+		root.style.setProperty("--sn-font-size", `${s.fontSize}%`);
+		root.style.setProperty(
+			"--sn-font-size-compact",
+			`${s.fontSizeCompact}%`,
+		);
+		root.style.setProperty("--sn-line-height", `${s.lineHeight}`);
+		root.style.setProperty(
+			"--sn-line-height-compact",
+			`${Math.max(s.lineHeight - 0.1, 1.1)}`,
+		);
+
+		// Text alignment
 		const defaultAlignment =
 			s.sidenotePosition === "left" ? "right" : "left";
 		const textAlign =
@@ -800,486 +876,30 @@ export default class SidenotePlugin extends Plugin {
 				: s.textAlignment === "left" || s.textAlignment === "right"
 					? s.textAlignment
 					: defaultAlignment;
+		root.style.setProperty("--sn-text-align", textAlign);
 
-		// Number color - use custom color or default to theme
-		const numberColorRule = s.numberColor
-			? `color: ${s.numberColor} !important;`
-			: "";
+		// Number color
+		root.style.setProperty(
+			"--sn-number-color",
+			s.numberColor || "inherit",
+		);
 
-		// Neumorphic badge styles (square/rounded corners)
-		const neumorphicStyles =
-			s.numberBadgeStyle === "neumorphic"
-				? `
-					/* Neumorphic badge variables */
-					:root {
-								--sn-badge-bg: rgba(243, 245, 250, 0.05);
-								--sn-badge-text: var(--text-muted);
-								--sn-badge-border: rgba(243, 245, 250, 0.1);
-								--sn-active-bg: rgba(243, 245, 250, 0.1);
-								--sn-active-text: #ffffff;
-					}
+		// Transitions
+		root.style.setProperty(
+			"--sn-transition",
+			s.enableTransitions
+				? "width 0.15s ease-out, left 0.15s ease-out, right 0.15s ease-out, opacity 0.15s ease-out"
+				: "none",
+		);
 
-					.sidenote-margin[data-sidenote-num]::before {
-								content: attr(data-sidenote-num) !important;
-								display: inline-flex !important;
-								align-items: center;
-								justify-content: center;
-								min-width: 1.7em;
-								height: 1.7em;
-								margin-right: 8px;
-								padding: 0 4px;
-								background-color: var(--sn-badge-bg) !important;
-								border: 1px solid var(--sn-badge-border) !important;
-								border-radius: 4px !important;
-								color: ${s.numberColor || "var(--sn-badge-text)"} !important;
-								font-family: var(--font-monospace) !important;
-								font-size: 0.85em !important;
-								font-weight: 600 !important;
-								vertical-align: middle;
-								line-height: 1;
-					}
-
-					.sidenote-margin:hover[data-sidenote-num]::before,
-					.sidenote-margin[data-editing="true"][data-sidenote-num]::before {
-								background-color: var(--sn-active-bg) !important;
-								color: var(--sn-active-text) !important;
-					}
-
-					.sidenote-number::after {
-								content: attr(data-sidenote-num);
-								display: inline-flex;
-								align-items: center;
-								justify-content: center;
-								min-width: 1.3em;
-								height: 1.4em;
-								background-color: var(--sn-badge-bg);
-								border: 1px solid var(--sn-badge-border);
-								border-radius: 3px;
-								color: ${s.numberColor || "var(--sn-badge-text)"};
-								font-size: 0.7em;
-								font-weight: bold;
-								margin-left: 2px;
-								margin-right: 0.2rem;
-								vertical-align: super;
-								line-height: 0;
-					}
-							
-							.sidenote-number:hover {
-								color: #ffffff;
-						}
-					`
-				: "";
-
-		// Pill badge styles (fully rounded, gradient, shadow)
-		const pillStyles =
-			s.numberBadgeStyle === "pill"
-				? `
-					/* Pill badge variables */
-					:root {
-								--sn-pill-bg: rgba(255, 255, 255, 0.05);
-								--sn-pill-text: #ffffff;
-								--sn-pill-border: rgba(255, 255, 255, 0.1);
-								--sn-pill-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-								--sn-pill-hover-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
-					}
-
-					.sidenote-margin[data-sidenote-num]::before {
-								content: attr(data-sidenote-num) !important;
-								display: inline-flex !important;
-								align-items: center;
-								justify-content: center;
-								min-width: 1.5em;
-								height: 1.5em;
-								margin-right: 10px;
-								padding: 0 6px;
-								background: ${s.numberColor ? s.numberColor : "var(--sn-pill-bg)"} !important;
-								border: 1px solid var(--sn-pill-border) !important;
-								border-radius: 999px !important;
-								color: var(--sn-pill-text) !important;
-								font-family: var(--font-monospace) !important;
-								font-size: 0.8em !important;
-								font-weight: 700 !important;
-								vertical-align: middle;
-								line-height: 1;
-								box-shadow: var(--sn-pill-shadow);
-								transition: box-shadow 0.15s ease, transform 0.15s ease;
-					}
-
-					.sidenote-margin:hover[data-sidenote-num]::before {
-								box-shadow: var(--sn-pill-hover-shadow);
-								transform: scale(1.1);
-					}
-
-					.sidenote-margin[data-editing="true"][data-sidenote-num]::before {
-								box-shadow: var(--sn-pill-hover-shadow);
-								transform: scale(1.1);
-					}
-
-					.sidenote-number::after {
-								content: attr(data-sidenote-num);
-								display: inline-flex;
-								align-items: center;
-								justify-content: center;
-								min-width: 1.2em;
-								height: 1.2em;
-								background: ${s.numberColor ? s.numberColor : "var(--sn-pill-bg)"};
-								border: 1px solid var(--sn-pill-border) !important;
-								border-radius: 999px;
-								color: var(--sn-pill-text);
-								font-size: 0.66em;
-								font-weight: 700;
-								margin-left: 2px;
-								margin-right: 0.2rem;
-								vertical-align: super;
-								line-height: 0;
-								box-shadow: var(--sn-pill-shadow);
-					}
-
-					.sidenote-number:hover::after {
-						box-shadow: var(--sn-pill-hover-shadow);
-					}
-
-							.sidenote-number:hover {
-								color: #ffffff;
-							}
-						`
-				: "";
-
-		// Plain number styles (when not neumorphic or pill)
-		const plainNumberStyles =
-			s.numberBadgeStyle === "plain"
-				? `
-					.sidenote-number {
-						line-height: 0;
-					}
-
-					.sidenote-number::after {
-						content: ${s.showSidenoteNumbers ? "attr(data-sidenote-num)" : "none"};
-						vertical-align: baseline;
-						position: relative;
-						top: -0.5em;
-						font-size: 0.7em;
-						font-weight: bold;
-						margin-right: 0.2rem;
-						line-height: 0;
-						${numberColorRule}
-					}
-
-					.sidenote-margin[data-sidenote-num]::before {
-						content: ${s.showSidenoteNumbers ? 'attr(data-sidenote-num) ". "' : "none"};
-						font-weight: bold;
-						${numberColorRule}
-					}
-				`
-				: "";
-
-		// Generate positioning styles based on anchor mode
-		const gap1 = s.sidenoteGap;
-		const gap2 = s.sidenoteGap2;
-
-		// For "text" mode: sidenotes positioned relative to text, gap is from text, gap2 is min from edge
-		// For "edge" mode: sidenotes positioned relative to edge, gap is from edge, gap2 is min from text
-
-		// Inside injectStyles(), replace the positioningStyles block with:
-
-		// Replace the positioningStyles variable and related CSS with:
-
-		const positioningStyles = `
-			/* Sidenote positioning - uses --sidenote-offset calculated by JavaScript */
-			
-			/* LEFT POSITION */
-			.markdown-source-view.mod-cm6[data-sidenote-position="left"] .sidenote-margin {
-				left: var(--sidenote-offset, calc(-1 * (var(--sidenote-width) + var(--sidenote-gap))));
-				right: auto;
-				text-align: ${textAlign};
-			}
-
-			.markdown-reading-view[data-sidenote-position="left"] .sidenote-margin {
-				left: var(--sidenote-offset, calc(-1 * (var(--sidenote-width) + var(--sidenote-gap))));
-				right: auto;
-				text-align: ${textAlign};
-			}
-
-			/* RIGHT POSITION */
-			.markdown-source-view.mod-cm6[data-sidenote-position="right"] .sidenote-margin {
-				right: var(--sidenote-offset, calc(-1 * (var(--sidenote-width) + var(--sidenote-gap))));
-				left: auto;
-				text-align: ${textAlign};
-			}
-
-			.markdown-reading-view[data-sidenote-position="right"] .sidenote-margin {
-				right: var(--sidenote-offset, calc(-1 * (var(--sidenote-width) + var(--sidenote-gap))));
-				left: auto;
-				text-align: ${textAlign};
-			}
-
-			/* CM6 footnote widget - same positioning */
-			.markdown-source-view.mod-cm6[data-sidenote-position="left"] .cm-line .sidenote-number[data-footnote-id] .sidenote-margin {
-				left: var(--sidenote-offset, calc(-1 * (var(--sidenote-width) + var(--sidenote-gap))));
-				right: auto;
-				text-align: ${textAlign};
-			}
-
-			.markdown-source-view.mod-cm6[data-sidenote-position="right"] .cm-line .sidenote-number[data-footnote-id] .sidenote-margin {
-				right: var(--sidenote-offset, calc(-1 * (var(--sidenote-width) + var(--sidenote-gap))));
-				left: auto;
-				text-align: ${textAlign};
-			}
-		`;
-
-		this.styleEl.textContent = `
-			/* === Sidenote layout variables === */
-			.markdown-source-view.mod-cm6,
-			.markdown-reading-view {
-				--sidenote-base-width: ${s.minSidenoteWidth}rem;
-				--sidenote-max-extra: ${s.maxSidenoteWidth - s.minSidenoteWidth}rem;
-				--sidenote-width: calc(
-					var(--sidenote-base-width) + 
-					(var(--sidenote-max-extra) * var(--sidenote-scale, 0.5))
-				);
-				--sidenote-gap: ${gap1}rem;
-				--sidenote-gap2: ${gap2}rem;
-				--page-offset: calc((var(--sidenote-width) + var(--sidenote-gap)) * ${s.pageOffsetFactor});
-				--sidenote-edge-offset: var(--sidenote-gap);
-			}
-			
-			.markdown-source-view.mod-cm6[data-sidenote-mode="compact"],
-			.markdown-reading-view[data-sidenote-mode="compact"] {
-				--sidenote-base-width: ${Math.max(s.minSidenoteWidth - 2, 6)}rem;
-				--sidenote-max-extra: ${Math.max((s.maxSidenoteWidth - s.minSidenoteWidth) / 2, 2)}rem;
-				--sidenote-gap: ${Math.max(gap1 - 1, 0.5)}rem;
-				--sidenote-gap2: ${Math.max(gap2 - 0.5, 0.25)}rem;
-			}
-			
-			.markdown-source-view.mod-cm6[data-sidenote-mode="full"],
-			.markdown-reading-view[data-sidenote-mode="full"] {
-				--sidenote-base-width: ${s.maxSidenoteWidth}rem;
-				--sidenote-max-extra: 2rem;
-				--sidenote-gap: ${gap1 + 1}rem;
-				--sidenote-gap2: ${gap2 + 0.5}rem;
-			}
-			
-			.markdown-source-view.mod-cm6 .cm-scroller {
-				overflow-y: auto !important;
-				overflow-x: visible !important;
-			}
-			
-			/* LEFT POSITION - page offset */
-			.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="compact"] .cm-scroller,
-			.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="normal"] .cm-scroller,
-			.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="full"] .cm-scroller {
-				padding-left: var(--page-offset) !important;
-				padding-right: 0 !important;
-			}
-			
-			.markdown-reading-view[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="compact"] .markdown-preview-sizer,
-			.markdown-reading-view[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="normal"] .markdown-preview-sizer,
-			.markdown-reading-view[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="full"] .markdown-preview-sizer {
-				padding-left: var(--page-offset) !important;
-				padding-right: 0 !important;
-			}
-			
-			/* RIGHT POSITION - page offset */
-			.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="compact"] .cm-scroller,
-			.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="normal"] .cm-scroller,
-			.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="full"] .cm-scroller {
-				padding-right: var(--page-offset) !important;
-				padding-left: 0 !important;
-			}
-			
-			.markdown-reading-view[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="compact"] .markdown-preview-sizer,
-			.markdown-reading-view[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="normal"] .markdown-preview-sizer,
-			.markdown-reading-view[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="full"] .markdown-preview-sizer {
-				padding-right: var(--page-offset) !important;
-				padding-left: 0 !important;
-			}
-			
-			${positioningStyles}
-			
-			.markdown-source-view.mod-cm6 .cm-editor,
-			.markdown-source-view.mod-cm6 .cm-content,
-			.markdown-source-view.mod-cm6 .cm-sizer,
-			.markdown-source-view.mod-cm6 .cm-contentContainer {
-				overflow: visible !important;
-			}
-			
-			.markdown-source-view.mod-cm6 .cm-line {
-				position: relative;
-			}
-			
-			.markdown-reading-view p,
-			.markdown-reading-view li,
-			.markdown-reading-view h1,
-			.markdown-reading-view h2,
-			.markdown-reading-view h3,
-			.markdown-reading-view h4,
-			.markdown-reading-view h5,
-			.markdown-reading-view h6,
-			.markdown-reading-view blockquote,
-			.markdown-reading-view .callout {
-				position: relative;
-			}
-			
-			.sidenote-number > span.sidenote {
-				display: inline-block;
-				width: 0;
-				max-width: 0;
-				overflow: hidden;
-				white-space: nowrap;
-				vertical-align: baseline;
-			}
-			
-			.sidenote-margin {
-				position: absolute;
-				top: 0;
-				width: var(--sidenote-width);
-				font-size: ${s.fontSize}%;
-				line-height: ${s.lineHeight};
-				overflow-wrap: break-word;
-				transform: translateY(calc(var(--sidenote-line-offset, 0px) + var(--sidenote-shift, 0px)));
-				will-change: transform;
-				z-index: 10;
-				pointer-events: auto;
-				${transitionRule}
-			}
-			
-			.markdown-source-view.mod-cm6[data-sidenote-mode="compact"] .sidenote-margin,
-			.markdown-reading-view[data-sidenote-mode="compact"] .sidenote-margin {
-				font-size: ${s.fontSizeCompact}%;
-				line-height: ${Math.max(s.lineHeight - 0.1, 1.1)};
-			}
-			
-					/* Ensure margins don't overlap during transition */
-					.markdown-reading-view .sidenote-margin,
-					.markdown-source-view.mod-cm6 .sidenote-margin {
-							isolation: isolate;
-					}
-							
-			.markdown-source-view.mod-cm6[data-sidenote-mode="hidden"] .sidenote-margin,
-			.markdown-reading-view[data-sidenote-mode="hidden"] .sidenote-margin {
-				display: none;
-			}
-			
-			.markdown-source-view.mod-cm6[data-sidenote-mode=""] .sidenote-margin,
-			.markdown-reading-view[data-sidenote-mode=""] .sidenote-margin {
-				opacity: 0;
-				pointer-events: none;
-			}
-			
-			/* Style internal links in sidenotes */
-			.sidenote-margin a.internal-link {
-				cursor: pointer;
-			}
-
-			/* Editable sidenote styling */
-			.sidenote-margin[data-editing="true"] {
-				background: var(--background-modifier-form-field);
-				border-radius: 4px;
-				padding: 4px 6px;
-				outline: 2px solid var(--interactive-accent);
-				cursor: text;
-			}
-
-			.sidenote-margin[data-editing="true"]::before {
-				display: none;
-			}
-
-			.sidenote-margin[contenteditable="true"] {
-				white-space: pre-wrap;
-			}
-
-			/* Markdown formatting in sidenotes */
-			.sidenote-margin strong,
-			.sidenote-margin b {
-				font-weight: bold;
-			}
-
-			.sidenote-margin em,
-			.sidenote-margin i {
-				font-style: italic;
-			}
-
-			.sidenote-margin code {
-				font-family: var(--font-monospace);
-				font-size: 0.9em;
-				background-color: var(--code-background);
-				padding: 0.1em 0.3em;
-				border-radius: 3px;
-			}
-
-			${plainNumberStyles}
-			${neumorphicStyles}
-			${pillStyles}
-
-					/* Footnote-edit mode styles */
-					${
-						this.settings.sidenoteFormat === "footnote-edit" &&
-						this.settings.hideFootnotes
-							? `
-					/* === LIVE PREVIEW MODE === */
-					/* Hide footnote definitions - only in Live Preview */
-					.markdown-source-view.mod-cm6.is-live-preview[data-has-sidenotes="true"][data-sidenote-mode="normal"] .cm-line.HyperMD-footnote,
-					.markdown-source-view.mod-cm6.is-live-preview[data-has-sidenotes="true"][data-sidenote-mode="compact"] .cm-line.HyperMD-footnote,
-					.markdown-source-view.mod-cm6.is-live-preview[data-has-sidenotes="true"][data-sidenote-mode="full"] .cm-line.HyperMD-footnote {
-						display: none; 
-					}
-					`
-							: ""
-					}
-					${
-						this.settings.sidenoteFormat === "footnote-edit" &&
-						this.settings.hideFootnoteNumbers
-							? `
-					/* Hide original [^1] reference - only in Live Preview */
-					.markdown-source-view.mod-cm6.is-live-preview .cm-line:has(.sidenote-number[data-footnote-id]) .cm-footref {
-						display: none;
-					}
-					`
-							: ""
-					}
-
-					/* CM6 footnote sidenote widget */
-					.cm-line .sidenote-number[data-footnote-id] {
-						position: static;
-						display: inline;
-					}
-
-					/* Position margin relative to .cm-line, not the wrapper */
-					.cm-line:has(.sidenote-number[data-footnote-id]) {
-						position: relative;
-					}
-
-					.cm-line .sidenote-number[data-footnote-id] .sidenote-margin {
-						position: absolute;
-						top: 0;
-						width: var(--sidenote-width);
-						font-size: ${s.fontSize}%;
-						line-height: ${s.lineHeight};
-						overflow-wrap: break-word;
-						transform: translateY(calc(var(--sidenote-line-offset, 0px) + var(--sidenote-shift, 0px)));
-						will-change: transform;
-						z-index: 10;
-						pointer-events: auto;
-						${transitionRule}
-					}
-
-					/* === SOURCE MODE === */
-					/* Hide sidenote widgets in Source mode - show raw markdown */
-					.markdown-source-view.mod-cm6:not(.is-live-preview) .sidenote-number[data-footnote-id] {
-						/* display: none; */
-					}
-
-					/* Show the footnote reference in Source mode */
-					.markdown-source-view.mod-cm6:not(.is-live-preview) .cm-footref {
-						display: inline !important;
-					}
-		`;
-
-		try {
-			document.head.appendChild(this.styleEl);
-		} catch (error) {
-			console.error("Sidenote plugin: Failed to inject styles", error);
-		}
+		// Data attributes for CSS selectors
+		root.dataset.snBadgeStyle = s.numberBadgeStyle;
+		root.dataset.snShowNumbers = s.showSidenoteNumbers ? "true" : "false";
+		root.dataset.snFormat = s.sidenoteFormat;
+		root.dataset.snHideFootnotes = s.hideFootnotes ? "true" : "false";
+		root.dataset.snHideFootnoteNumbers = s.hideFootnoteNumbers
+			? "true"
+			: "false";
 	}
 
 	/**
@@ -1336,16 +956,23 @@ export default class SidenotePlugin extends Plugin {
 		const sidenoteWidthStr = computedStyle
 			.getPropertyValue("--sidenote-width")
 			.trim();
+		// Get sidenote width from an existing margin element, or fall back to calculation
 		let sidenoteWidth = s.minSidenoteWidth * remToPx;
 
-		if (sidenoteWidthStr) {
-			const tempEl = document.createElement("div");
-			tempEl.style.width = sidenoteWidthStr;
-			tempEl.style.position = "absolute";
-			tempEl.style.visibility = "hidden";
-			root.appendChild(tempEl);
-			sidenoteWidth = tempEl.getBoundingClientRect().width;
-			tempEl.remove();
+		const existingMargin = root.querySelector<HTMLElement>(
+			"small.sidenote-margin",
+		);
+		if (existingMargin) {
+			sidenoteWidth = existingMargin.getBoundingClientRect().width;
+		} else if (sidenoteWidthStr) {
+			// Parse the calc() manually from the CSS variable values
+			const scale =
+				parseFloat(
+					getComputedStyle(root).getPropertyValue("--sidenote-scale"),
+				) || 0.5;
+			const baseWidth = s.minSidenoteWidth * remToPx;
+			const maxExtra = (s.maxSidenoteWidth - s.minSidenoteWidth) * remToPx;
+			sidenoteWidth = baseWidth + maxExtra * scale;
 		}
 
 		if (position === "left") {
@@ -1651,10 +1278,9 @@ export default class SidenotePlugin extends Plugin {
 				this.cloneContentToMargin(item.el, margin);
 			} else {
 				// For footnotes, hide the original [1] link inside the sup
-
 				const anchor = item.el.querySelector("a.footnote-link");
 				if (anchor && this.settings.hideFootnoteNumbers) {
-					(anchor as HTMLElement).style.display = "none";
+					anchor.classList.add("sidenote-fn-link-hidden");
 				}
 
 				// Clone the HTML content from the footnote, preserving formatting
@@ -1951,12 +1577,12 @@ export default class SidenotePlugin extends Plugin {
 			}
 		}
 
-		console.log(
-			"Reading mode: footnoteId =",
-			footnoteId,
-			"actualId =",
-			actualId,
-		);
+		// console.warn(
+		// 	"Reading mode: footnoteId =",
+		// 	footnoteId,
+		// 	"actualId =",
+		// 	actualId,
+		// );
 
 		// Find and replace the footnote definition
 		const escapedId = actualId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -1966,7 +1592,7 @@ export default class SidenotePlugin extends Plugin {
 		);
 
 		const match = footnoteDefRegex.exec(content);
-		console.log("Reading mode: match =", match);
+		console.warn("Reading mode: match =", match);
 
 		if (match) {
 			const prefix = match[1] ?? "";
@@ -1974,9 +1600,11 @@ export default class SidenotePlugin extends Plugin {
 			const to = editor.offsetToPos(match.index + match[0].length);
 
 			editor.replaceRange(newText, from, to);
-			console.log("Reading mode: replaced successfully");
+			console.warn("Reading mode: replaced successfully");
 		} else {
-			console.log("Reading mode: no match found for [^" + actualId + "]:");
+			console.warn(
+				"Reading mode: no match found for [^" + actualId + "]:",
+			);
 		}
 	}
 
@@ -1992,7 +1620,7 @@ export default class SidenotePlugin extends Plugin {
 		if (isEditingMode) {
 			// In editing mode, sidenotes are inside .cm-line which already has position: relative
 			// The wrapper is inline within the line, so we need to find the offset within the line
-			const line = wrapper.closest(".cm-line") as HTMLElement | null;
+			const line = wrapper.closest<HTMLElement>(".cm-line");
 			if (!line) return;
 
 			// Get positions
@@ -2046,7 +1674,7 @@ export default class SidenotePlugin extends Plugin {
 			if (footnoteSup) {
 				const link = footnoteSup.querySelector<HTMLElement>("a");
 				if (link) {
-					link.style.display = "";
+					link.classList.remove("sidenote-fn-link-hidden");
 				}
 			}
 
@@ -2055,9 +1683,10 @@ export default class SidenotePlugin extends Plugin {
 				"small.sidenote-margin",
 			);
 			if (margin) {
-				if ((margin as any)._sidenoteCleanup) {
-					(margin as any)._sidenoteCleanup();
-					delete (margin as any)._sidenoteCleanup;
+				const snMargin = margin as SidenoteMarginElement;
+				if (snMargin._sidenoteCleanup) {
+					snMargin._sidenoteCleanup();
+					delete snMargin._sidenoteCleanup;
 				}
 				this.unobserveSidenoteVisibility(margin);
 				margin.remove();
@@ -2156,7 +1785,7 @@ export default class SidenotePlugin extends Plugin {
 					link.getAttribute("href") ||
 					"";
 				if (linkTarget) {
-					this.app.workspace.openLinkText(linkTarget, "", false);
+					void this.app.workspace.openLinkText(linkTarget, "", false);
 				}
 			});
 
@@ -2541,7 +2170,7 @@ export default class SidenotePlugin extends Plugin {
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
 		if (!view) return null;
 
-		const editor = (view.editor as any)?.cm as any;
+		const editor = (view.editor as { cm?: EditorView })?.cm;
 		if (!editor?.state || !editor?.lineBlockAt) return null;
 
 		const lineEl = el.closest(".cm-line");
@@ -2884,9 +2513,10 @@ export default class SidenotePlugin extends Plugin {
 			);
 			if (margin) {
 				// Call cleanup if it exists
-				if ((margin as any)._sidenoteCleanup) {
-					(margin as any)._sidenoteCleanup();
-					delete (margin as any)._sidenoteCleanup;
+				const snMargin = margin as SidenoteMarginElement;
+				if (snMargin._sidenoteCleanup) {
+					snMargin._sidenoteCleanup();
+					delete snMargin._sidenoteCleanup;
 				}
 				this.unobserveSidenoteVisibility(margin);
 				margin.remove();
@@ -2982,7 +2612,7 @@ export default class SidenotePlugin extends Plugin {
 					a.addEventListener("click", (e) => {
 						e.preventDefault();
 						e.stopPropagation();
-						this.app.workspace.openLinkText(url, "", false);
+						void this.app.workspace.openLinkText(url, "", false);
 					});
 				}
 				frag.appendChild(a);
@@ -2998,7 +2628,7 @@ export default class SidenotePlugin extends Plugin {
 				a.addEventListener("click", (e) => {
 					e.preventDefault();
 					e.stopPropagation();
-					this.app.workspace.openLinkText(target, "", false);
+					void this.app.workspace.openLinkText(target, "", false);
 				});
 				frag.appendChild(a);
 			}
@@ -3114,7 +2744,7 @@ export default class SidenotePlugin extends Plugin {
 		margin.addEventListener("click", onClick);
 
 		// Store cleanup reference on the element for later removal
-		(margin as any)._sidenoteCleanup = () => {
+		(margin as SidenoteMarginElement)._sidenoteCleanup = () => {
 			margin.removeEventListener("mousedown", onMouseDown);
 			margin.removeEventListener("click", onClick);
 		};
@@ -3219,23 +2849,14 @@ export default class SidenotePlugin extends Plugin {
 		// Use caretRangeFromPoint or caretPositionFromPoint depending on browser support
 		let range: Range | null = null;
 
-		if (document.caretRangeFromPoint) {
-			// Chrome, Safari, Edge
-			range = document.caretRangeFromPoint(
-				clickEvent.clientX,
-				clickEvent.clientY,
-			);
-		} else if ((document as any).caretPositionFromPoint) {
-			// Firefox
-			const caretPos = (document as any).caretPositionFromPoint(
-				clickEvent.clientX,
-				clickEvent.clientY,
-			);
-			if (caretPos) {
-				range = document.createRange();
-				range.setStart(caretPos.offsetNode, caretPos.offset);
-				range.collapse(true);
-			}
+		const caretPos = document.caretPositionFromPoint(
+			clickEvent.clientX,
+			clickEvent.clientY,
+		);
+		if (caretPos) {
+			range = document.createRange();
+			range.setStart(caretPos.offsetNode, caretPos.offset);
+			range.collapse(true);
 		}
 
 		if (range) {
@@ -3376,7 +2997,7 @@ export default class SidenotePlugin extends Plugin {
 
 		// Step 1: Reset all shifts to measure natural/anchor positions
 		for (const margin of validMargins) {
-			margin.style.setProperty("--sidenote-shift", "0px");
+			setCssProps(margin, { "--sidenote-shift": "0px" });
 		}
 
 		// Step 2: Force synchronous reflow to get accurate measurements
@@ -3428,7 +3049,7 @@ export default class SidenotePlugin extends Plugin {
 			if (item.shift > 0.5) {
 				item.el.style.setProperty("--sidenote-shift", `${item.shift}px`);
 			} else {
-				item.el.style.setProperty("--sidenote-shift", "0px");
+				item.el.style.setProperty("--sidenote-shift", `${0}px`);
 			}
 		}
 	}
@@ -3912,7 +3533,7 @@ export default class SidenotePlugin extends Plugin {
 				!e.shiftKey &&
 				!e.altKey
 			) {
-				console.log("BOLD shortcut detected");
+				console.warn("BOLD shortcut detected");
 				e.preventDefault();
 				e.stopImmediatePropagation();
 				this.insertMarkdownWrapper(margin, "**");
@@ -3925,7 +3546,7 @@ export default class SidenotePlugin extends Plugin {
 				!e.shiftKey &&
 				!e.altKey
 			) {
-				console.log("ITALICS shortcut detected");
+				console.warn("ITALICS shortcut detected");
 				e.preventDefault();
 				e.stopImmediatePropagation();
 				this.insertMarkdownWrapper(margin, "*");
@@ -4062,7 +3683,7 @@ class SidenoteSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		containerEl.createEl("h2", { text: "Sidenote Format" });
+		new Setting(containerEl).setName("Sidenote Format").setHeading();
 
 		new Setting(containerEl)
 			.setName("Sidenote format")
@@ -4085,7 +3706,7 @@ class SidenoteSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		containerEl.createEl("h2", { text: "If using Footnotes" });
+		new Setting(containerEl).setName("If using Footnotes").setHeading();
 
 		new Setting(containerEl)
 			.setName("Hide footnotes")
@@ -4115,7 +3736,7 @@ class SidenoteSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		containerEl.createEl("h2", { text: "Display" });
+		new Setting(containerEl).setName("Display").setHeading();
 
 		new Setting(containerEl)
 			.setName("Sidenote position")
@@ -4189,7 +3810,7 @@ class SidenoteSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		containerEl.createEl("h2", { text: "Width & Spacing" });
+		new Setting(containerEl).setName("Width & Spacing").setHeading();
 
 		new Setting(containerEl)
 			.setName("Sidenote anchor")
@@ -4283,7 +3904,7 @@ class SidenoteSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		containerEl.createEl("h2", { text: "Breakpoints" });
+		new Setting(containerEl).setName("Breakpoints").setHeading();
 
 		new Setting(containerEl)
 			.setName("Hide below width")
@@ -4335,7 +3956,7 @@ class SidenoteSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		containerEl.createEl("h2", { text: "Typography" });
+		new Setting(containerEl).setName("Typography").setHeading();
 
 		new Setting(containerEl)
 			.setName("Font size")
@@ -4394,7 +4015,7 @@ class SidenoteSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		containerEl.createEl("h2", { text: "Behavior" });
+		new Setting(containerEl).setName("Behavior").setHeading();
 
 		new Setting(containerEl)
 			.setName("Collision spacing")
@@ -4435,7 +4056,7 @@ class SidenoteSettingTab extends PluginSettingTab {
 			);
 
 		// Help section
-		containerEl.createEl("h2", { text: "Formatting Help" });
+		new Setting(containerEl).setName("Formatting Help").setHeading();
 
 		const helpDiv = containerEl.createDiv({ cls: "sidenote-help" });
 		helpDiv.innerHTML = `
@@ -4452,6 +4073,16 @@ class SidenoteSettingTab extends PluginSettingTab {
 	}
 }
 
+function setCssProps(
+	el: HTMLElement,
+	props: Record<string, string>,
+	important: boolean = false,
+) {
+	for (const [key, value] of Object.entries(props)) {
+		el.style.setProperty(key, value, important ? "important" : "");
+	}
+}
+
 function cmToPos(view: EditorView, offset: number): EditorPosition {
 	const line = view.state.doc.lineAt(offset);
 	return { line: line.number - 1, ch: offset - line.from };
@@ -4462,7 +4093,7 @@ function posToCm(view: EditorView, pos: EditorPosition): number {
 	return Math.max(line.from, Math.min(line.to, line.from + pos.ch));
 }
 
-export function cmEditorAdapter(view: EditorView): Editor {
+export function cmEditorAdapter(view: EditorView): MinimalEditor {
 	return {
 		getValue() {
 			return view.state.doc.toString();
@@ -4483,17 +4114,6 @@ export function cmEditorAdapter(view: EditorView): Editor {
 		setCursor(pos: EditorPosition) {
 			const off = posToCm(view, pos);
 			view.dispatch({ selection: { anchor: off } });
-		},
-
-		listSelections() {
-			// Obsidian expects EditorRange-like objects
-			const sel = view.state.selection.main;
-			return [
-				{
-					anchor: cmToPos(view, sel.anchor),
-					head: cmToPos(view, sel.head),
-				},
-			] as any;
 		},
 
 		setSelection(anchor: EditorPosition, head?: EditorPosition) {
@@ -4531,11 +4151,8 @@ export function cmEditorAdapter(view: EditorView): Editor {
 				},
 			});
 		},
-
-		// Many commands don’t need more than this set.
-	} as any;
+	};
 }
-
 function setWorkspaceActiveEditor(
 	plugin: SidenotePlugin,
 	view: EditorView | null,
@@ -4640,31 +4257,55 @@ const markdownEditHotkeys = keymap.of([
 ]);
 
 const sidenoteEditorTheme = EditorView.theme({
-	// Root editor element
-	".cm-editor": {
-		color: "blue !important",
-		backgroundColor: "black !important",
-		padding: "0px", // remove outer padding
-		marginLeft: "0px",
+	"&": {
+		backgroundColor: "transparent",
+		color: "inherit",
+		padding: "0",
+		margin: "0",
+		border: "none",
+		height: "auto",
 	},
-
-	// The text content area
-	".cm-content": {
-		marginLeft: "0px",
-		paddingLeft: "0px", // ✅ reduce left inset
-		paddingRight: "0px",
-		paddingTop: "2px",
-		paddingBottom: "2px",
-	},
-
-	// Each line
-	".cm-line": {
-		paddingLeft: "0px", // sometimes needed depending on theme
-	},
-
-	// Avoid an extra gutter-like inset
 	".cm-scroller": {
-		paddingLeft: "0px",
+		padding: "0 !important",
+		paddingLeft: "0 !important",
+		margin: "0 !important",
+		overflow: "visible !important",
+		height: "auto",
+	},
+	".cm-content": {
+		padding: "2px 0 !important",
+		margin: "0 !important",
+		minHeight: "auto",
+	},
+	".cm-content[contenteditable]": {
+		padding: "2px 0 !important",
+	},
+	".cm-line": {
+		padding: "0 !important",
+		margin: "0",
+		paddingLeft: "0 !important",
+	},
+	".cm-gutters": {
+		display: "none !important",
+		width: "0 !important",
+		minWidth: "0 !important",
+		border: "none !important",
+	},
+	".cm-cursor": {
+		borderLeftColor: "var(--text-normal)",
+	},
+	"&.cm-focused": {
+		outline: "none",
+	},
+	"&.cm-focused .cm-cursor": {
+		borderLeftColor: "var(--text-normal)",
+	},
+	".cm-activeLineGutter": {
+		backgroundColor: "transparent",
+		display: "none",
+	},
+	".cm-activeLine": {
+		backgroundColor: "transparent",
 	},
 });
 
@@ -4912,7 +4553,6 @@ class FootnoteSidenoteWidget extends WidgetType {
 				keymap.of(defaultKeymap),
 				keymap.of(historyKeymap),
 				EditorView.lineWrapping,
-
 				// ESC to close (cancel)
 				keymap.of([
 					{
@@ -4927,6 +4567,16 @@ class FootnoteSidenoteWidget extends WidgetType {
 		});
 
 		const cm = new EditorView({ state, parent: margin });
+		// After creating the EditorView, force-remove the padding:
+		this.cmView = cm;
+		cm.dom.classList.add("sidenote-cm-editor");
+
+		// Force override the scroller padding that CM6 sets internally
+		const scroller = cm.dom.querySelector<HTMLElement>(".cm-scroller");
+		if (scroller) {
+			setCssProps(scroller, { "padding-left": "0" }, true);
+			setCssProps(scroller, { padding: "0" }, true);
+		}
 		this.cmView = cm;
 		cm.dom.classList.add("sidenote-cm-editor");
 
