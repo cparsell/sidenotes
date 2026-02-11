@@ -1293,6 +1293,8 @@ export default class SidenotePlugin extends Plugin {
 				}
 
 				margin.dataset.editing = "false";
+
+				// COMMENTED OUT TO DISABLE EDITING IN READING MODE FOR NOW
 				// Set up margin click-to-edit for footnotes
 				// if (item.footnoteId) {
 				// 	const footnoteId = item.footnoteId;
@@ -1328,36 +1330,37 @@ export default class SidenotePlugin extends Plugin {
 			wrapper.appendChild(margin);
 
 			// Add click handler on wrapper to trigger margin editing (for footnote sidenotes)
-			if (item.type === "footnote" && item.footnoteId) {
-				const footnoteId = item.footnoteId;
+			// COMMENTED OUT TO DISABLE EDITING IN READING MODE FOR NOW
+			// if (item.type === "footnote" && item.footnoteId) {
+			// 	const footnoteId = item.footnoteId;
 
-				wrapper.addEventListener("click", (e) => {
-					// Don't trigger if clicking on the margin itself
-					if ((e.target as HTMLElement).closest(".sidenote-margin")) {
-						return;
-					}
+			// 	wrapper.addEventListener("click", (e) => {
+			// 		// Don't trigger if clicking on the margin itself
+			// 		if ((e.target as HTMLElement).closest(".sidenote-margin")) {
+			// 			return;
+			// 		}
 
-					// Don't trigger if already editing
-					if (margin.contentEditable === "true") {
-						return;
-					}
+			// 		// Don't trigger if already editing
+			// 		if (margin.contentEditable === "true") {
+			// 			return;
+			// 		}
 
-					e.preventDefault();
-					e.stopPropagation();
+			// 		e.preventDefault();
+			// 		e.stopPropagation();
 
-					this.startReadingModeMarginEdit(margin, footnoteId);
-				});
+			// 		this.startReadingModeMarginEdit(margin, footnoteId);
+			// 	});
 
-				wrapper.addEventListener("mousedown", (e) => {
-					if ((e.target as HTMLElement).closest(".sidenote-margin")) {
-						// If margin is being edited, allow normal behavior
-						if (margin.contentEditable === "true") {
-							return;
-						}
-					}
-					e.stopPropagation();
-				});
-			}
+			// 	wrapper.addEventListener("mousedown", (e) => {
+			// 		if ((e.target as HTMLElement).closest(".sidenote-margin")) {
+			// 			// If margin is being edited, allow normal behavior
+			// 			if (margin.contentEditable === "true") {
+			// 				return;
+			// 			}
+			// 		}
+			// 		e.stopPropagation();
+			// 	});
+			// }
 
 			// Calculate line offset: how far down from the positioned parent is this reference?
 			this.applyLineOffset(wrapper, margin, false);
