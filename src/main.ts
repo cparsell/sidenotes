@@ -6,9 +6,7 @@ import {
 	Setting,
 	TFile,
 	App,
-	Editor,
 	EditorPosition,
-	EditorRange,
 } from "obsidian";
 import {
 	EditorView,
@@ -29,6 +27,10 @@ import {
 	historyKeymap,
 } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
+import {
+	syntaxHighlighting,
+	defaultHighlightStyle,
+} from "@codemirror/language";
 
 type CleanupFn = () => void;
 
@@ -2847,6 +2849,7 @@ export default class SidenotePlugin extends Plugin {
 				sidenoteEditorTheme,
 				history(),
 				markdown(),
+				syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
 				// Your markdown formatting hotkeys (Mod-b/i/k) if you added them:
 				markdownEditHotkeys,
 				// Keep standard CM key behavior (arrow keys, delete, etc.)
@@ -3249,7 +3252,10 @@ export default class SidenotePlugin extends Plugin {
 				selection.removeAllRanges();
 				selection.addRange(newRange);
 			} catch (e) {
-				// Ignore
+				console.error(
+					"Sidenotes - Error restoring cursor position (SidenotePlugin.applyMarkdownFormatting):",
+					e,
+				);
 			}
 			return;
 		}
@@ -3371,6 +3377,10 @@ export default class SidenotePlugin extends Plugin {
 				sel.removeAllRanges();
 				sel.addRange(newRange);
 			} catch (e) {
+				console.error(
+					"Sidenotes - Error restoring cursor position (SidenotePlugin.applyMarkdownFormatting)",
+					e,
+				);
 				// Fallback - place at end
 				const fallbackRange = document.createRange();
 				fallbackRange.selectNodeContents(element);
@@ -4248,21 +4258,6 @@ export function cmEditorAdapter(view: EditorView): MinimalEditor {
 		},
 	};
 }
-function setWorkspaceActiveEditor(
-	plugin: SidenotePlugin,
-	view: EditorView | null,
-) {
-	const ws: any = plugin.app.workspace;
-	if (!view) {
-		ws.activeEditor = null;
-		return;
-	}
-
-	ws.activeEditor = {
-		editor: cmEditorAdapter(view),
-		file: plugin.app.workspace.getActiveFile(),
-	};
-}
 
 function wrapSelection(view: EditorView, left: string, right: string) {
 	const changes: { from: number; to: number; insert: string }[] = [];
@@ -4434,8 +4429,8 @@ class FootnoteSidenoteWidget extends WidgetType {
 		const margin = document.createElement("small");
 		margin.className = "sidenote-margin";
 		margin.dataset.sidenoteNum = this.numberText;
-		margin.style.setProperty("--sidenote-shift", "0px");
-		margin.style.setProperty("--sidenote-line-offset", "0px");
+		margin.style.setProperty("--sidenote-shift", `${0}px`);
+		margin.style.setProperty("--sidenote-line-offset", `${0}px`);
 
 		// Render the content with markdown formatting support
 		const fragment = this.plugin.renderLinksToFragmentPublic(
@@ -4652,6 +4647,7 @@ class FootnoteSidenoteWidget extends WidgetType {
 				sidenoteEditorTheme,
 				history(),
 				markdown(),
+				syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
 				markdownEditHotkeys,
 				// keep Obsidian’s own hotkey routing possible
 				keymap.of(defaultKeymap),
@@ -4718,79 +4714,6 @@ class FootnoteSidenoteWidget extends WidgetType {
 		);
 
 		requestAnimationFrame(() => cm.focus());
-	}
-
-	private commitAndCloseMarginEditor(margin: HTMLElement) {
-		const cm = this.cmView;
-		if (!cm) return;
-
-		const newText = cm.state.doc.toString();
-
-		// Tear down CM first (prevents weird focus/key routing issues)
-		this.cmView = null;
-		cm.destroy();
-
-		// Restore Obsidian active editor routing
-		setWorkspaceActiveEditor(this.plugin, null);
-
-		// Clear active edit tracking so your ViewPlugin can rebuild decorations
-		this.plugin.setActiveFootnoteEdit(null);
-
-		margin.dataset.editing = "false";
-
-		if (newText === this.content) {
-			margin.innerHTML = "";
-			margin.appendChild(
-				this.plugin.renderLinksToFragmentPublic(
-					this.plugin.normalizeTextPublic(newText),
-				),
-			);
-			return;
-		}
-
-		// Reuse your existing footnote-definition replacement logic (slightly refactored)
-		const view =
-			this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
-		if (!view?.editor) {
-			margin.innerHTML = "";
-			margin.appendChild(
-				this.plugin.renderLinksToFragmentPublic(
-					this.plugin.normalizeTextPublic(newText),
-				),
-			);
-			return;
-		}
-
-		const editor = view.editor;
-		const content = editor.getValue();
-
-		const escapedId = this.footnoteId.replace(
-			/[.*+?^${}()|[\]\\]/g,
-			"\\$&",
-		);
-		const footnoteDefRegex = new RegExp(
-			`^(\\[\\^${escapedId}\\]:\\s*)(.+(?:\\n(?:[ \\t]+.+)*)?)$`,
-			"gm",
-		);
-
-		const match = footnoteDefRegex.exec(content);
-		if (match) {
-			const prefix = match[1] ?? "";
-			const from = editor.offsetToPos(match.index + prefix.length);
-			const to = editor.offsetToPos(match.index + match[0].length);
-
-			editor.replaceRange(newText, from, to);
-			// Don’t manually re-render; the CM6 decoration will rebuild now that activeFootnoteEdit is null
-			return;
-		}
-
-		// If we couldn't find the footnote definition, fall back to rendering
-		margin.innerHTML = "";
-		margin.appendChild(
-			this.plugin.renderLinksToFragmentPublic(
-				this.plugin.normalizeTextPublic(newText),
-			),
-		);
 	}
 
 	eq(other: FootnoteSidenoteWidget): boolean {
