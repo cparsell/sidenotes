@@ -2814,14 +2814,14 @@ export default class SidenotePlugin extends Plugin {
 
 		// Keymap: ESC cancels; Enter commits; Shift-Enter inserts newline (optional)
 		const closeKeymap = keymap.of([
-			{
-				key: "Escape",
-				run: () => {
-					commitAndClose({ commit: false });
-					return true;
-				},
-				preventDefault: true,
-			},
+			// {
+			// 	key: "Escape",
+			// 	run: () => {
+			// 		commitAndClose({ commit: false });
+			// 		return true;
+			// 	},
+			// 	preventDefault: true,
+			// },
 			{
 				key: "Enter",
 				run: () => {
@@ -2843,6 +2843,7 @@ export default class SidenotePlugin extends Plugin {
 		const state = EditorState.create({
 			doc: this.spanOriginalText,
 			extensions: [
+				closeKeymap,
 				sidenoteEditorTheme,
 				history(),
 				markdown(),
@@ -2852,7 +2853,6 @@ export default class SidenotePlugin extends Plugin {
 				keymap.of(historyKeymap),
 				keymap.of(defaultKeymap),
 				EditorView.lineWrapping,
-				closeKeymap,
 			],
 		});
 
@@ -2862,6 +2862,11 @@ export default class SidenotePlugin extends Plugin {
 		});
 
 		this.spanCmView = cm;
+		cm.dom.classList.add("sidenote-cm-editor");
+		const scroller = cm.dom.querySelector<HTMLElement>(".cm-scroller");
+		if (scroller) {
+			setCssProps(scroller, { "padding-left": "0", padding: "0" }, true);
+		}
 
 		// Click anywhere outside the margin editor => commit and close
 		this.spanOutsidePointerDown = (ev: PointerEvent) => {
@@ -4348,54 +4353,59 @@ const markdownEditHotkeys = keymap.of([
 
 const sidenoteEditorTheme = EditorView.theme({
 	"&": {
-		backgroundColor: "transparent",
-		color: "inherit",
-		padding: "0",
-		margin: "0",
-		border: "none",
-		height: "auto",
+		backgroundColor: "transparent !important",
+		color: "inherit !important",
+		padding: "0 !important",
+		margin: "0 !important",
+		border: "none !important",
+		height: "auto !important",
+		minHeight: "0 !important",
 	},
-	".cm-scroller": {
+	"& .cm-scroller": {
 		padding: "0 !important",
 		paddingLeft: "0 !important",
+		paddingRight: "0 !important",
 		margin: "0 !important",
 		overflow: "visible !important",
-		height: "auto",
+		height: "auto !important",
+		minHeight: "0 !important",
 	},
-	".cm-content": {
+	"& .cm-content": {
 		padding: "2px 0 !important",
+		paddingLeft: "0 !important",
 		margin: "0 !important",
-		minHeight: "auto",
+		minHeight: "auto !important",
 	},
-	".cm-content[contenteditable]": {
+	"& .cm-content[contenteditable]": {
 		padding: "2px 0 !important",
-	},
-	".cm-line": {
-		padding: "0 !important",
-		margin: "0",
 		paddingLeft: "0 !important",
 	},
-	".cm-gutters": {
+	"& .cm-line": {
+		padding: "0 !important",
+		paddingLeft: "0 !important",
+		margin: "0 !important",
+	},
+	"& .cm-gutters": {
 		display: "none !important",
 		width: "0 !important",
 		minWidth: "0 !important",
 		border: "none !important",
 	},
-	".cm-cursor": {
-		borderLeftColor: "var(--text-normal)",
+	"& .cm-cursor": {
+		borderLeftColor: "var(--text-normal) !important",
 	},
 	"&.cm-focused": {
-		outline: "none",
+		outline: "none !important",
 	},
 	"&.cm-focused .cm-cursor": {
-		borderLeftColor: "var(--text-normal)",
+		borderLeftColor: "var(--text-normal) !important",
 	},
-	".cm-activeLineGutter": {
-		backgroundColor: "transparent",
-		display: "none",
+	"& .cm-activeLineGutter": {
+		backgroundColor: "transparent !important",
+		display: "none !important",
 	},
-	".cm-activeLine": {
-		backgroundColor: "transparent",
+	"& .cm-activeLine": {
+		backgroundColor: "transparent !important",
 	},
 });
 
@@ -4530,6 +4540,10 @@ class FootnoteSidenoteWidget extends WidgetType {
 	) {
 		const cm = this.cmView;
 		if (!cm) return;
+
+		// Restore the number attribute
+		margin.dataset.sidenoteNum = this.numberText;
+		margin.dataset.editing = "false";
 
 		const newText = cm.state.doc.toString();
 		const textToUse = opts.commit ? newText : this.originalText;

@@ -176,6 +176,35 @@
 	transition: var(--sn-transition, none);
 }
 
+.sidenote-margin[data-editing="true"] {
+	display: block !important;
+}
+
+.sidenote-margin[data-editing="true"]::before {
+	float: left !important;
+	margin-right: 0.3em !important;
+	shape-outside: margin-box !important;
+}
+
+.sidenote-margin[data-editing="true"] > .cm-editor {
+	display: contents !important;
+}
+
+.sidenote-margin[data-editing="true"] > .cm-editor > .cm-scroller {
+	display: contents !important;
+}
+
+.sidenote-margin[data-editing="true"]
+	> .cm-editor
+	> .cm-scroller
+	> .cm-content {
+	display: block !important;
+}
+
+.sidenote-margin[data-editing="true"] > .cm-editor > .cm-announced {
+	display: none !important;
+}
+
 /* Compact mode typography */
 .markdown-source-view.mod-cm6[data-sidenote-mode="compact"]
 	.sidenote-margin,
