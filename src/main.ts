@@ -178,6 +178,8 @@ export default class SidenotePlugin extends Plugin {
 	private readingModeScrollTimer: number | null = null;
 
 	private footnoteProcessingTimer: number | null = null;
+	private footnoteProcessingRetries = 0;
+	private static readonly MAX_FOOTNOTE_PROCESSING_RETRIES = 5;
 
 	private pendingFootnoteEdit: string | null = null;
 	private pendingFootnoteEditRetries = 0;
@@ -319,29 +321,27 @@ export default class SidenotePlugin extends Plugin {
 			let hasContent = false;
 
 			if (this.settings.sidenoteFormat === "html") {
-				// Only look for HTML sidenotes
 				hasContent = element.querySelectorAll("span.sidenote").length > 0;
 			} else {
-				// Look for footnotes (both "footnote" and "footnote-edit" modes)
 				hasContent =
 					element.querySelectorAll("sup.footnote-ref, section.footnotes")
 						.length > 0;
 			}
 
 			if (hasContent) {
-				// Use a longer delay for footnotes to ensure section is rendered
-				const delay =
-					this.settings.sidenoteFormat !== "html"
-						? SidenotePlugin.FOOTNOTE_RENDER_DELAY
-						: 0;
-
-				setTimeout(() => {
-					requestAnimationFrame(() => {
+				if (this.settings.sidenoteFormat !== "html") {
+					// For footnotes, use the debounced processor that waits
+					// for both refs AND definitions to be present
+					this.scheduleFootnoteProcessing();
+				} else {
+					setTimeout(() => {
 						requestAnimationFrame(() => {
-							this.processReadingModeSidenotes(element);
+							requestAnimationFrame(() => {
+								this.processReadingModeSidenotes(element);
+							});
 						});
-					});
-				}, delay);
+					}, 0);
+				}
 			}
 		});
 
@@ -364,6 +364,7 @@ export default class SidenotePlugin extends Plugin {
 			this.app.workspace.on("file-open", (_file: TFile | null) => {
 				this.resetRegistry();
 				this.invalidateLayoutCache();
+				this.footnoteProcessingRetries = 0;
 				this.scanDocumentForSidenotes();
 				this.rebindAndSchedule();
 			}),
@@ -1179,52 +1180,125 @@ export default class SidenotePlugin extends Plugin {
 		}
 
 		if (useFootnotes) {
-			// Get footnote references
-			const processedFootnoteIds = new Set<string>();
+			// First, build a map of footnote definitions from the rendered HTML
+			// This is more reliable than matching by ID since Obsidian's IDs can have hashes
+			const footnoteDefMap = new Map<string, HTMLElement>();
 
-			// Find all footnote sups
-			const footnoteSups =
-				readingRoot.querySelectorAll<HTMLElement>("sup.footnote-ref");
+			// Look for footnote definitions in multiple possible locations
+			const footnoteLis = readingRoot.querySelectorAll<HTMLElement>(
+				"section.footnotes li, .footnotes li, ol li[id^='fn-']",
+			);
+
+			for (const li of Array.from(footnoteLis)) {
+				const liId = li.id || li.dataset.footnoteId || "";
+				if (!liId) continue;
+
+				// Extract the base footnote ID (strip hash suffix)
+				// fn-1-abc123 -> 1, fn-myref-abc123 -> myref
+				let baseId: string | null = null;
+				const hashMatch = liId.match(/^fn-(.+?)-[a-f0-9]+$/i);
+				if (hashMatch && hashMatch[1]) {
+					baseId = hashMatch[1];
+				} else {
+					const simpleMatch = liId.match(/^fn-(.+)$/i);
+					if (simpleMatch && simpleMatch[1]) {
+						baseId = simpleMatch[1];
+					}
+				}
+
+				if (baseId && !footnoteDefMap.has(baseId)) {
+					footnoteDefMap.set(baseId, li);
+				}
+			}
+
+			if (footnoteDefMap.size === 0) {
+				// Definitions not rendered yet — schedule retry
+				this.scheduleFootnoteProcessing();
+				// Don't return — there may be HTML sidenotes too
+				if (!useHtmlSidenotes) return;
+			}
+
+			// Now find all footnote references
+			const footnoteSups = readingRoot.querySelectorAll<HTMLElement>(
+				"sup.footnote-ref, sup[class*='footnote']",
+			);
+
+			const processedBaseIds = new Set<string>();
 
 			for (const sup of Array.from(footnoteSups)) {
-				// Skip if already processed into a sidenote
 				if (sup.closest(".sidenote-number")) continue;
 
-				// Get the fn ID from the sup's data attribute or id
-				const supDataId = sup.dataset.footnoteId ?? sup.id ?? "";
+				// Try multiple ways to get the footnote ID
+				const supId = sup.dataset.footnoteId || sup.id || "";
 
-				// Convert fnref-X-HASH to fn-X-HASH to find the definition
-				const fnId = supDataId.replace(/^fnref-/, "fn-");
+				// Also check the anchor inside the sup
+				const anchor = sup.querySelector("a");
+				const anchorHref = anchor?.getAttribute("href") || "";
+				const anchorId = anchor?.id || "";
 
-				if (!fnId || processedFootnoteIds.has(fnId)) continue;
-				processedFootnoteIds.add(fnId);
+				// Extract base ID from any available source
+				let baseId: string | null = null;
 
-				// Find the footnote content by looking for li with matching id
-				const footnoteLi = readingRoot.querySelector<HTMLElement>(
-					`li[id="${fnId}"], li[data-footnote-id="${fnId}"]`,
-				);
+				// Try from sup ID/data attribute: fnref-1-hash or fnref-1
+				for (const rawId of [supId, anchorId]) {
+					if (!rawId) continue;
+					const hashMatch = rawId.match(/^fnref-(.+?)-[a-f0-9]+$/i);
+					if (hashMatch && hashMatch[1]) {
+						baseId = hashMatch[1];
+						break;
+					}
+					const simpleMatch = rawId.match(/^fnref-(.+)$/i);
+					if (simpleMatch && simpleMatch[1]) {
+						baseId = simpleMatch[1];
+						break;
+					}
+				}
 
+				// Try from href: #fn-1-hash or #fn-1
+				if (!baseId && anchorHref) {
+					const hrefHashMatch = anchorHref.match(/#fn-(.+?)-[a-f0-9]+$/i);
+					if (hrefHashMatch && hrefHashMatch[1]) {
+						baseId = hrefHashMatch[1];
+					} else {
+						const hrefSimpleMatch = anchorHref.match(/#fn-(.+)$/i);
+						if (hrefSimpleMatch && hrefSimpleMatch[1]) {
+							baseId = hrefSimpleMatch[1];
+						}
+					}
+				}
+
+				// Last resort: try to extract a number from the sup text content
+				if (!baseId) {
+					const supText = sup.textContent?.trim() || "";
+					const numMatch = supText.match(/^(\d+)$/);
+					if (numMatch && numMatch[1]) {
+						baseId = numMatch[1];
+					}
+				}
+
+				if (!baseId || processedBaseIds.has(baseId)) continue;
+				processedBaseIds.add(baseId);
+
+				// Look up the definition using the base ID
+				const footnoteLi = footnoteDefMap.get(baseId);
 				if (!footnoteLi) continue;
 
 				// Create a container to hold the footnote content
 				const contentContainer = document.createElement("span");
 
-				// Get the inner content - if there's a <p>, get its contents, otherwise get li contents
 				const paragraph = footnoteLi.querySelector("p");
 				const sourceElement = paragraph ?? footnoteLi;
 
-				// Clone child nodes to preserve HTML formatting
 				for (const child of Array.from(sourceElement.childNodes)) {
 					const cloned = child.cloneNode(true);
 					contentContainer.appendChild(cloned);
 				}
 
-				// Remove backref links from the cloned content
+				// Remove backref links
 				contentContainer
 					.querySelectorAll("a.footnote-backref, a[href^='#fnref']")
 					.forEach((el) => el.remove());
 
-				// Get text for sorting/fallback purposes
 				const footnoteText = contentContainer.textContent?.trim();
 				if (!footnoteText) continue;
 
@@ -1233,7 +1307,7 @@ export default class SidenotePlugin extends Plugin {
 					rect: sup.getBoundingClientRect(),
 					type: "footnote",
 					text: footnoteText,
-					footnoteId: fnId,
+					footnoteId: baseId,
 					footnoteHtml: contentContainer,
 				});
 			}
@@ -1244,17 +1318,30 @@ export default class SidenotePlugin extends Plugin {
 			return;
 		}
 
+		// Filter out items that haven't been laid out yet
+		const validItems = allItems.filter((item) => {
+			return item.rect.width > 0 && item.rect.height > 0;
+		});
+
+		if (validItems.length === 0) {
+			// Elements not laid out yet — retry
+			if (useFootnotes) {
+				this.scheduleFootnoteProcessing();
+			}
+			return;
+		}
+
 		readingRoot.dataset.hasSidenotes = "true";
 
 		// Sort by vertical position in document
-		allItems.sort((a, b) => a.rect.top - b.rect.top);
+		validItems.sort((a, b) => a.rect.top - b.rect.top);
 
 		// Start numbering from 1
 		let num = 1;
 
 		const marginNotes: HTMLElement[] = [];
 
-		for (const item of allItems) {
+		for (const item of validItems) {
 			if (this.settings.resetNumberingPerHeading) {
 				const heading = this.findPrecedingHeading(item.el);
 				if (heading) {
@@ -1400,6 +1487,15 @@ export default class SidenotePlugin extends Plugin {
 			window.clearTimeout(this.footnoteProcessingTimer);
 		}
 
+		// Don't retry indefinitely
+		if (
+			this.footnoteProcessingRetries >=
+			SidenotePlugin.MAX_FOOTNOTE_PROCESSING_RETRIES
+		) {
+			this.footnoteProcessingRetries = 0;
+			return;
+		}
+
 		this.footnoteProcessingTimer = window.setTimeout(() => {
 			this.footnoteProcessingTimer = null;
 
@@ -1431,7 +1527,7 @@ export default class SidenotePlugin extends Plugin {
 				// Refs exist but no definitions yet - try again later
 				this.scheduleFootnoteProcessing();
 			}
-		}, 150); // Longer delay to allow footnotes section to render
+		}, 200); // Longer delay to allow footnotes section to render
 	}
 
 	/**
@@ -3945,6 +4041,7 @@ export function cmEditorAdapter(view: EditorView): MinimalEditor {
 		},
 	};
 }
+
 function setWorkspaceActiveEditor(
 	plugin: SidenotePlugin,
 	view: EditorView | null,

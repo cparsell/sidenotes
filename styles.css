@@ -247,9 +247,9 @@
 	cursor: text;
 }
 
-.sidenote-margin[data-editing="true"]::before {
+/* .sidenote-margin[data-editing="true"]::before {
 	display: none;
-}
+} */
 
 .sidenote-margin[contenteditable="true"] {
 	white-space: pre-wrap;
