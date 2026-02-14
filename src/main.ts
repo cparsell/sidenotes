@@ -1081,6 +1081,79 @@ export default class SidenotePlugin extends Plugin {
 			root.style.setProperty("--sidenote-offset", `${cssRight}px`);
 		}
 	}
+
+	/**
+	 * Correct per-sidenote horizontal position in reading mode.
+	 *
+	 * The global --sidenote-offset is computed relative to a reference line
+	 * (typically the first <p>). But each sidenote's position:absolute is
+	 * relative to its own positioned ancestor (p, li, blockquote, etc.).
+	 * When the positioned ancestor is indented (e.g. nested list items),
+	 * the sidenote shifts inward. This method corrects each margin's
+	 * left/right so all sidenotes align on the same vertical line.
+	 */
+	private correctReadingModeHorizontalPositions(root: HTMLElement) {
+		const position = this.settings.sidenotePosition;
+
+		// Find the same reference line that updateSidenotePositioning used
+		let refLine: HTMLElement | null = root.querySelector<HTMLElement>(
+			".markdown-preview-sizer > div > p, .markdown-preview-sizer > div > .sidenote-number",
+		);
+		if (!refLine) {
+			refLine = root.querySelector<HTMLElement>(".markdown-preview-sizer");
+		}
+		if (!refLine) return;
+
+		const refRect = refLine.getBoundingClientRect();
+
+		// Read the global offset that was just set
+		const globalOffset =
+			parseFloat(root.style.getPropertyValue("--sidenote-offset")) || 0;
+
+		const margins = root.querySelectorAll<HTMLElement>(
+			"small.sidenote-margin",
+		);
+
+		for (const margin of Array.from(margins)) {
+			// Find the positioned parent for this margin
+			const wrapper = margin.closest<HTMLElement>("span.sidenote-number");
+			if (!wrapper) continue;
+
+			const positionedParent =
+				(wrapper.closest(
+					"p, li, h1, h2, h3, h4, h5, h6, blockquote, .callout",
+				) as HTMLElement | null) ??
+				(wrapper.parentElement as HTMLElement | null);
+
+			if (!positionedParent) continue;
+
+			const parentRect = positionedParent.getBoundingClientRect();
+
+			if (position === "left") {
+				// Global offset is relative to refLine's left edge.
+				// This margin's position:absolute is relative to parentRect.left.
+				// Correction: shift left by the difference.
+				const correction = refRect.left - parentRect.left;
+				if (Math.abs(correction) > 0.5) {
+					margin.style.left = `${globalOffset + correction}px`;
+				} else {
+					// No correction needed — clear any previously set inline style
+					margin.style.removeProperty("left");
+				}
+			} else {
+				// Global offset is relative to refLine's right edge.
+				// This margin's position:absolute right is relative to parentRect.right.
+				// Correction: adjust for the difference in right edges.
+				const correction = parentRect.right - refRect.right;
+				if (Math.abs(correction) > 0.5) {
+					margin.style.right = `${globalOffset + correction}px`;
+				} else {
+					margin.style.removeProperty("right");
+				}
+			}
+		}
+	}
+
 	// ==================== Number Formatting ====================
 
 	private formatNumber(num: number): string {
@@ -1181,6 +1254,22 @@ export default class SidenotePlugin extends Plugin {
 
 		// First, remove any existing sidenote markup in the reading root to start fresh
 		this.removeAllSidenoteMarkupFromReadingMode(readingRoot);
+
+		const sizer =
+			readingRoot.querySelector<HTMLElement>(".markdown-preview-sizer") ??
+			readingRoot;
+
+		const sizerRect = sizer.getBoundingClientRect();
+
+		// Baseline element that represents the main body text column.
+		// Prefer a non-list paragraph; fall back to any paragraph; then sizer.
+		const baselineEl =
+			sizer.querySelector<HTMLElement>(":scope > p") ??
+			sizer.querySelector<HTMLElement>("p") ??
+			sizer;
+
+		const baselineRect = baselineEl.getBoundingClientRect();
+		const baselineX = baselineRect.left - sizerRect.left;
 
 		// Collect items based on the sidenoteFormat setting
 		// Note: footnoteHtml is optional and only used for footnotes
@@ -1491,6 +1580,35 @@ export default class SidenotePlugin extends Plugin {
 			// 	});
 			// }
 
+			// Reading mode: correct horizontal offset so list indentation doesn't shift the margin column
+			// Find the nearest container that is responsible for indentation (li is the common case)
+			const li = wrapper.closest("li") as HTMLElement | null;
+
+			if (li) {
+				const liRect = li.getBoundingClientRect();
+
+				const containerX = liRect.left - sizerRect.left;
+				const indentPx = containerX - baselineX;
+
+				if (Math.abs(indentPx) > 0.5) {
+					if (this.settings.sidenotePosition === "left") {
+						wrapper.style.setProperty(
+							"--sidenote-offset",
+							`calc(-1 * (var(--sidenote-width) + var(--sidenote-gap)) - ${indentPx}px)`,
+						);
+					} else {
+						wrapper.style.setProperty(
+							"--sidenote-offset",
+							`calc(-1 * (var(--sidenote-width) + var(--sidenote-gap)) + ${indentPx}px)`,
+						);
+					}
+				} else {
+					wrapper.style.removeProperty("--sidenote-offset");
+				}
+			} else {
+				wrapper.style.removeProperty("--sidenote-offset");
+			}
+
 			// Calculate line offset: how far down from the positioned parent is this reference?
 			this.applyLineOffset(wrapper, margin, false);
 
@@ -1520,8 +1638,12 @@ export default class SidenotePlugin extends Plugin {
 					}
 				}
 
-				// Calculate and apply sidenote positioning
+				// Calculate and apply global sidenote positioning
 				this.updateSidenotePositioning(readingRoot, true);
+
+				// Correct per-sidenote horizontal position for indented parents
+				// (e.g. nested list items whose left/right edges differ from refLine)
+				this.correctReadingModeHorizontalPositions(readingRoot);
 
 				this.resolveCollisions(
 					marginNotes.filter((m) => m.isConnected),
@@ -1848,6 +1970,7 @@ export default class SidenotePlugin extends Plugin {
 			if (mode !== "hidden" && hasMargins) {
 				requestAnimationFrame(() => {
 					this.updateSidenotePositioning(readingRoot, true);
+					this.correctReadingModeHorizontalPositions(readingRoot);
 					this.updateReadingModeCollisions();
 				});
 			}
