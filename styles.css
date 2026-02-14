@@ -90,6 +90,26 @@
 
 /* === Sidenote positioning (uses --sidenote-offset set by JS) === */
 
+/* If set, force all sidenotes to use one shared column X */
+.markdown-reading-view[data-has-sidenote-column="true"]
+	.sidenote-number
+	> .sidenote-margin {
+	left: var(--sidenote-column-x) !important;
+	right: auto !important;
+}
+
+.markdown-reading-view[data-has-sidenote-column-right="true"]
+	.sidenote-number
+	> .sidenote-margin {
+	right: var(--sidenote-column-x) !important;
+	left: auto !important;
+}
+
+/* Optional: allow JS to nudge margin notes horizontally without fighting left/right */
+.sidenote-margin {
+	transform: translateX(var(--sidenote-indent-x, 0px));
+}
+
 /* LEFT */
 .markdown-source-view.mod-cm6[data-sidenote-position="left"]
 	.sidenote-margin,
