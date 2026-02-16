@@ -216,6 +216,10 @@ export default class SidenotePlugin extends Plugin {
 
 	// Track the currently editing margin element for the global capture listener
 	private currentlyEditingMargin: HTMLElement | null = null;
+	// Cooldown timer after a reading-mode edit commit to prevent
+	// the MutationObserver-triggered rebuild from overwriting the
+	// freshly re-rendered margin with stale source data.
+	private postEditCooldown: number | null = null;
 
 	// Delegated click handler for reading mode margins (survives virtualization)
 	private readingModeDelegateHandler: ((ev: MouseEvent) => void) | null =
@@ -429,6 +433,11 @@ export default class SidenotePlugin extends Plugin {
 		this.pendingFootnoteEdit = null;
 		this.pendingFootnoteEditRetries = 0;
 		this.currentlyEditingMargin = null;
+		// Clear post-edit cooldown
+		if (this.postEditCooldown !== null) {
+			window.clearTimeout(this.postEditCooldown);
+			this.postEditCooldown = null;
+		}
 
 		// Clear delegated reading mode handler
 		this.readingModeDelegateHandler = null;
@@ -1337,6 +1346,15 @@ export default class SidenotePlugin extends Plugin {
 		);
 		if (!readingRoot) return;
 
+		// Skip full reprocessing during the post-edit cooldown.
+		// After a reading-mode edit, the margin was already re-rendered
+		// with the correct text. Obsidian's async DOM re-render fires
+		// the MutationObserver, but source caches may still be stale.
+		// Let the cooldown expire before allowing a full rebuild.
+		if (this.postEditCooldown !== null) {
+			return;
+		}
+
 		// Ensure the delegated click handler is installed (survives virtualization)
 		this.ensureReadingModeDelegation(readingRoot);
 
@@ -2149,6 +2167,12 @@ export default class SidenotePlugin extends Plugin {
 			);
 		}
 
+		// Clear any post-edit cooldown from the previous edit
+		if (this.postEditCooldown !== null) {
+			window.clearTimeout(this.postEditCooldown);
+			this.postEditCooldown = null;
+		}
+
 		this.readingCmOriginalText = footnoteText;
 		this.readingCmFootnoteId = footnoteId;
 		this.isEditingMargin = true;
@@ -2306,8 +2330,8 @@ export default class SidenotePlugin extends Plugin {
 		setWorkspaceActiveEditor(this, null);
 
 		// Keep isEditingMargin = true through the commit so that
-		// editor-change and MutationObserver don't trigger a competing
-		// full teardown/rebuild while we're still working.
+		// editor-change doesn't set needsReadingModeRefresh = true
+		// and the MutationObserver skips during the commit.
 		margin.dataset.editing = "false";
 		this.activeReadingModeMargin = null;
 
@@ -2322,11 +2346,30 @@ export default class SidenotePlugin extends Plugin {
 		// NOW clear the editing flag
 		this.isEditingMargin = false;
 
-		// Re-render the sidenote display
+		// Re-render the sidenote display with the correct text
 		margin.innerHTML = "";
 		margin.appendChild(
 			this.renderLinksToFragment(this.normalizeText(renderText)),
 		);
+
+		// Set a cooldown to prevent the MutationObserver-triggered
+		// rebuild from overwriting this margin with stale source data.
+		// Obsidian re-renders the preview DOM asynchronously after the
+		// file write, which fires the MutationObserver → scheduleFootnoteProcessing
+		// → processReadingModeSidenotes. If that rebuild reads source content
+		// before Obsidian has updated its internal cache, it gets the OLD text
+		// and overwrites our correct re-render.
+		if (commit && newText !== this.readingCmOriginalText) {
+			if (this.postEditCooldown !== null) {
+				window.clearTimeout(this.postEditCooldown);
+			}
+			this.postEditCooldown = window.setTimeout(() => {
+				this.postEditCooldown = null;
+				// Now that Obsidian has had time to update its caches,
+				// refresh our cached content too
+				this.refreshCachedSourceContent();
+			}, 500);
+		}
 
 		// Re-run collision avoidance since the margin height changed
 		requestAnimationFrame(() => {
@@ -2346,13 +2389,6 @@ export default class SidenotePlugin extends Plugin {
 		if (this.settings.editInReadingMode) {
 			margin.style.cursor = "pointer";
 		}
-
-		// Update cached source so a mode switch sees the committed text.
-		// Don't set needsReadingModeRefresh here — the reading mode
-		// sidenotes are already correct and setting it would cause
-		// scheduleFootnoteProcessing to do a full teardown that destroys
-		// any editor the user is about to open on another sidenote.
-		this.refreshCachedSourceContent();
 	}
 
 	/**
