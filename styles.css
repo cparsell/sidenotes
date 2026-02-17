@@ -170,6 +170,7 @@
 	position: absolute;
 	top: 0;
 	width: var(--sidenote-width);
+	color: var(--sn-text-color, var(--text-normal));
 	font-size: var(--sn-font-size, 80%);
 	line-height: var(--sn-line-height, 1.35);
 	overflow-wrap: break-word;
@@ -343,11 +344,11 @@
 
 /* --- Neumorphic (subtle badge) --- */
 :root {
-	--sn-badge-bg: rgba(243, 245, 250, 0.05);
+	--sn-badge-bg: rgba(128, 128, 128, 0.1);
 	--sn-badge-text: var(--text-muted);
-	--sn-badge-border: rgba(243, 245, 250, 0.1);
-	--sn-active-bg: rgba(243, 245, 250, 0.1);
-	--sn-active-text: #ffffff;
+	--sn-badge-border: rgba(128, 128, 128, 0.15);
+	--sn-active-bg: rgba(128, 128, 128, 0.2);
+	--sn-active-text: var(--text-normal);
 }
 
 [data-sn-badge-style="neumorphic"]
@@ -399,16 +400,16 @@
 }
 
 [data-sn-badge-style="neumorphic"] .sidenote-number:hover {
-	color: #ffffff;
+	color: var(--text-normal);
 }
 
 /* --- Pill (colored capsule) --- */
 :root {
-	--sn-pill-bg: rgba(255, 255, 255, 0.05);
-	--sn-pill-text: #ffffff;
-	--sn-pill-border: rgba(255, 255, 255, 0.1);
-	--sn-pill-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-	--sn-pill-hover-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+	--sn-pill-bg: rgba(128, 128, 128, 0.1);
+	--sn-pill-text: var(--text-normal);
+	--sn-pill-border: rgba(128, 128, 128, 0.15);
+	--sn-pill-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+	--sn-pill-hover-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
 }
 
 [data-sn-badge-style="pill"] .sidenote-margin[data-sidenote-num]::before {
@@ -472,7 +473,7 @@
 }
 
 [data-sn-badge-style="pill"] .sidenote-number:hover {
-	color: #ffffff;
+	color: var(--text-normal);
 }
 
 /* ==========================================================
@@ -523,6 +524,7 @@
 	position: absolute;
 	top: 0;
 	width: var(--sidenote-width);
+	color: var(--sn-text-color, var(--text-normal));
 	font-size: var(--sn-font-size, 80%);
 	line-height: var(--sn-line-height, 1.35);
 	overflow-wrap: break-word;

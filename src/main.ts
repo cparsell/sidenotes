@@ -90,6 +90,7 @@ interface SidenoteSettings {
 	fontSize: number;
 	fontSizeCompact: number;
 	lineHeight: number;
+	textColor: string;
 	textAlignment: "left" | "right" | "justify";
 
 	// Behavior
@@ -129,6 +130,7 @@ const DEFAULT_SETTINGS: SidenoteSettings = {
 	fontSize: 80,
 	fontSizeCompact: 70,
 	lineHeight: 1.35,
+	textColor: "",
 	textAlignment: "right",
 
 	// Behavior
@@ -539,6 +541,10 @@ export default class SidenotePlugin extends Plugin {
 
 	public refreshCachedSourceContentPublic() {
 		this.refreshCachedSourceContent();
+	}
+
+	public injectStylesPublic() {
+		this.injectStyles();
 	}
 
 	private cleanupView(view: MarkdownView | null) {
@@ -995,6 +1001,10 @@ export default class SidenotePlugin extends Plugin {
 		root.style.setProperty(
 			"--sn-font-size-compact",
 			`${s.fontSizeCompact}%`,
+		);
+		root.style.setProperty(
+			"--sn-text-color",
+			s.textColor || "var(--text-normal)",
 		);
 		root.style.setProperty("--sn-line-height", `${s.lineHeight}`);
 		root.style.setProperty(
@@ -4805,6 +4815,21 @@ class SidenoteSettingTab extends PluginSettingTab {
 					}),
 			);
 
+		new Setting(containerEl)
+			.setName("Sidenote text color")
+			.setDesc(
+				"Color for sidenote text. Leave empty to use Obsidian's default text color.",
+			)
+			.addText((text) =>
+				text
+					.setPlaceholder("e.g. #333333 or rgb(50,50,50)")
+					.setValue(this.plugin.settings.textColor)
+					.onChange(async (value) => {
+						this.plugin.settings.textColor = value.trim();
+						await this.plugin.saveSettings();
+						this.plugin.injectStylesPublic();
+					}),
+			);
 		new Setting(containerEl)
 			.setName("Text alignment")
 			.setDesc("How to align text in sidenotes")
