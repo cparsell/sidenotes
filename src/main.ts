@@ -133,7 +133,7 @@ const DEFAULT_SETTINGS: SidenoteSettings = {
 	lineHeight: 1.35,
 	textColor: "",
 	hoverColor: "",
-	textAlignment: "right",
+	textAlignment: "left",
 
 	// Behavior
 	collisionSpacing: 8,
