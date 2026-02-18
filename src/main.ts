@@ -775,9 +775,18 @@ export default class SidenotePlugin extends Plugin {
 				const footnoteId = margin.dataset.footnoteId;
 				if (!footnoteId) return;
 
-				// Always read the latest footnote text from source
-				const footnoteText = this.getFootnoteSourceText(footnoteId);
-				if (footnoteText === null) return;
+				// The margin already displays the correct text (it was
+				// re-rendered after the last commit). Read from it
+				// directly to avoid any stale-cache issues with
+				// vault.process() async timing.
+				const displayedText = this.normalizeText(margin.textContent ?? "");
+
+				// Strip the number prefix if the margin's ::before
+				// content is included in textContent (it isn't for
+				// pseudo-elements, but guard against it)
+				const footnoteText =
+					displayedText || this.getFootnoteSourceText(footnoteId) || "";
+				if (!footnoteText) return;
 
 				this.startReadingModeFootnoteEdit(
 					margin,
@@ -5422,6 +5431,10 @@ class FootnoteSidenoteWidget extends WidgetType {
 		editor.replaceRange(newText, from, to);
 	}
 
+	/**
+	 * Sets up Margin Editing - FOOTNOTES
+	 * in EDITING MODE
+	 */
 	private setupMarginEditing(margin: HTMLElement) {
 		margin.dataset.editing = "false";
 
@@ -5440,6 +5453,7 @@ class FootnoteSidenoteWidget extends WidgetType {
 
 			e.preventDefault();
 			e.stopPropagation();
+
 			this.startMarginEdit(margin);
 		};
 
@@ -5447,6 +5461,10 @@ class FootnoteSidenoteWidget extends WidgetType {
 		margin.addEventListener("click", onClick);
 	}
 
+	/**
+	 * Starts margin editing - FOOTNOTES format
+	 * In Editing Mode
+	 */
 	private startMarginEdit(margin: HTMLElement) {
 		if (this.cmView) return;
 
@@ -5608,6 +5626,23 @@ class FootnoteSidenoteWidget extends WidgetType {
 				this.plugin.normalizeTextPublic(newText),
 			),
 		);
+	}
+
+	/**
+	 * Read the current footnote definition text from the live editor
+	 * document, bypassing any stale cached content on the widget.
+	 */
+	private getFreshContent(): string {
+		const view =
+			this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
+		const editor = view?.editor;
+		if (!editor) return this.content;
+
+		const content = editor.getValue();
+		if (!content) return this.content;
+
+		const defs = this.plugin.parseFootnoteDefinitionsPublic(content);
+		return defs.get(this.footnoteId) ?? this.content;
 	}
 
 	eq(other: FootnoteSidenoteWidget): boolean {
