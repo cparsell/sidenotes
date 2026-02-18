@@ -183,6 +183,10 @@
 	transition: var(--sn-transition, none);
 }
 
+.sidenote-margin:hover {
+	/* color: var(--sn-hover-color, var(--text-muted)); */
+}
+
 .sidenote-margin[data-editing="true"] {
 	display: block !important;
 }
@@ -317,7 +321,7 @@
 	font-weight: bold;
 	margin-right: 0.2rem;
 	line-height: 0;
-	color: var(--sn-number-color, inherit);
+	color: var(--sn-number-color, var(--text-accent)) !important;
 }
 
 [data-sn-show-numbers="true"][data-sn-badge-style="plain"]
@@ -334,7 +338,7 @@
 	.sidenote-margin[data-sidenote-num]::before {
 	content: attr(data-sidenote-num) ". ";
 	font-weight: bold;
-	color: var(--sn-number-color, inherit);
+	color: var(--sn-number-color, inherit) !important;
 }
 
 [data-sn-show-numbers="false"][data-sn-badge-style="plain"]
@@ -347,8 +351,10 @@
 	--sn-badge-bg: rgba(128, 128, 128, 0.1);
 	--sn-badge-text: var(--text-muted);
 	--sn-badge-border: rgba(128, 128, 128, 0.15);
-	--sn-active-bg: rgba(128, 128, 128, 0.2);
-	--sn-active-text: var(--text-normal);
+	--sn-active-bg: rgba(214, 214, 214, 0.2);
+	--sn-active-text: var(--text-accent, var(--text-normal));
+	--sn-badge-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+	--sn-badge-hover-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
 }
 
 [data-sn-badge-style="neumorphic"]
@@ -364,12 +370,13 @@
 	background-color: var(--sn-badge-bg) !important;
 	border: 1px solid var(--sn-badge-border) !important;
 	border-radius: 4px !important;
-	color: var(--sn-number-color, var(--sn-badge-text)) !important;
+	color: var(--sn-number-color, var(--text-accent)) !important;
 	font-family: var(--font-monospace) !important;
 	font-size: 0.85em !important;
 	font-weight: 600 !important;
 	vertical-align: middle;
 	line-height: 1;
+	box-shadow: var(--sn-badge-shadow);
 }
 
 [data-sn-badge-style="neumorphic"]
@@ -377,7 +384,8 @@
 [data-sn-badge-style="neumorphic"]
 	.sidenote-margin[data-editing="true"][data-sidenote-num]::before {
 	background-color: var(--sn-active-bg) !important;
-	color: var(--sn-active-text) !important;
+	color: var(--text-accent) !important;
+	box-shadow: var(--sn-badge-hover-shadow);
 }
 
 [data-sn-badge-style="neumorphic"] .sidenote-number::after {
@@ -390,17 +398,28 @@
 	background-color: var(--sn-badge-bg);
 	border: 1px solid var(--sn-badge-border);
 	border-radius: 3px;
-	color: var(--sn-number-color, var(--sn-badge-text));
+	color: var(--sn-number-color, var(--text-accent)) !important;
 	font-size: 0.7em;
 	font-weight: bold;
 	margin-left: 2px;
 	margin-right: 0.2rem;
 	vertical-align: super;
 	line-height: 0;
+	box-shadow: var(--sn-badge-shadow);
 }
 
-[data-sn-badge-style="neumorphic"] .sidenote-number:hover {
-	color: var(--text-normal);
+.sidenote-number:hover .sidenote-margin[data-editing="false"] {
+	color: var(--sn-hover-color, var(--text-accent));
+}
+
+/* Brighten the inline number itself on hover */
+.sidenote-number:hover::after {
+	color: var(--sn-number-color, var(--text-accent));
+}
+
+[data-sn-badge-style="neumorphic"] .sidenote-number:hover::after {
+	background-color: var(--sn-active-bg) !important;
+	box-shadow: var(--sn-badge-hover-shadow);
 }
 
 /* --- Pill (colored capsule) --- */
@@ -473,7 +492,7 @@
 }
 
 [data-sn-badge-style="pill"] .sidenote-number:hover {
-	color: var(--text-normal);
+	/* color: var(--text-muted) !important; */
 }
 
 /* ==========================================================
@@ -560,6 +579,10 @@
 .sidenote-margin .sidenote-cm-editor .cm-content {
 	padding: 2px 0 !important;
 	margin: 0 !important;
+}
+
+.sidenote-margin[data-editing="true"] .sidenote-cm-editor .cm-content {
+	color: var(--sn-text-color, var(--text-normal)) !important;
 }
 
 .sidenote-margin .sidenote-cm-editor .cm-line {

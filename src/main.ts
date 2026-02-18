@@ -91,6 +91,7 @@ interface SidenoteSettings {
 	fontSizeCompact: number;
 	lineHeight: number;
 	textColor: string;
+	hoverColor: string;
 	textAlignment: "left" | "right" | "justify";
 
 	// Behavior
@@ -131,6 +132,7 @@ const DEFAULT_SETTINGS: SidenoteSettings = {
 	fontSizeCompact: 70,
 	lineHeight: 1.35,
 	textColor: "",
+	hoverColor: "",
 	textAlignment: "right",
 
 	// Behavior
@@ -1002,10 +1004,21 @@ export default class SidenotePlugin extends Plugin {
 			"--sn-font-size-compact",
 			`${s.fontSizeCompact}%`,
 		);
+
+		// Text Color
 		root.style.setProperty(
 			"--sn-text-color",
 			s.textColor || "var(--text-normal)",
 		);
+
+		// Text color on hover
+		if (s.hoverColor) {
+			root.style.setProperty("--sn-hover-color", s.hoverColor);
+		} else {
+			root.style.removeProperty("--sn-hover-color");
+		}
+
+		// Line Height
 		root.style.setProperty("--sn-line-height", `${s.lineHeight}`);
 		root.style.setProperty(
 			"--sn-line-height-compact",
@@ -1024,10 +1037,11 @@ export default class SidenotePlugin extends Plugin {
 		root.style.setProperty("--sn-text-align", textAlign);
 
 		// Number color
-		root.style.setProperty(
-			"--sn-number-color",
-			s.numberColor || "inherit",
-		);
+		if (s.numberColor) {
+			root.style.setProperty("--sn-number-color", s.numberColor);
+		} else {
+			root.style.removeProperty("--sn-number-color");
+		}
 
 		// Transitions
 		root.style.setProperty(
@@ -4811,6 +4825,7 @@ class SidenoteSettingTab extends PluginSettingTab {
 						this.plugin.settings.lineHeight = value;
 						await this.plugin.saveSettings();
 						this.plugin.needsReadingModeRefresh = true;
+						this.plugin.injectStylesPublic();
 						this.plugin.forceReadingModeRefreshPublic();
 					}),
 			);
@@ -4828,8 +4843,28 @@ class SidenoteSettingTab extends PluginSettingTab {
 						this.plugin.settings.textColor = value.trim();
 						await this.plugin.saveSettings();
 						this.plugin.injectStylesPublic();
+						this.plugin.forceReadingModeRefreshPublic();
 					}),
 			);
+
+		new Setting(containerEl)
+			.setName("Sidenote hover color")
+			.setDesc(
+				"Color for sidenote text on hover. Leave empty to use Obsidian's default *muted text* color.",
+			)
+			.addText((text) =>
+				text
+					.setPlaceholder("e.g. #333333 or rgb(50,50,50)")
+					.setValue(this.plugin.settings.hoverColor)
+					.onChange(async (value) => {
+						this.plugin.settings.hoverColor = value.trim();
+						await this.plugin.saveSettings();
+						this.plugin.needsReadingModeRefresh = true;
+						this.plugin.injectStylesPublic();
+						this.plugin.forceReadingModeRefreshPublic();
+					}),
+			);
+
 		new Setting(containerEl)
 			.setName("Text alignment")
 			.setDesc("How to align text in sidenotes")
@@ -4843,6 +4878,7 @@ class SidenoteSettingTab extends PluginSettingTab {
 						this.plugin.settings.textAlignment = value;
 						await this.plugin.saveSettings();
 						this.plugin.needsReadingModeRefresh = true;
+						this.plugin.injectStylesPublic();
 						this.plugin.forceReadingModeRefreshPublic();
 					}),
 			);
@@ -4905,7 +4941,6 @@ class SidenoteSettingTab extends PluginSettingTab {
 						this.plugin.settings.editInReadingMode = value;
 						await this.plugin.saveSettings();
 						this.plugin.needsReadingModeRefresh = true;
-						this.plugin.forceReadingModeRefreshPublic();
 						this.plugin.forceReadingModeRefreshPublic();
 					}),
 			);
