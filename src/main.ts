@@ -228,6 +228,9 @@ export default class SidenotePlugin extends Plugin {
 	// freshly re-rendered margin with stale source data.
 	private postEditCooldown: number | null = null;
 
+	// Pre-cached file content for PDF export (keyed by file path)
+	private fileContentCache = new Map<string, string>();
+
 	// Delegated click handler for reading mode margins (survives virtualization)
 	private readingModeDelegateHandler: ((ev: MouseEvent) => void) | null =
 		null;
@@ -371,7 +374,7 @@ export default class SidenotePlugin extends Plugin {
 				}
 
 				// Inject print sidenotes synchronously for PDF export
-				this.injectPrintSidenotes(element);
+				this.injectPrintSidenotes(element, context);
 			}
 		});
 
@@ -393,6 +396,7 @@ export default class SidenotePlugin extends Plugin {
 				this.needsReadingModeRefresh = true;
 				this.invalidateLayoutCache();
 				this.rebindAndSchedule();
+				void this.preCacheFileContent();
 			}),
 		);
 
@@ -404,6 +408,7 @@ export default class SidenotePlugin extends Plugin {
 				this.needsReadingModeRefresh = true;
 				this.scanDocumentForSidenotes();
 				this.rebindAndSchedule();
+				void this.preCacheFileContent();
 			}),
 		);
 
@@ -415,6 +420,7 @@ export default class SidenotePlugin extends Plugin {
 				this.needsFullRenumber = true;
 				this.invalidateLayoutCache();
 				this.scheduleLayoutDebounced(SidenotePlugin.MUTATION_DEBOUNCE);
+				void this.preCacheFileContent();
 			}),
 		);
 
@@ -672,6 +678,22 @@ export default class SidenotePlugin extends Plugin {
 			this.rebindAndSchedule();
 		} catch (error) {
 			console.error("Sidenote plugin: Failed to save settings", error);
+		}
+	}
+
+	/**
+	 * Pre-cache the current file's content so it's available
+	 * synchronously during PDF export post-processing.
+	 */
+	private async preCacheFileContent() {
+		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+		const file = view?.file ?? this.app.workspace.getActiveFile();
+		if (!file) return;
+
+		const content = await this.app.vault.cachedRead(file);
+		if (content) {
+			this.fileContentCache.set(file.path, content);
+			console.log(content);
 		}
 	}
 
@@ -2784,18 +2806,18 @@ export default class SidenotePlugin extends Plugin {
 	 * Runs synchronously so the elements exist before Obsidian
 	 * captures the DOM for PDF export.
 	 */
-	private injectPrintSidenotes(element: HTMLElement) {
+	private injectPrintSidenotes(element: HTMLElement, context?: any) {
 		if (element.querySelector(".sidenote-print")) return;
 
-		const content = this.cachedSourceContent || "";
 		const position = this.settings.sidenotePosition;
 		const isRight = position !== "left";
 
-		// Collect sidenotes keyed by their anchor paragraph
-		const sidenotesByAnchor = new Map<HTMLElement, HTMLElement[]>();
-
 		if (this.settings.sidenoteFormat === "html") {
+			// ... existing working HTML logic unchanged ...
 			const spans = element.querySelectorAll<HTMLElement>("span.sidenote");
+			if (spans.length === 0) return;
+
+			const sidenotesByAnchor = new Map<HTMLElement, HTMLElement[]>();
 			let counter = 0;
 
 			for (const span of Array.from(spans)) {
@@ -2804,7 +2826,6 @@ export default class SidenotePlugin extends Plugin {
 
 				counter++;
 
-				// Inject inline reference number next to the sidenote span
 				const refNum = document.createElement("sup");
 				refNum.style.cssText =
 					"font-size: 0.75em; font-weight: bold; color: #000;";
@@ -2825,62 +2846,83 @@ export default class SidenotePlugin extends Plugin {
 					sidenotesByAnchor.set(anchor, list);
 				}
 			}
-		} else if (content) {
-			const definitions = this.parseFootnoteDefinitions(content);
-			if (definitions.size === 0) return;
 
-			const refs = element.querySelectorAll<HTMLElement>(
-				"sup.footnote-ref, sup[class*='footnote'], sup[id^='fnref-'], a.footnote-link",
+			this.buildPrintTables(element, sidenotesByAnchor, isRight);
+			return;
+		}
+
+		// Footnote format — get content from all available sources
+		const sourcePath = context?.sourcePath ?? "";
+		const content =
+			this.cachedSourceContent ||
+			(sourcePath ? this.fileContentCache.get(sourcePath) : "") ||
+			"";
+
+		if (!content) return;
+
+		const definitions = this.parseFootnoteDefinitions(content);
+		if (definitions.size === 0) return;
+
+		const refs = element.querySelectorAll<HTMLElement>(
+			"sup.footnote-ref, sup[class*='footnote'], sup[id^='fnref-'], a.footnote-link",
+		);
+		if (refs.length === 0) return;
+
+		const sidenotesByAnchor = new Map<HTMLElement, HTMLElement[]>();
+		const processedIds = new Set<string>();
+		let counter = 0;
+
+		for (const ref of Array.from(refs)) {
+			const id = this.extractFootnoteId(ref);
+			if (!id || processedIds.has(id)) continue;
+			processedIds.add(id);
+
+			const text = definitions.get(id);
+			if (!text) continue;
+
+			counter++;
+
+			const refTarget =
+				ref.tagName === "SUP" ? ref : (ref.closest("sup") ?? ref);
+			const refNum = document.createElement("sup");
+			refNum.style.cssText =
+				"font-size: 0.75em; font-weight: bold; color: #000;";
+			refNum.textContent = this.formatNumber(counter);
+			refTarget.parentNode?.insertBefore(refNum, refTarget.nextSibling);
+
+			const printEl = this.buildPrintSidenote(
+				text,
+				this.formatNumber(counter),
 			);
-			if (refs.length === 0) return;
 
-			const processedIds = new Set<string>();
-			let counter = 0;
-
-			for (const ref of Array.from(refs)) {
-				const id = this.extractFootnoteId(ref);
-				if (!id || processedIds.has(id)) continue;
-				processedIds.add(id);
-
-				const text = definitions.get(id);
-				if (!text) continue;
-
-				counter++;
-
-				// Inject inline reference number next to the footnote ref
-				const refTarget =
-					ref.tagName === "SUP" ? ref : (ref.closest("sup") ?? ref);
-				const refNum = document.createElement("sup");
-				refNum.style.cssText =
-					"font-size: 0.75em; font-weight: bold; color: #000;";
-				refNum.textContent = this.formatNumber(counter);
-				refTarget.parentNode?.insertBefore(refNum, refTarget.nextSibling);
-
-				const printEl = this.buildPrintSidenote(
-					text,
-					this.formatNumber(counter),
-				);
-
-				const sup = ref.tagName === "SUP" ? ref : ref.closest("sup");
-				const anchor = sup?.closest(
-					"p, li, h1, h2, h3, h4, h5, h6",
-				) as HTMLElement | null;
-				if (anchor) {
-					const list = sidenotesByAnchor.get(anchor) ?? [];
-					list.push(printEl);
-					sidenotesByAnchor.set(anchor, list);
-				}
+			const sup = ref.tagName === "SUP" ? ref : ref.closest("sup");
+			const anchor = sup?.closest(
+				"p, li, h1, h2, h3, h4, h5, h6",
+			) as HTMLElement | null;
+			if (anchor) {
+				const list = sidenotesByAnchor.get(anchor) ?? [];
+				list.push(printEl);
+				sidenotesByAnchor.set(anchor, list);
 			}
 		}
 
+		this.buildPrintTables(element, sidenotesByAnchor, isRight);
+	}
+
+	/**
+	 * Shared logic: wrap anchor paragraphs in table layouts and
+	 * inject the max-width style constraint.
+	 */
+	private buildPrintTables(
+		element: HTMLElement,
+		sidenotesByAnchor: Map<HTMLElement, HTMLElement[]>,
+		isRight: boolean,
+	) {
 		if (sidenotesByAnchor.size === 0) return;
 
-		// For each anchor paragraph that has sidenotes, convert it to
-		// a table layout with the content on one side and sidenotes on the other.
 		for (const [anchor, sidenotes] of sidenotesByAnchor) {
 			if (!anchor.parentNode) continue;
 
-			// Create a table — tables render reliably in all PDF engines
 			const table = document.createElement("table");
 			table.className = "sidenote-print-table";
 			table.style.cssText = `
@@ -2917,11 +2959,9 @@ export default class SidenotePlugin extends Plugin {
 				color: #000; 
 				text-align: right;`;
 
-			// Move the paragraph content into the content cell
 			anchor.parentNode.insertBefore(table, anchor);
 			contentCell.appendChild(anchor);
 
-			// Stack all sidenotes in the sidenote cell
 			for (const sn of sidenotes) {
 				if (sidenoteCell.childNodes.length > 0) {
 					const spacer = document.createElement("div");
@@ -2929,56 +2969,6 @@ export default class SidenotePlugin extends Plugin {
 					sidenoteCell.appendChild(spacer);
 				}
 				sidenoteCell.appendChild(sn);
-			}
-
-			// Inject a style tag into this element to constrain all
-			// non-table content to the same width as the content column (70%).
-			// This ensures paragraphs without sidenotes don't extend into
-			// the sidenote column space.
-			if (!element.querySelector(".sidenote-print-width-style")) {
-				const style = document.createElement("style");
-				style.className = "sidenote-print-width-style";
-				const isRight = this.settings.sidenotePosition !== "left";
-				style.textContent = isRight
-					? `
-					p, li, h1, h2, h3, h4, h5, h6, blockquote, .callout,
-					ul, ol, hr, .math, .MathJax, pre, .contains-task-list {
-						max-width: 70% !important;
-					}
-					.sidenote-print-table,
-					.sidenote-print-table td,
-					.sidenote-print-table p,
-					.sidenote-print-table li,
-					.sidenote-print-table h1,
-					.sidenote-print-table h2,
-					.sidenote-print-table h3,
-					.sidenote-print-table h4,
-					.sidenote-print-table h5,
-					.sidenote-print-table h6 {
-						max-width: none !important;
-					}
-				`
-					: `
-					p, li, h1, h2, h3, h4, h5, h6, blockquote, .callout,
-					ul, ol, hr, .math, .MathJax, pre, .contains-task-list {
-						max-width: 70% !important;
-						margin-left: 30% !important;
-					}
-					.sidenote-print-table,
-					.sidenote-print-table td,
-					.sidenote-print-table p,
-					.sidenote-print-table li,
-					.sidenote-print-table h1,
-					.sidenote-print-table h2,
-					.sidenote-print-table h3,
-					.sidenote-print-table h4,
-					.sidenote-print-table h5,
-					.sidenote-print-table h6 {
-						max-width: none !important;
-						margin-left: 0 !important;
-					}
-				`;
-				element.appendChild(style);
 			}
 
 			if (isRight) {
@@ -2990,6 +2980,59 @@ export default class SidenotePlugin extends Plugin {
 			}
 
 			table.appendChild(row);
+		}
+
+		// Inject width-constraining style
+		if (!element.querySelector(".sidenote-print-width-style")) {
+			const style = document.createElement("style");
+			style.className = "sidenote-print-width-style";
+			style.textContent = isRight
+				? `
+				p, li, h1, h2, h3, h4, h5, h6, blockquote, .callout,
+				ul, ol, hr, .math, .MathJax, pre, .contains-task-list {
+					max-width: 70% !important;
+				}
+				section.footnotes {
+					max-width: 70% !important;
+				}
+				.sidenote-print-table,
+				.sidenote-print-table td,
+				.sidenote-print-table p,
+				.sidenote-print-table li,
+				.sidenote-print-table h1,
+				.sidenote-print-table h2,
+				.sidenote-print-table h3,
+				.sidenote-print-table h4,
+				.sidenote-print-table h5,
+				.sidenote-print-table h6 {
+					max-width: none !important;
+				}
+			`
+				: `
+				p, li, h1, h2, h3, h4, h5, h6, blockquote, .callout,
+				ul, ol, hr, .math, .MathJax, pre, .contains-task-list {
+					max-width: 70% !important;
+					margin-left: 30% !important;
+				}
+				section.footnotes {
+					max-width: 70% !important;
+					margin-left: 30% !important;
+				}
+				.sidenote-print-table,
+				.sidenote-print-table td,
+				.sidenote-print-table p,
+				.sidenote-print-table li,
+				.sidenote-print-table h1,
+				.sidenote-print-table h2,
+				.sidenote-print-table h3,
+				.sidenote-print-table h4,
+				.sidenote-print-table h5,
+				.sidenote-print-table h6 {
+					max-width: none !important;
+					margin-left: 0 !important;
+				}
+			`;
+			element.appendChild(style);
 		}
 	}
 
