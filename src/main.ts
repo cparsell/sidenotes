@@ -3560,7 +3560,10 @@ export default class SidenotePlugin extends Plugin {
 	}
 
 	private normalizeText(s: string): string {
-		return (s ?? "").replace(/\s+/g, " ").trim();
+		return (s ?? "")
+			.replace(/<br\s*\/?>/gi, "\n") // Preserve <br> as newlines
+			.replace(/[ \t]+/g, " ") // Collapse spaces/tabs (but not \n)
+			.trim();
 	}
 
 	/**
@@ -3588,7 +3591,7 @@ export default class SidenotePlugin extends Plugin {
 
 			// Add text before the match
 			if (start > last) {
-				frag.appendChild(document.createTextNode(text.slice(last, start)));
+				this.appendTextWithBreaks(frag, text.slice(last, start));
 			}
 
 			if (m[1] !== undefined) {
@@ -3667,10 +3670,30 @@ export default class SidenotePlugin extends Plugin {
 
 		// Add remaining text
 		if (last < text.length) {
-			frag.appendChild(document.createTextNode(text.slice(last)));
+			this.appendTextWithBreaks(frag, text.slice(last));
 		}
 
 		return frag;
+	}
+
+	/**
+	 * Append text to a fragment, converting \n to <br> elements.
+	 */
+	private appendTextWithBreaks(
+		frag: DocumentFragment | HTMLElement,
+		text: string,
+	) {
+		const parts = text.split("\n");
+		for (let i = 0; i < parts.length; i++) {
+			const part = parts[i] ?? "";
+
+			if (part) {
+				frag.appendChild(document.createTextNode(part));
+			}
+			if (i < parts.length - 1) {
+				frag.appendChild(document.createElement("br"));
+			}
+		}
 	}
 
 	/**
