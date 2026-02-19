@@ -1,5 +1,11 @@
 /* eslint-disable obsidianmd/ui/sentence-case */
-import { MarkdownView, Plugin, TFile, EditorPosition } from "obsidian";
+import {
+	MarkdownView,
+	Plugin,
+	TFile,
+	EditorPosition,
+	Menu,
+} from "obsidian";
 import {
 	EditorView,
 	ViewUpdate,
@@ -1426,8 +1432,6 @@ export default class SidenotePlugin extends Plugin {
 		const sizer =
 			readingRoot.querySelector<HTMLElement>(".markdown-preview-sizer") ??
 			readingRoot;
-
-		const sizerRect = sizer.getBoundingClientRect();
 
 		// Collect items based on the sidenoteFormat setting
 		// Note: footnoteHtml is optional and only used for footnotes
@@ -3559,121 +3563,12 @@ export default class SidenotePlugin extends Plugin {
 		}
 	}
 
+	// ==================== Text Normalization ====================
 	private normalizeText(s: string): string {
 		return (s ?? "")
 			.replace(/<br\s*\/?>/gi, "\n") // Preserve <br> as newlines
 			.replace(/[ \t]+/g, " ") // Collapse spaces/tabs (but not \n)
 			.trim();
-	}
-
-	/**
-	 * Render markdown-formatted text to a DocumentFragment.
-	 * Supports: **bold**, *italic*, _italic_, `code`, [links](url), and [[wiki links]]
-	 */
-	private renderLinksToFragment(text: string): DocumentFragment {
-		const frag = document.createDocumentFragment();
-
-		// Combined regex for all supported formats:
-		// - Bold: **text** or __text__
-		// - Italic: *text* or _text_ (but not inside **)
-		// - Code: `text`
-		// - Markdown links: [text](url)
-		// - Wiki links: [[target]] or [[target|display]]
-		const combinedRe =
-			/\*\*(.+?)\*\*|__(.+?)__|\*([^*]+?)\*|(?<![*_])_([^_]+?)_(?![*_])|`([^`]+)`|\[([^\]]+)\]\(([^)\s]+)\)|\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
-
-		let last = 0;
-		let m: RegExpExecArray | null;
-
-		while ((m = combinedRe.exec(text)) !== null) {
-			const start = m.index;
-			const fullMatch = m[0];
-
-			// Add text before the match
-			if (start > last) {
-				this.appendTextWithBreaks(frag, text.slice(last, start));
-			}
-
-			if (m[1] !== undefined) {
-				// Bold: **text**
-				const strong = document.createElement("strong");
-				strong.textContent = m[1];
-				frag.appendChild(strong);
-			} else if (m[2] !== undefined) {
-				// Bold: __text__
-				const strong = document.createElement("strong");
-				strong.textContent = m[2];
-				frag.appendChild(strong);
-			} else if (m[3] !== undefined) {
-				// Italic: *text*
-				const em = document.createElement("em");
-				em.textContent = m[3];
-				frag.appendChild(em);
-			} else if (m[4] !== undefined) {
-				// Italic: _text_
-				const em = document.createElement("em");
-				em.textContent = m[4];
-				frag.appendChild(em);
-			} else if (m[5] !== undefined) {
-				// Code: `text`
-				const code = document.createElement("code");
-				code.textContent = m[5];
-				frag.appendChild(code);
-			} else if (m[6] !== undefined && m[7] !== undefined) {
-				// Markdown link: [text](url)
-				const label = m[6];
-				const url = m[7].trim();
-
-				const isExternal =
-					url.startsWith("http://") ||
-					url.startsWith("https://") ||
-					url.startsWith("mailto:");
-
-				const a = document.createElement("a");
-				a.textContent = label;
-
-				if (isExternal) {
-					a.href = url;
-					a.className = "external-link";
-					a.rel = "noopener noreferrer";
-					a.target = "_blank";
-				} else {
-					// Treat as internal link
-					a.className = "internal-link";
-					a.setAttribute("data-href", url);
-					a.addEventListener("click", (e) => {
-						e.preventDefault();
-						e.stopPropagation();
-						void this.app.workspace.openLinkText(url, "", false);
-					});
-				}
-				frag.appendChild(a);
-			} else if (m[8] !== undefined) {
-				// Wiki link: [[target]] or [[target|display]]
-				const target = m[8].trim();
-				const display = m[9]?.trim() || target;
-
-				const a = document.createElement("a");
-				a.textContent = display;
-				a.className = "internal-link";
-				a.setAttribute("data-href", target);
-				a.addEventListener("click", (e) => {
-					e.preventDefault();
-					e.stopPropagation();
-					void this.app.workspace.openLinkText(target, "", false);
-				});
-				frag.appendChild(a);
-			}
-
-			last = start + fullMatch.length;
-		}
-
-		// Add remaining text
-		if (last < text.length) {
-			this.appendTextWithBreaks(frag, text.slice(last));
-		}
-
-		return frag;
 	}
 
 	/**
@@ -4135,6 +4030,8 @@ export default class SidenotePlugin extends Plugin {
 		this.resolveCollisions(margins, this.settings.collisionSpacing);
 	}
 
+	// ==================== Markdown Formatting ====================
+
 	/**
 	 * Apply markdown formatting to the current selection or cursor position in a contenteditable element.
 	 * @param element The contenteditable element
@@ -4453,6 +4350,118 @@ export default class SidenotePlugin extends Plugin {
 		});
 	}
 
+	//
+	/**
+	 * Render markdown-formatted text to a DocumentFragment.
+	 * Supports: **bold**, *italic*, _italic_, `code`, [links](url), and [[wiki links]]
+	 */
+	private renderLinksToFragment(text: string): DocumentFragment {
+		const frag = document.createDocumentFragment();
+
+		// Combined regex for all supported formats:
+		// - Bold: **text** or __text__
+		// - Italic: *text* or _text_ (but not inside **)
+		// - Code: `text`
+		// - Markdown links: [text](url)
+		// - Wiki links: [[target]] or [[target|display]]
+		const combinedRe =
+			/\*\*(.+?)\*\*|__(.+?)__|\*([^*]+?)\*|(?<![*_])_([^_]+?)_(?![*_])|`([^`]+)`|\[([^\]]+)\]\(([^)\s]+)\)|\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
+
+		let last = 0;
+		let m: RegExpExecArray | null;
+
+		while ((m = combinedRe.exec(text)) !== null) {
+			const start = m.index;
+			const fullMatch = m[0];
+
+			// Add text before the match
+			if (start > last) {
+				this.appendTextWithBreaks(frag, text.slice(last, start));
+			}
+
+			if (m[1] !== undefined) {
+				// Bold: **text**
+				const strong = document.createElement("strong");
+				strong.textContent = m[1];
+				frag.appendChild(strong);
+			} else if (m[2] !== undefined) {
+				// Bold: __text__
+				const strong = document.createElement("strong");
+				strong.textContent = m[2];
+				frag.appendChild(strong);
+			} else if (m[3] !== undefined) {
+				// Italic: *text*
+				const em = document.createElement("em");
+				em.textContent = m[3];
+				frag.appendChild(em);
+			} else if (m[4] !== undefined) {
+				// Italic: _text_
+				const em = document.createElement("em");
+				em.textContent = m[4];
+				frag.appendChild(em);
+			} else if (m[5] !== undefined) {
+				// Code: `text`
+				const code = document.createElement("code");
+				code.textContent = m[5];
+				frag.appendChild(code);
+			} else if (m[6] !== undefined && m[7] !== undefined) {
+				// Markdown link: [text](url)
+				const label = m[6];
+				const url = m[7].trim();
+
+				const isExternal =
+					url.startsWith("http://") ||
+					url.startsWith("https://") ||
+					url.startsWith("mailto:");
+
+				const a = document.createElement("a");
+				a.textContent = label;
+
+				if (isExternal) {
+					a.href = url;
+					a.className = "external-link";
+					a.rel = "noopener noreferrer";
+					a.target = "_blank";
+				} else {
+					// Treat as internal link
+					a.className = "internal-link";
+					a.setAttribute("data-href", url);
+					a.addEventListener("click", (e) => {
+						e.preventDefault();
+						e.stopPropagation();
+						void this.app.workspace.openLinkText(url, "", false);
+					});
+				}
+				frag.appendChild(a);
+			} else if (m[8] !== undefined) {
+				// Wiki link: [[target]] or [[target|display]]
+				const target = m[8].trim();
+				const display = m[9]?.trim() || target;
+
+				const a = document.createElement("a");
+				a.textContent = display;
+				a.className = "internal-link";
+				a.setAttribute("data-href", target);
+				a.addEventListener("click", (e) => {
+					e.preventDefault();
+					e.stopPropagation();
+					void this.app.workspace.openLinkText(target, "", false);
+				});
+				frag.appendChild(a);
+			}
+
+			last = start + fullMatch.length;
+		}
+
+		// Add remaining text
+		if (last < text.length) {
+			this.appendTextWithBreaks(frag, text.slice(last));
+		}
+
+		return frag;
+	}
+
+	// ==================== Keyboard Handling for Margin Editing ====================
 	/**
 	 * Get the start and end character offsets of the current selection
 	 * within a contentEditable element's text content.
@@ -4692,6 +4701,41 @@ export default class SidenotePlugin extends Plugin {
 		margin: HTMLElement,
 	): () => void {
 		return this.setupMarginKeyboardCapture(margin);
+	}
+
+	private attachSidenoteContextMenu(
+		margin: HTMLElement,
+		opts: {
+			onEdit?: () => void;
+			onDelete?: () => void;
+		},
+	) {
+		margin.addEventListener("contextmenu", (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+
+			const menu = new Menu();
+
+			if (opts.onEdit) {
+				menu.addItem((item) =>
+					item
+						.setTitle("Edit sidenote")
+						.setIcon("pencil")
+						.onClick(() => opts.onEdit!()),
+				);
+			}
+
+			if (opts.onDelete) {
+				menu.addItem((item) =>
+					item
+						.setTitle("Delete sidenote")
+						.setIcon("trash")
+						.onClick(() => opts.onDelete!()),
+				);
+			}
+
+			menu.showAtMouseEvent(e);
+		});
 	}
 }
 
