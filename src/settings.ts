@@ -65,12 +65,12 @@ export const DEFAULT_SETTINGS: SidenoteSettings = {
 	sidenoteGap: 2,
 	sidenoteGap2: 1,
 	sidenoteAnchor: "text",
-	pageOffsetFactor: 0,
+	pageOffsetFactor: 0.3,
 
 	// Breakpoints
 	hideBelow: 700,
-	compactBelow: 1000,
-	fullAbove: 1400,
+	compactBelow: 1200,
+	fullAbove: 1450,
 
 	// Typography
 	fontSize: 80,
