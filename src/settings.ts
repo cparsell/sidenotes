@@ -68,7 +68,7 @@ export const DEFAULT_SETTINGS: SidenoteSettings = {
 	pageOffsetFactor: 0.3,
 
 	// Breakpoints
-	hideBelow: 700,
+	hideBelow: 950,
 	compactBelow: 1200,
 	fullAbove: 1450,
 
