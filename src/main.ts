@@ -350,8 +350,16 @@ export default class SidenotePlugin extends Plugin {
 			this.scheduleReadingModeLayoutThrottled(100);
 		});
 
-		this.scanDocumentForSidenotes();
-		this.rebindAndSchedule();
+		// Immediate — works if plugin is enabled/reloaded after startup
+		// this.scanDocumentForSidenotes();
+		// this.rebindAndSchedule();
+		// void this.preCacheFileContent();
+
+		this.app.workspace.onLayoutReady(() => {
+			this.scanDocumentForSidenotes();
+			this.rebindAndSchedule();
+			void this.preCacheFileContent();
+		});
 	}
 
 	onunload() {
@@ -489,7 +497,17 @@ export default class SidenotePlugin extends Plugin {
 		if (cmRoot) {
 			cmRoot
 				.querySelectorAll("span.sidenote-number")
-				.forEach((n) => n.remove());
+				.forEach((wrapper) => {
+					const parent = wrapper.parentNode;
+					if (!parent) return;
+					// Move the original span.sidenote back before the wrapper
+					const sidenote = wrapper.querySelector("span.sidenote");
+					if (sidenote) {
+						parent.insertBefore(sidenote, wrapper);
+					}
+					// Now safe to remove the wrapper (only contains the margin)
+					wrapper.remove();
+				});
 			cmRoot
 				.querySelectorAll("small.sidenote-margin")
 				.forEach((n) => n.remove());
@@ -2573,6 +2591,7 @@ export default class SidenotePlugin extends Plugin {
 	// ==================== Document Scanning ====================
 
 	private scanDocumentForSidenotes() {
+		console.warn("[Sidenotes] Scanning document for sidenotes...");
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
 		if (!view) {
 			this.documentHasSidenotes = false;
@@ -3239,6 +3258,8 @@ export default class SidenotePlugin extends Plugin {
 		const cmRoot = this.cmRoot;
 		if (!cmRoot) return;
 
+		console.log("[Sidenotes] Starting layout...");
+
 		const cmRootRect = cmRoot.getBoundingClientRect();
 		const editorWidth = cmRootRect.width;
 		const mode = this.calculateMode(editorWidth);
@@ -3297,14 +3318,17 @@ export default class SidenotePlugin extends Plugin {
 		cmRoot.dataset.hasSidenotes = this.documentHasSidenotes
 			? "true"
 			: "false";
-
+		console.warn(
+			"[Sidenotes] Processing sidenotes in editing mode... Has sidenotes?",
+			this.documentHasSidenotes,
+		);
 		// Get unwrapped sidenote spans (not yet processed)
 		const unwrappedSpans = Array.from(
 			cmRoot.querySelectorAll<HTMLElement>("span.sidenote"),
 		).filter(
 			(span) => !span.parentElement?.classList.contains("sidenote-number"),
 		);
-
+		console.warn(unwrappedSpans.length, "unwrapped sidenote spans found");
 		// If there are new sidenotes to process, we need to renumber everything
 		if (unwrappedSpans.length > 0 && mode !== "hidden") {
 			// Remove all existing sidenote wrappers and margins to renumber from scratch

@@ -65,7 +65,7 @@ export const DEFAULT_SETTINGS: SidenoteSettings = {
 	sidenoteGap: 2,
 	sidenoteGap2: 1,
 	sidenoteAnchor: "text",
-	pageOffsetFactor: 0.3,
+	pageOffsetFactor: 0.8,
 
 	// Breakpoints
 	hideBelow: 950,
