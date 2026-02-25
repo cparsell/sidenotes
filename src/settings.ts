@@ -22,6 +22,7 @@ export interface SidenoteSettings {
 	maxSidenoteWidth: number;
 	sidenoteGap: number;
 	sidenoteGap2: number;
+	sidenoteGapDrift: number;
 	sidenoteAnchor: "text" | "edge";
 	pageOffsetFactor: number;
 
@@ -64,6 +65,7 @@ export const DEFAULT_SETTINGS: SidenoteSettings = {
 	maxSidenoteWidth: 18,
 	sidenoteGap: 2,
 	sidenoteGap2: 1,
+	sidenoteGapDrift: 0.3,
 	sidenoteAnchor: "text",
 	pageOffsetFactor: 0.8,
 
@@ -305,6 +307,22 @@ export class SidenoteSettingTab extends PluginSettingTab {
 					.setDynamicTooltip()
 					.onChange(async (value) => {
 						this.plugin.settings.sidenoteGap2 = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Gap Drift Factor")
+			.setDesc(
+				"Adjusts how much the gaps grow as editor width increases (default: 0.5). At 0, gaps stay at their minimum. At 1, gaps grow by the maximum amount (20% of extra space).",
+			)
+			.addSlider((slider) =>
+				slider
+					.setLimits(0, 1, 0.1)
+					.setValue(this.plugin.settings.sidenoteGapDrift)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.settings.sidenoteGapDrift = value;
 						await this.plugin.saveSettings();
 					}),
 			);

@@ -1174,15 +1174,28 @@ export default class SidenotePlugin extends Plugin {
 		const position = s.sidenotePosition;
 		const anchorMode = s.sidenoteAnchor;
 
+		// Get root element rect
+		const rootRect = root.getBoundingClientRect();
+
 		// Get rem to px conversion
 		const remToPx =
 			parseFloat(getComputedStyle(document.documentElement).fontSize) ||
 			16;
-		const gap1 = s.sidenoteGap * remToPx; // gap between sidenote and text
-		const gap2 = s.sidenoteGap2 * remToPx; // gap between sidenote and edge
+		// Base gaps (minimums)
+		const baseGap1 = s.sidenoteGap * remToPx; // gap between sidenote and text
+		const baseGap2 = s.sidenoteGap2 * remToPx; // gap between sidenote and edge
 
-		// Get root element rect
-		const rootRect = root.getBoundingClientRect();
+		// Scale gaps proportionally as editor grows.
+		// Use the pageOffsetFactor setting to control growth rate.
+		// At hideBelow width, gaps are at their minimum.
+		// As width increases, gaps grow by a fraction of the extra available space.
+		const editorWidth = rootRect.width;
+		const growthFactor = s.sidenoteGapDrift; // 0 = no growth, 1 = maximum growth
+		const extraSpace = Math.max(0, editorWidth - s.hideBelow);
+		const gapGrowth = extraSpace * growthFactor * 0.1; // subtle growth
+
+		const gap1 = baseGap1 + gapGrowth;
+		const gap2 = baseGap2 + gapGrowth;
 
 		// Find a representative line/paragraph to measure the text column edge.
 		// In reading mode, Obsidian virtualises content so the first <p> may
