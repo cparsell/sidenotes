@@ -1814,10 +1814,6 @@ export default class SidenotePlugin extends Plugin {
 			wrapper.className = "sidenote-number";
 			if (isMargin) {
 				wrapper.classList.add("margin-note");
-				const marker = document.createElement("span");
-				marker.className = "margin-note-marker";
-				marker.textContent = "※";
-				wrapper.appendChild(marker);
 			}
 			wrapper.dataset.sidenoteNum = numStr;
 			if (item.footnoteId) {
@@ -3582,11 +3578,23 @@ export default class SidenotePlugin extends Plugin {
 				for (const item of itemsWithIndex) {
 					const isMargin = this.isMarginNote(item.el);
 					const numStr = isMargin ? "" : this.formatNumber(item.index);
-
 					const wrapper = document.createElement("span");
 					wrapper.className = "sidenote-number";
 					if (isMargin) {
 						wrapper.classList.add("margin-note");
+						const marker = document.createElement("span");
+						marker.className = "margin-note-marker";
+						marker.textContent = "※";
+						marker.style.cursor = "pointer";
+						marker.addEventListener("click", (e) => {
+							e.preventDefault();
+							e.stopPropagation();
+							this.startMarginEdit(margin, item.el, item.index, e);
+						});
+						marker.addEventListener("mousedown", (e) => {
+							e.stopPropagation();
+						});
+						wrapper.appendChild(marker);
 					}
 					wrapper.dataset.sidenoteNum = numStr;
 
@@ -5588,19 +5596,51 @@ class FootnoteSidenoteWidget extends WidgetType {
 }
 
 class MarginNoteMarkerWidget extends WidgetType {
+	constructor(
+		readonly plugin: SidenotePlugin,
+		readonly footnoteId: string,
+	) {
+		super();
+	}
+
 	toDOM(): HTMLElement {
 		const span = document.createElement("span");
 		span.className = "margin-note-marker";
 		span.textContent = "※";
+		span.style.cursor = "pointer";
+
+		span.addEventListener("mousedown", (e) => {
+			e.stopPropagation();
+		});
+
+		span.addEventListener("click", (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+
+			// Find the sidenote-number wrapper for this footnote
+			const cmContent = span.closest(".cm-content");
+			if (!cmContent) return;
+			const wrapper = cmContent.querySelector<HTMLElement>(
+				`span.sidenote-number[data-footnote-id="${this.footnoteId}"]`,
+			);
+			if (!wrapper) return;
+			const margin = wrapper.querySelector<HTMLElement>(
+				"small.sidenote-margin",
+			);
+			if (!margin) return;
+
+			margin.click();
+		});
+
 		return span;
 	}
 
-	eq(): boolean {
-		return true;
+	eq(other: MarginNoteMarkerWidget): boolean {
+		return this.footnoteId === other.footnoteId;
 	}
 
 	ignoreEvent(): boolean {
-		return true;
+		return false;
 	}
 }
 
@@ -5703,7 +5743,7 @@ class FootnoteSidenoteViewPlugin {
 				decorations.push({
 					from: from,
 					decoration: Decoration.widget({
-						widget: new MarginNoteMarkerWidget(),
+						widget: new MarginNoteMarkerWidget(this.plugin, id),
 						side: -1,
 					}),
 				});
