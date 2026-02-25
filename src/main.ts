@@ -62,8 +62,11 @@ interface MinimalEditor {
 	): void;
 }
 
-// Regex to detect sidenote spans in source text
-const SIDENOTE_PATTERN = /<span\s+class\s*=\s*["']sidenote["'][^>]*>/gi;
+// Regex to detect sidenote spans in source text (includes margin-note variant)
+const SIDENOTE_PATTERN =
+	/<span\s+class\s*=\s*["']sidenote(?:\s+margin-note)?["'][^>]*>/gi;
+
+const SIDENOTE_ONLY_REGEX = /<span\s+class\s*=\s*["']sidenote["'][^>]*>/gi;
 
 // ======================================================
 // ================= Main Plugin Class ==================
@@ -262,6 +265,99 @@ export default class SidenotePlugin extends Plugin {
 					this.pendingFootnoteEdit = String(nextNum);
 
 					// Schedule the auto-edit after widgets are rendered
+					setTimeout(() => {
+						this.triggerPendingFootnoteEdit();
+					}, SidenotePlugin.INSERT_SIDENOTE_DELAY);
+				}
+			},
+		});
+
+		// Add command to insert margin note (unnumbered)
+		this.addCommand({
+			id: "insert-margin-note",
+			name: "Insert margin note",
+			editorCallback: (editor) => {
+				const cursor = editor.getCursor();
+				const selectedText = editor.getSelection();
+
+				if (this.settings.sidenoteFormat === "html") {
+					if (selectedText) {
+						editor.replaceSelection(
+							`<span class="sidenote margin-note">${selectedText}</span>`,
+						);
+					} else {
+						const marginText =
+							'<span class="sidenote margin-note"></span>';
+						editor.replaceRange(marginText, cursor);
+						const newCursor = {
+							line: cursor.line,
+							ch: cursor.ch + '<span class="sidenote margin-note">'.length,
+						};
+						editor.setCursor(newCursor);
+					}
+				} else {
+					// Footnote format — use mn- prefix
+					const content = editor.getValue();
+					// Find next available mn- number
+					const existingMnRefs = content.match(/\[\^mn-(\d+)\]/g) ?? [];
+					const usedNumbers = existingMnRefs.map((fn) => {
+						const match = fn.match(/\[\^mn-(\d+)\]/);
+						return match && match[1] ? parseInt(match[1], 10) : 0;
+					});
+					const nextNum =
+						usedNumbers.length > 0 ? Math.max(...usedNumbers) + 1 : 1;
+
+					const footnoteContent = selectedText
+						? selectedText
+						: "New margin note";
+
+					const lines = content.split("\n");
+					let lastFootnoteLine = -1;
+
+					for (let i = 0; i < lines.length; i++) {
+						const line = lines[i];
+						if (line && line.match(/^\[\^[^\]]+\]:/)) {
+							lastFootnoteLine = i;
+						}
+					}
+
+					const definition = `[^mn-${nextNum}]: ${footnoteContent}`;
+
+					editor.replaceRange(`[^mn-${nextNum}]`, cursor);
+
+					const updatedContent = editor.getValue();
+					const updatedLines = updatedContent.split("\n");
+
+					if (lastFootnoteLine === -1) {
+						const lastLine = editor.lastLine();
+						const lastLineContent = editor.getLine(lastLine);
+						const prefix = lastLineContent.trim() ? "\n\n" : "\n";
+						editor.replaceRange(prefix + definition, {
+							line: lastLine,
+							ch: lastLineContent.length,
+						});
+					} else {
+						let newLastFootnoteLine = -1;
+						for (let i = 0; i < updatedLines.length; i++) {
+							const line = updatedLines[i];
+							if (line && line.match(/^\[\^[^\]]+\]:/)) {
+								newLastFootnoteLine = i;
+							}
+						}
+
+						if (newLastFootnoteLine !== -1) {
+							const insertLineContent = editor.getLine(
+								newLastFootnoteLine,
+							);
+							editor.replaceRange("\n" + definition, {
+								line: newLastFootnoteLine,
+								ch: insertLineContent.length,
+							});
+						}
+					}
+
+					this.pendingFootnoteEdit = `mn-${nextNum}`;
+
 					setTimeout(() => {
 						this.triggerPendingFootnoteEdit();
 					}, SidenotePlugin.INSERT_SIDENOTE_DELAY);
@@ -486,6 +582,21 @@ export default class SidenotePlugin extends Plugin {
 
 	public get settingsVersion(): number {
 		return this._settingsVersion;
+	}
+
+	/**
+	 * Determine whether an element or footnote ID represents a margin note
+	 * (unnumbered sidenote).
+	 * - HTML format: <span class="sidenote margin-note">
+	 * - Footnote format: [^mn-...]
+	 */
+	public isMarginNote(elOrId: HTMLElement | string): boolean {
+		if (typeof elOrId === "string") {
+			// Footnote ID — margin note if it starts with "mn-"
+			return elOrId.startsWith("mn-");
+		}
+		// HTML element — margin note if it has the "margin-note" class
+		return elOrId.classList.contains("margin-note");
 	}
 
 	private cleanupView(view: MarkdownView | null) {
@@ -1487,6 +1598,8 @@ export default class SidenotePlugin extends Plugin {
 			}
 		}
 
+		const sourceRefOrder: string[] = [];
+
 		if (useFootnotes) {
 			// Get footnote definitions from SOURCE MARKDOWN, not from rendered HTML.
 			// Obsidian uses virtualized rendering — the <section class="footnotes">
@@ -1521,6 +1634,16 @@ export default class SidenotePlugin extends Plugin {
 
 			const definitions = this.parseFootnoteDefinitions(sourceContent);
 
+			// Build a map from rendered order to source ID
+			const refOrderRegex = /\[\^([^\]]+)\](?!:)/g;
+
+			let refMatch: RegExpExecArray | null;
+			while ((refMatch = refOrderRegex.exec(sourceContent)) !== null) {
+				const id = refMatch[1];
+				if (id && !sourceRefOrder.includes(id)) {
+					sourceRefOrder.push(id);
+				}
+			}
 			if (definitions.size === 0) {
 				if (!useHtmlSidenotes) return;
 			}
@@ -1584,6 +1707,20 @@ export default class SidenotePlugin extends Plugin {
 				}
 
 				if (!baseId || processedBaseIds.has(baseId)) continue;
+
+				// Map Obsidian's rendered sequential number back to the source footnote ID
+				const renderedNum = parseInt(baseId, 10);
+				if (
+					!isNaN(renderedNum) &&
+					renderedNum >= 1 &&
+					renderedNum <= sourceRefOrder.length
+				) {
+					const sourceId = sourceRefOrder[renderedNum - 1];
+					if (sourceId && definitions.has(sourceId)) {
+						baseId = sourceId;
+					}
+				}
+
 				processedBaseIds.add(baseId);
 
 				// Look up definition from SOURCE markdown
@@ -1636,15 +1773,32 @@ export default class SidenotePlugin extends Plugin {
 				}
 			}
 
+			// Determine if this is a margin note (unnumbered)
+			const isMargin =
+				item.type === "sidenote"
+					? this.isMarginNote(item.el)
+					: item.footnoteId
+						? this.isMarginNote(item.footnoteId)
+						: false;
+
 			// For footnotes, use the footnote's own ID as the number
 			// (so [^3] always displays as "3" regardless of which refs are visible).
 			// For HTML sidenotes, use the sequential counter.
-			const numStr = item.footnoteId
-				? item.footnoteId
-				: this.formatNumber(num++);
+			// For margin notes, use empty string (no number).
+			let numStr: string;
+			if (isMargin) {
+				numStr = "";
+			} else if (item.footnoteId) {
+				numStr = item.footnoteId;
+			} else {
+				numStr = this.formatNumber(num++);
+			}
 
 			const wrapper = document.createElement("span");
 			wrapper.className = "sidenote-number";
+			if (isMargin) {
+				wrapper.classList.add("margin-note");
+			}
 			wrapper.dataset.sidenoteNum = numStr;
 			if (item.footnoteId) {
 				wrapper.dataset.footnoteId = item.footnoteId;
@@ -1652,6 +1806,9 @@ export default class SidenotePlugin extends Plugin {
 
 			const margin = document.createElement("small");
 			margin.className = "sidenote-margin";
+			if (isMargin) {
+				margin.classList.add("margin-note");
+			}
 			margin.dataset.sidenoteNum = numStr;
 
 			if (item.type === "sidenote") {
@@ -1687,16 +1844,30 @@ export default class SidenotePlugin extends Plugin {
 			wrapper.appendChild(item.el);
 			wrapper.appendChild(margin);
 
-			// Per-item horizontal correction for indented parents is deferred
-			// to correctIndentedSidenotePositions() in the RAF block below,
-			// which runs after updateSidenotePositioning() so both use the
-			// same reference element.
-
-			// Calculate line offset: how far down from the positioned parent is this reference?
 			this.applyLineOffset(wrapper, margin, false);
 
 			this.observeSidenoteVisibility(margin);
 			marginNotes.push(margin);
+		}
+
+		// Hide margin note entries from the footnotes section
+		const footnotesSection = readingRoot.querySelector(
+			"section.footnotes ol",
+		);
+		if (footnotesSection) {
+			for (const item of allItems) {
+				if (item.footnoteId && this.isMarginNote(item.footnoteId)) {
+					const renderedIndex = sourceRefOrder.indexOf(item.footnoteId);
+					if (renderedIndex >= 0) {
+						const li = footnotesSection.children[
+							renderedIndex
+						] as HTMLElement | null;
+						if (li) {
+							li.style.display = "none";
+						}
+					}
+				}
+			}
 		}
 
 		// Run positioning after DOM is fully settled and elements are laid out.
@@ -2675,7 +2846,8 @@ export default class SidenotePlugin extends Plugin {
 	 * For editing mode, only counts sidenotes (not footnotes).
 	 */
 	private countSidenotesInSource(content: string): number {
-		const sidenoteRegex = /<span\s+class\s*=\s*["']sidenote["'][^>]*>/gi;
+		const sidenoteRegex =
+			/<span\s+class\s*=\s*["']sidenote(?:\s+margin-note)?["'][^>]*>([\s\S]*?)<\/span>/gi;
 		let count = 0;
 		while (sidenoteRegex.exec(content) !== null) {
 			count++;
@@ -2756,7 +2928,6 @@ export default class SidenotePlugin extends Plugin {
 		const isRight = position !== "left";
 
 		if (this.settings.sidenoteFormat === "html") {
-			// ... existing working HTML logic unchanged ...
 			const spans = element.querySelectorAll<HTMLElement>("span.sidenote");
 			if (spans.length === 0) return;
 
@@ -2767,18 +2938,25 @@ export default class SidenotePlugin extends Plugin {
 				const text = span.textContent ?? "";
 				if (!text.trim()) continue;
 
-				counter++;
+				const isMargin = this.isMarginNote(span);
+				if (!isMargin) {
+					counter++;
+				}
 
-				const refNum = document.createElement("sup");
-				refNum.style.cssText =
-					"font-size: 0.75em; font-weight: bold; color: #000;";
-				refNum.textContent = this.formatNumber(counter);
-				span.parentNode?.insertBefore(refNum, span.nextSibling);
+				const numStr = isMargin ? "" : this.formatNumber(counter);
 
-				const printEl = this.buildPrintSidenote(
-					text,
-					this.formatNumber(counter),
-				);
+				if (!isMargin) {
+					const refNum = document.createElement("sup");
+					refNum.style.cssText =
+						"font-size: 0.75em; font-weight: bold; color: #000;";
+					refNum.textContent = numStr;
+					span.parentNode?.insertBefore(refNum, span.nextSibling);
+				}
+
+				const printEl = this.buildPrintSidenote(text, numStr);
+				if (isMargin) {
+					printEl.classList.add("margin-note");
+				}
 
 				const anchor = span.closest(
 					"p, li, h1, h2, h3, h4, h5, h6",
@@ -2823,20 +3001,27 @@ export default class SidenotePlugin extends Plugin {
 			const text = definitions.get(id);
 			if (!text) continue;
 
-			counter++;
+			const isMargin = this.isMarginNote(id);
+			if (!isMargin) {
+				counter++;
+			}
 
-			const refTarget =
-				ref.tagName === "SUP" ? ref : (ref.closest("sup") ?? ref);
-			const refNum = document.createElement("sup");
-			refNum.style.cssText =
-				"font-size: 0.75em; font-weight: bold; color: #11111b;";
-			refNum.textContent = this.formatNumber(counter);
-			refTarget.parentNode?.insertBefore(refNum, refTarget.nextSibling);
+			const numStr = isMargin ? "" : this.formatNumber(counter);
 
-			const printEl = this.buildPrintSidenote(
-				text,
-				this.formatNumber(counter),
-			);
+			if (!isMargin) {
+				const refTarget =
+					ref.tagName === "SUP" ? ref : (ref.closest("sup") ?? ref);
+				const refNum = document.createElement("sup");
+				refNum.style.cssText =
+					"font-size: 0.75em; font-weight: bold; color: #11111b;";
+				refNum.textContent = numStr;
+				refTarget.parentNode?.insertBefore(refNum, refTarget.nextSibling);
+			}
+
+			const printEl = this.buildPrintSidenote(text, numStr);
+			if (isMargin) {
+				printEl.classList.add("margin-note");
+			}
 
 			const sup = ref.tagName === "SUP" ? ref : ref.closest("sup");
 			const anchor = sup?.closest(
@@ -2985,7 +3170,7 @@ export default class SidenotePlugin extends Plugin {
 		// Use inline style so nothing can override visibility
 		printEl.style.cssText = "display: block; margin: 0; padding: 0;";
 
-		if (this.settings.showSidenoteNumbers) {
+		if (this.settings.showSidenoteNumbers && numStr) {
 			const numSpan = document.createElement("span");
 			numSpan.style.cssText =
 				"font-weight: bold; margin-right: 0.3em; color: #11111b;";
@@ -3258,8 +3443,6 @@ export default class SidenotePlugin extends Plugin {
 		const cmRoot = this.cmRoot;
 		if (!cmRoot) return;
 
-		console.log("[Sidenotes] Starting layout...");
-
 		const cmRootRect = cmRoot.getBoundingClientRect();
 		const editorWidth = cmRootRect.width;
 		const mode = this.calculateMode(editorWidth);
@@ -3376,14 +3559,21 @@ export default class SidenotePlugin extends Plugin {
 			this.isMutating = true;
 			try {
 				for (const item of itemsWithIndex) {
-					const numStr = this.formatNumber(item.index);
+					const isMargin = this.isMarginNote(item.el);
+					const numStr = isMargin ? "" : this.formatNumber(item.index);
 
 					const wrapper = document.createElement("span");
 					wrapper.className = "sidenote-number";
+					if (isMargin) {
+						wrapper.classList.add("margin-note");
+					}
 					wrapper.dataset.sidenoteNum = numStr;
 
 					const margin = document.createElement("small");
 					margin.className = "sidenote-margin";
+					if (isMargin) {
+						margin.classList.add("margin-note");
+					}
 					margin.dataset.sidenoteNum = numStr;
 
 					const raw = this.normalizeText(item.el.textContent ?? "");
@@ -3450,30 +3640,39 @@ export default class SidenotePlugin extends Plugin {
 		index: number;
 		charPos: number;
 		text: string;
+		isMarginNote: boolean;
 	}[] {
 		const items: {
 			index: number;
 			charPos: number;
 			text: string;
+			isMarginNote: boolean;
 		}[] = [];
 
-		// Find all sidenotes
+		// Find all sidenotes (including margin-note variant)
 		const sidenoteRegex =
-			/<span\s+class\s*=\s*["']sidenote["'][^>]*>([\s\S]*?)<\/span>/gi;
+			/<span\s+class\s*=\s*["']sidenote(?:\s+margin-note)?["'][^>]*>([\s\S]*?)<\/span>/gi;
 		let match: RegExpExecArray | null;
 
 		while ((match = sidenoteRegex.exec(content)) !== null) {
+			const isMargin = /margin-note/.test(match[0]);
 			items.push({
-				index: 0, // Will be assigned after sorting
+				index: 0,
 				charPos: match.index,
 				text: this.normalizeText(match[1] ?? ""),
+				isMarginNote: isMargin,
 			});
 		}
 
-		// Sort by position and assign indices
+		// Sort by position and assign indices (only numbered sidenotes get incremented)
 		items.sort((a, b) => a.charPos - b.charPos);
-		items.forEach((item, i) => {
-			item.index = i + 1;
+		let counter = 1;
+		items.forEach((item) => {
+			if (item.isMarginNote) {
+				item.index = -1; // Margin notes have no number
+			} else {
+				item.index = counter++;
+			}
 		});
 
 		return items;
@@ -3483,7 +3682,12 @@ export default class SidenotePlugin extends Plugin {
 	 * Find the index of a sidenote in the document based on its text and approximate position.
 	 */
 	private findSidenoteIndex(
-		sidenoteMap: { index: number; charPos: number; text: string }[],
+		sidenoteMap: {
+			index: number;
+			charPos: number;
+			text: string;
+			isMarginNote?: boolean;
+		}[],
 		text: string,
 		docPos: number | null,
 	): number {
@@ -3495,7 +3699,6 @@ export default class SidenotePlugin extends Plugin {
 		);
 
 		if (matchingByText.length === 1) {
-			// Only one match - use it
 			const match = matchingByText[0];
 			if (match) {
 				return match.index;
@@ -3503,7 +3706,6 @@ export default class SidenotePlugin extends Plugin {
 		}
 
 		if (matchingByText.length > 1 && docPos !== null) {
-			// Multiple matches - find the closest by position
 			const approxCharPos = Math.floor(docPos / 10000);
 			let closest: {
 				index: number;
@@ -3515,8 +3717,8 @@ export default class SidenotePlugin extends Plugin {
 			for (const s of matchingByText) {
 				const dist = Math.abs(s.charPos - approxCharPos);
 				if (dist < closestDist) {
-					closest = s;
 					closestDist = dist;
+					closest = s;
 				}
 			}
 
@@ -3525,31 +3727,12 @@ export default class SidenotePlugin extends Plugin {
 			}
 		}
 
-		// Fallback: find any sidenote close to this position
-		if (docPos !== null && sidenoteMap.length > 0) {
-			const approxCharPos = Math.floor(docPos / 10000);
-			let closest: {
-				index: number;
-				charPos: number;
-				text: string;
-			} | null = null;
-			let closestDist = Infinity;
-
-			for (const s of sidenoteMap) {
-				const dist = Math.abs(s.charPos - approxCharPos);
-				if (dist < closestDist) {
-					closest = s;
-					closestDist = dist;
-				}
-			}
-
-			if (closest) {
-				return closest.index;
-			}
-		}
-
-		// Last resort - return 1
-		return 1;
+		// Fallback: return next available index
+		const maxIndex = sidenoteMap.reduce(
+			(max, s) => Math.max(max, s.index),
+			0,
+		);
+		return maxIndex + 1;
 	}
 
 	/**
@@ -3588,6 +3771,7 @@ export default class SidenotePlugin extends Plugin {
 	}
 
 	// ==================== Text Normalization ====================
+
 	private normalizeText(s: string): string {
 		return (s ?? "")
 			.replace(/<br\s*\/?>/gi, "\n") // Preserve <br> as newlines
@@ -5050,13 +5234,21 @@ class FootnoteSidenoteWidget extends WidgetType {
 	}
 
 	toDOM(): HTMLElement {
+		const isMargin = this.plugin.isMarginNote(this.footnoteId);
+
 		const wrapper = document.createElement("span");
 		wrapper.className = "sidenote-number";
+		if (isMargin) {
+			wrapper.classList.add("margin-note");
+		}
 		wrapper.dataset.sidenoteNum = this.numberText;
 		wrapper.dataset.footnoteId = this.footnoteId;
 
 		const margin = document.createElement("small");
 		margin.className = "sidenote-margin";
+		if (isMargin) {
+			margin.classList.add("margin-note");
+		}
 		margin.dataset.sidenoteNum = this.numberText;
 		margin.style.setProperty("--sidenote-shift", "0px");
 		margin.style.setProperty("--sidenote-line-offset", "0px");
@@ -5441,10 +5633,15 @@ class FootnoteSidenoteViewPlugin {
 		// Reset regex
 		referenceRegex.lastIndex = 0;
 
-		// Assign numbers based on order of appearance
+		// Assign numbers based on order of appearance, skipping margin notes
 		const footnoteNumbers = new Map<string, number>();
-		footnoteOrder.forEach((id, index) => {
-			footnoteNumbers.set(id, index + 1);
+		let counter = 1;
+		footnoteOrder.forEach((id) => {
+			if (id.startsWith("mn-")) {
+				footnoteNumbers.set(id, -1); // Margin note, no number
+			} else {
+				footnoteNumbers.set(id, counter++);
+			}
 		});
 
 		// Second pass: create decorations
@@ -5458,8 +5655,11 @@ class FootnoteSidenoteViewPlugin {
 			const footnoteContent = footnoteDefinitions.get(id);
 			if (!footnoteContent) continue;
 
+			const isMargin = id.startsWith("mn-");
 			const itemNum = footnoteNumbers.get(id) ?? 1;
-			const numberText = this.plugin.formatNumberPublic(itemNum);
+			const numberText = isMargin
+				? ""
+				: this.plugin.formatNumberPublic(itemNum);
 
 			decorations.push({
 				from: to,

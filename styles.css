@@ -639,3 +639,27 @@
 	overflow: visible !important;
 	height: auto !important;
 }
+
+/* Margin notes: hide the number badge */
+.sidenote-number.margin-note::before {
+	display: none !important;
+}
+
+.sidenote-number.margin-note::after {
+	display: none !important;
+}
+
+/* Optionally: remove any badge padding/spacing for margin notes */
+small.sidenote-margin.margin-note {
+	/* No top offset for the badge */
+}
+
+.sidenote-margin.margin-note::before {
+	display: none !important;
+	content: none !important;
+}
+
+/* Hide margin note entries from the footnotes section at the bottom */
+section.footnotes li:has(> p > a[data-footref^="mn-"]) {
+	display: none;
+}
