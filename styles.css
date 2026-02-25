@@ -663,3 +663,11 @@ small.sidenote-margin.margin-note {
 section.footnotes li:has(> p > a[data-footref^="mn-"]) {
 	display: none;
 }
+
+.margin-note-marker {
+	font-size: 0.85em;
+	color: var(--text-muted);
+	cursor: default;
+	vertical-align: super;
+	line-height: 1;
+}

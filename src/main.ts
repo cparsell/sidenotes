@@ -1522,7 +1522,11 @@ export default class SidenotePlugin extends Plugin {
 		}
 
 		const isFullRefresh = this.needsReadingModeRefresh;
-		this.needsReadingModeRefresh = false;
+
+		console.log(
+			"[Sidenotes] processReadingModeSidenotes: isFullRefresh =",
+			isFullRefresh,
+		);
 
 		// console.log("[Sidenotes] processReadingModeSidenotes called");
 
@@ -1709,6 +1713,7 @@ export default class SidenotePlugin extends Plugin {
 				if (!baseId || processedBaseIds.has(baseId)) continue;
 
 				// Map Obsidian's rendered sequential number back to the source footnote ID
+				const originalBaseId = baseId;
 				const renderedNum = parseInt(baseId, 10);
 				if (
 					!isNaN(renderedNum) &&
@@ -1721,6 +1726,9 @@ export default class SidenotePlugin extends Plugin {
 					}
 				}
 
+				// Mark both original and remapped IDs as processed
+				if (processedBaseIds.has(baseId)) continue;
+				processedBaseIds.add(originalBaseId);
 				processedBaseIds.add(baseId);
 
 				// Look up definition from SOURCE markdown
@@ -1743,10 +1751,18 @@ export default class SidenotePlugin extends Plugin {
 			}
 		}
 
+		console.log(
+			"[Sidenotes] allItems:",
+			allItems.length,
+			allItems.map((i) => i.footnoteId),
+		);
+
 		if (allItems.length === 0) {
 			readingRoot.dataset.hasSidenotes = "false";
 			return;
 		}
+
+		this.needsReadingModeRefresh = false;
 
 		readingRoot.dataset.hasSidenotes = "true";
 
@@ -1798,6 +1814,10 @@ export default class SidenotePlugin extends Plugin {
 			wrapper.className = "sidenote-number";
 			if (isMargin) {
 				wrapper.classList.add("margin-note");
+				const marker = document.createElement("span");
+				marker.className = "margin-note-marker";
+				marker.textContent = "※";
+				wrapper.appendChild(marker);
 			}
 			wrapper.dataset.sidenoteNum = numStr;
 			if (item.footnoteId) {
@@ -1966,14 +1986,15 @@ export default class SidenotePlugin extends Plugin {
 			);
 			const hasRefs = refElements.length > 0;
 
-			// console.log(
-			// 	"[Sidenotes] scheduleFootnoteProcessing: hasRefs =",
-			// 	hasRefs,
-			// 	"| refCount =",
-			// 	refElements.length,
-			// );
-
 			if (hasRefs) {
+				// Check if all refs are already wrapped — if so, skip
+				const unwrappedRefs = Array.from(refElements).filter(
+					(el) => !el.closest(".sidenote-number"),
+				);
+				if (unwrappedRefs.length === 0 && !this.needsReadingModeRefresh) {
+					return;
+				}
+
 				requestAnimationFrame(() => {
 					requestAnimationFrame(() => {
 						this.processReadingModeSidenotes(readingRoot);
@@ -5566,6 +5587,23 @@ class FootnoteSidenoteWidget extends WidgetType {
 	}
 }
 
+class MarginNoteMarkerWidget extends WidgetType {
+	toDOM(): HTMLElement {
+		const span = document.createElement("span");
+		span.className = "margin-note-marker";
+		span.textContent = "※";
+		return span;
+	}
+
+	eq(): boolean {
+		return true;
+	}
+
+	ignoreEvent(): boolean {
+		return true;
+	}
+}
+
 /**
  * CodeMirror 6 ViewPlugin that adds sidenote decorations for footnotes.
  */
@@ -5660,6 +5698,16 @@ class FootnoteSidenoteViewPlugin {
 			const numberText = isMargin
 				? ""
 				: this.plugin.formatNumberPublic(itemNum);
+
+			if (isMargin) {
+				decorations.push({
+					from: from,
+					decoration: Decoration.widget({
+						widget: new MarginNoteMarkerWidget(),
+						side: -1,
+					}),
+				});
+			}
 
 			decorations.push({
 				from: to,
