@@ -31,11 +31,11 @@ import {
 } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import {
-	defaultHighlightStyle,
+	// defaultHighlightStyle,
 	syntaxHighlighting,
-	// HighlightStyle,
+	HighlightStyle,
 } from "@codemirror/language";
-// import { tags } from "@lezer/highlight";
+import { tags } from "@lezer/highlight";
 
 type CleanupFn = () => void;
 
@@ -2364,7 +2364,7 @@ export default class SidenotePlugin extends Plugin {
 				sidenoteEditorTheme,
 				history(),
 				markdown(),
-				syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+				syntaxHighlighting(sidenoteHighlightStyle, { fallback: true }),
 				markdownEditHotkeys,
 				keymap.of(historyKeymap),
 				keymap.of(defaultKeymap),
@@ -2487,7 +2487,7 @@ export default class SidenotePlugin extends Plugin {
 				sidenoteEditorTheme,
 				history(),
 				markdown(),
-				syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+				syntaxHighlighting(sidenoteHighlightStyle, { fallback: true }),
 				markdownEditHotkeys,
 				keymap.of(historyKeymap),
 				keymap.of(defaultKeymap),
@@ -4070,7 +4070,7 @@ export default class SidenotePlugin extends Plugin {
 				sidenoteEditorTheme,
 				history(),
 				markdown(),
-				syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+				syntaxHighlighting(sidenoteHighlightStyle, { fallback: true }),
 				// Your markdown formatting hotkeys (Mod-b/i/k) if you added them:
 				markdownEditHotkeys,
 				// Keep standard CM key behavior (arrow keys, delete, etc.)
@@ -5277,24 +5277,24 @@ const sidenoteEditorTheme = EditorView.theme({
 	},
 });
 
-// const sidenoteHighlightStyle = HighlightStyle.define([
-// 	{ tag: tags.strong, fontWeight: "bold" },
-// 	{ tag: tags.emphasis, fontStyle: "italic" },
-// 	{ tag: tags.strikethrough, textDecoration: "line-through" },
-// 	{
-// 		tag: tags.monospace,
-// 		fontFamily: "var(--font-monospace)",
-// 		fontSize: "0.9em",
-// 	},
-// 	{
-// 		tag: tags.link,
-// 		color: "var(--link-color, var(--text-accent))",
-// 		textDecoration: "underline",
-// 	},
-// 	{ tag: tags.url, color: "var(--link-color, var(--text-accent))" },
-// 	// Dim the markdown syntax characters (**, *, `, [, ], etc.)
-// 	{ tag: tags.processingInstruction, color: "var(--text-faint)" },
-// ]);
+const sidenoteHighlightStyle = HighlightStyle.define([
+	{ tag: tags.strong, fontWeight: "bold" },
+	{ tag: tags.emphasis, fontStyle: "italic" },
+	{ tag: tags.strikethrough, textDecoration: "line-through" },
+	{
+		tag: tags.monospace,
+		fontFamily: "var(--font-monospace)",
+		fontSize: "0.9em",
+	},
+	{
+		tag: tags.link,
+		color: "var(--link-color, var(--text-accent))",
+		textDecoration: "underline",
+	},
+	{ tag: tags.url, color: "var(--link-color, var(--text-accent))" },
+	// Dim the markdown syntax characters (**, *, `, [, ], etc.)
+	{ tag: tags.processingInstruction, color: "var(--text-faint)" },
+]);
 
 // ======================================================
 // ========CodeMirror 6 Footnote Sidenote Widget ========
@@ -5562,7 +5562,7 @@ class FootnoteSidenoteWidget extends WidgetType {
 				sidenoteEditorTheme,
 				history(),
 				markdown(),
-				syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+				syntaxHighlighting(sidenoteHighlightStyle, { fallback: true }),
 				markdownEditHotkeys,
 				// keep Obsidian’s own hotkey routing possible
 				keymap.of(defaultKeymap),
