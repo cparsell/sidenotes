@@ -37,12 +37,13 @@ _Editing a sidenote in the margin and then adding a new sidenote_
 
 ### Goal Features
 
-- ~~Option to hide original footnote numbers~~ (Needs to be confirmed to work for others)
-- Optional background color to sidenotes
-- Option to have non-numbered sidenotes - aka "margin notes"
-- Option for Sidenotes on both left and right margins (may only work with HTML, seems unlikely to allow coding like this with Markdown footnotes)
-- Option for style templates for multiple sidenotes types - e.g. one type has a background color, another does not.
-- Highlight the referencing _sentence_ in the main note text when hovering over a sidenote
+- [ ] Command: Re-sequence footnote numbers. They have a habit of getting out of order once you insert new ones.
+- [x] Option to have non-numbered sidenotes - aka "margin notes" ✅ 2026-02-26
+- [ ] Optional background color to sidenotes
+- [ ] Option for Sidenotes on both left and right margins (may only work with HTML, seems unlikely to allow coding like this with Markdown footnotes)
+- [ ] Option for style templates for multiple sidenotes types - e.g. one type has a background color, another does not.
+- [ ] Highlight the referencing _sentence_ in the main note text when hovering over a sidenote
+- [ ] Possible feature: Footnote-Sidenote switch command
 
 ## Alternatives and inspirations
 
