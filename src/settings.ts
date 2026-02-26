@@ -527,7 +527,7 @@ export class SidenoteSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Allow Sidenote Edits in reading mode")
 			.setDesc(
-				"Click a sidenote in reading mode to edit the footnote text inline (only relevant if using footnote format)",
+				"Click a sidenote in Reading Mode to edit the footnote text",
 			)
 			.addToggle((toggle) =>
 				toggle

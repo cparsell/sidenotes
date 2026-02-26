@@ -63,10 +63,11 @@ interface MinimalEditor {
 }
 
 // Regex to detect sidenote spans in source text (includes margin-note variant)
-const SIDENOTE_PATTERN =
+const SIDENOTE_PATTERN = () =>
 	/<span\s+class\s*=\s*["']sidenote(?:\s+margin-note)?["'][^>]*>/gi;
 
-const SIDENOTE_ONLY_REGEX = /<span\s+class\s*=\s*["']sidenote["'][^>]*>/gi;
+const SIDENOTE_SPAN_REGEX = () =>
+	/<span\s+class\s*=\s*["']sidenote(?:\s+margin-note)?["'][^>]*>([\s\S]*?)<\/span>/gi;
 
 // ======================================================
 // ================= Main Plugin Class ==================
@@ -862,14 +863,10 @@ export default class SidenotePlugin extends Plugin {
 					footnoteText,
 				);
 			} else if (sidenoteType === "html") {
-				const indexStr = margin.dataset.sidenoteIndex;
-				if (indexStr === undefined) return;
-				const sidenoteIndex = parseInt(indexStr, 10);
-				if (isNaN(sidenoteIndex)) return;
-
-				const rawText = this.getHtmlSidenoteSourceText(sidenoteIndex);
-				if (rawText !== null) {
-					this.startReadingModeHtmlEdit(margin, sidenoteIndex, rawText);
+				const marginText = margin.textContent ?? "";
+				const found = this.findHtmlSidenoteInSource(marginText);
+				if (found) {
+					this.startReadingModeHtmlEdit(margin, found.text);
 				}
 			}
 		};
@@ -1415,6 +1412,41 @@ export default class SidenotePlugin extends Plugin {
 		}
 	}
 
+	/**
+	 * Find an HTML sidenote in the source by its text content.
+	 * Returns the match details or null if not found.
+	 */
+	private findHtmlSidenoteInSource(sidenoteText: string): {
+		text: string;
+		fullMatch: string;
+		index: number;
+		openingTag: string;
+	} | null {
+		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+		const content =
+			view?.editor?.getValue() ||
+			(view as any)?.data ||
+			this.cachedSourceContent ||
+			"";
+		if (!content) return null;
+
+		const regex = SIDENOTE_SPAN_REGEX();
+		let match: RegExpExecArray | null;
+		const normalized = this.normalizeText(sidenoteText);
+
+		while ((match = regex.exec(content)) !== null) {
+			if (this.normalizeText(match[1] ?? "") === normalized) {
+				return {
+					text: match[1] ?? "",
+					fullMatch: match[0],
+					index: match.index,
+					openingTag: match[0].substring(0, match[0].indexOf(">") + 1),
+				};
+			}
+		}
+		return null;
+	}
+
 	// ==================== Number Formatting ====================
 
 	private formatNumber(num: number): string {
@@ -1845,7 +1877,6 @@ export default class SidenotePlugin extends Plugin {
 				if (this.settings.editInReadingMode) {
 					margin.dataset.editing = "false";
 					margin.dataset.sidenoteType = "html";
-					margin.dataset.sidenoteIndex = String(num - 1);
 					margin.style.cursor = "pointer";
 				}
 			} else {
@@ -2167,32 +2198,6 @@ export default class SidenotePlugin extends Plugin {
 	// ==================== Reading Mode HTML Editing ========================
 
 	/**
-	 * Extract the raw markdown text of the Nth sidenote from the source file.
-	 */
-	private getHtmlSidenoteSourceText(sidenoteIndex: number): string | null {
-		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-		const content =
-			view?.editor?.getValue() ||
-			(view as any)?.data ||
-			this.cachedSourceContent ||
-			"";
-		if (!content) return null;
-
-		const regex =
-			/<span\s+class\s*=\s*["']sidenote["'][^>]*>([\s\S]*?)<\/span>/gi;
-		let match: RegExpExecArray | null;
-		let idx = 0;
-
-		while ((match = regex.exec(content)) !== null) {
-			if (idx === sidenoteIndex) {
-				return match[1] ?? "";
-			}
-			idx++;
-		}
-		return null;
-	}
-
-	/**
 	 * Read the current footnote definition text from the source file.
 	 * Always reads fresh from the editor/cache so delegated clicks
 	 * never use stale text captured at DOM-creation time.
@@ -2214,12 +2219,7 @@ export default class SidenotePlugin extends Plugin {
 	 * Open a CM6 editor for an HTML span sidenote in reading mode,
 	 * using the raw markdown source text.
 	 */
-	private startReadingModeHtmlEdit(
-		margin: HTMLElement,
-		sidenoteIndex: number,
-		rawText: string,
-	) {
-		// Close any existing editor
+	private startReadingModeHtmlEdit(margin: HTMLElement, rawText: string) {
 		if (this.spanCmView) return;
 
 		this.spanOriginalText = rawText;
@@ -2252,7 +2252,7 @@ export default class SidenotePlugin extends Plugin {
 			margin.dataset.editing = "false";
 
 			if (opts.commit && newText !== this.spanOriginalText) {
-				this.commitHtmlSpanSidenoteText(sidenoteIndex, newText);
+				this.commitHtmlSpanSidenoteText(this.spanOriginalText, newText);
 			}
 
 			margin.innerHTML = "";
@@ -2266,7 +2266,6 @@ export default class SidenotePlugin extends Plugin {
 
 			this.activeReadingModeMargin = null;
 
-			// Refresh cache and signal cross-mode update
 			if (opts.commit && newText !== this.spanOriginalText) {
 				this.refreshCachedSourceContent();
 				this.needsReadingModeRefresh = true;
@@ -2814,8 +2813,8 @@ export default class SidenotePlugin extends Plugin {
 		}
 
 		if (this.settings.sidenoteFormat === "html") {
-			this.documentHasSidenotes = SIDENOTE_PATTERN.test(content);
-			SIDENOTE_PATTERN.lastIndex = 0;
+			this.documentHasSidenotes = SIDENOTE_PATTERN().test(content);
+			SIDENOTE_PATTERN().lastIndex = 0;
 		} else {
 			this.documentHasSidenotes = /\[\^[^\]]+\](?!:)/.test(content);
 		}
@@ -2834,8 +2833,8 @@ export default class SidenotePlugin extends Plugin {
 			let editingHasSidenotes = false;
 
 			if (this.settings.sidenoteFormat === "html") {
-				editingHasSidenotes = SIDENOTE_PATTERN.test(content);
-				SIDENOTE_PATTERN.lastIndex = 0;
+				editingHasSidenotes = SIDENOTE_PATTERN().test(content);
+				SIDENOTE_PATTERN().lastIndex = 0;
 			} else if (
 				this.settings.sidenoteFormat === "footnote-edit" &&
 				!isSourceMode
@@ -2876,8 +2875,7 @@ export default class SidenotePlugin extends Plugin {
 	 * For editing mode, only counts sidenotes (not footnotes).
 	 */
 	private countSidenotesInSource(content: string): number {
-		const sidenoteRegex =
-			/<span\s+class\s*=\s*["']sidenote(?:\s+margin-note)?["'][^>]*>([\s\S]*?)<\/span>/gi;
+		const sidenoteRegex = SIDENOTE_SPAN_REGEX();
 		let count = 0;
 		while (sidenoteRegex.exec(content) !== null) {
 			count++;
@@ -3583,12 +3581,19 @@ export default class SidenotePlugin extends Plugin {
 				return { ...item, index };
 			});
 
-			// Sort by index for consistent ordering
-			itemsWithIndex.sort((a, b) => a.index - b.index);
+			// Assign source index BEFORE sorting (DOM order = source order)
+			let sourceCounter = 1;
+			const itemsWithSourceIndex = itemsWithIndex.map((item) => ({
+				...item,
+				sourceIndex: sourceCounter++,
+			}));
+
+			// Sort by index for consistent display ordering
+			itemsWithSourceIndex.sort((a, b) => a.index - b.index);
 
 			this.isMutating = true;
 			try {
-				for (const item of itemsWithIndex) {
+				for (const item of itemsWithSourceIndex) {
 					const isMargin = this.isMarginNote(item.el);
 					const numStr = isMargin ? "" : this.formatNumber(item.index);
 					const wrapper = document.createElement("span");
@@ -3630,7 +3635,7 @@ export default class SidenotePlugin extends Plugin {
 					);
 
 					// Add click handler to select only text content
-					this.setupSidenoteClickHandler(wrapper, item.index);
+					this.setupSidenoteClickHandler(wrapper, item.text);
 
 					item.el.parentNode?.insertBefore(wrapper, item.el);
 					wrapper.appendChild(item.el);
@@ -3692,8 +3697,7 @@ export default class SidenotePlugin extends Plugin {
 		}[] = [];
 
 		// Find all sidenotes (including margin-note variant)
-		const sidenoteRegex =
-			/<span\s+class\s*=\s*["']sidenote(?:\s+margin-note)?["'][^>]*>([\s\S]*?)<\/span>/gi;
+		const sidenoteRegex = SIDENOTE_SPAN_REGEX();
 		let match: RegExpExecArray | null;
 
 		while ((match = sidenoteRegex.exec(content)) !== null) {
@@ -3847,16 +3851,14 @@ export default class SidenotePlugin extends Plugin {
 	 */
 	private setupSidenoteClickHandler(
 		wrapper: HTMLElement,
-		sidenoteIndex: number,
+		sidenoteText: string,
 	) {
 		wrapper.addEventListener("click", (e) => {
-			// Only handle clicks on the sidenote span itself, not the margin
 			const target = e.target as HTMLElement;
 			if (target.closest(".sidenote-margin")) {
-				return; // Let the margin editing handler deal with this
+				return;
 			}
 
-			// Prevent default selection behavior
 			e.preventDefault();
 			e.stopPropagation();
 
@@ -3864,38 +3866,18 @@ export default class SidenotePlugin extends Plugin {
 			if (!view?.editor) return;
 
 			const editor = view.editor;
-			const content = editor.getValue();
 
-			// Find the Nth sidenote in the source
-			const sidenoteRegex =
-				/<span\s+class\s*=\s*["']sidenote["'][^>]*>([\s\S]*?)<\/span>/gi;
+			const found = this.findHtmlSidenoteInSource(sidenoteText);
+			if (found) {
+				const openingTagEnd = found.openingTag.length;
+				const textStart = found.index + openingTagEnd;
+				const textEnd = textStart + found.text.length;
 
-			let match: RegExpExecArray | null;
-			let currentIndex = 0;
+				const from = editor.offsetToPos(textStart);
+				const to = editor.offsetToPos(textEnd);
 
-			while ((match = sidenoteRegex.exec(content)) !== null) {
-				currentIndex++;
-
-				if (currentIndex === sidenoteIndex) {
-					// Found our sidenote - calculate positions for just the text content
-					const fullMatch = match[0];
-					const textContent = match[1] ?? "";
-
-					// Find where the text starts (after the opening tag)
-					const openingTagEnd = fullMatch.indexOf(">") + 1;
-					const textStart = match.index + openingTagEnd;
-					const textEnd = textStart + textContent.length;
-
-					// Convert to editor positions
-					const from = editor.offsetToPos(textStart);
-					const to = editor.offsetToPos(textEnd);
-
-					// Set the selection to just the text content
-					editor.setSelection(from, to);
-					editor.focus();
-
-					return;
-				}
+				editor.setSelection(from, to);
+				editor.focus();
 			}
 		});
 	}
@@ -3953,14 +3935,15 @@ export default class SidenotePlugin extends Plugin {
 	private startMarginEdit(
 		margin: HTMLElement,
 		sourceSpan: HTMLElement,
-		sidenoteIndex: number,
+		_sidenoteIndex: number,
 		clickEvent?: MouseEvent,
 	) {
-		// If already editing a span, don't re-init
 		if (this.spanCmView) return;
 
-		// Record original text for cancel
-		this.spanOriginalText = sourceSpan.textContent ?? "";
+		// Read current text from source by matching content
+		const marginText = margin.textContent ?? "";
+		const found = this.findHtmlSidenoteInSource(marginText);
+		this.spanOriginalText = found?.text ?? sourceSpan.textContent ?? "";
 
 		margin.dataset.editing = "true";
 		margin.innerHTML = "";
@@ -3987,7 +3970,7 @@ export default class SidenotePlugin extends Plugin {
 			margin.dataset.editing = "false";
 
 			if (opts.commit && newText !== this.spanOriginalText) {
-				this.commitHtmlSpanSidenoteText(sidenoteIndex, newText);
+				this.commitHtmlSpanSidenoteText(this.spanOriginalText, newText);
 			}
 
 			margin.innerHTML = "";
@@ -4087,7 +4070,7 @@ export default class SidenotePlugin extends Plugin {
 	}
 
 	private commitHtmlSpanSidenoteText(
-		sidenoteIndex: number,
+		originalText: string,
 		newText: string,
 	) {
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
@@ -4095,40 +4078,27 @@ export default class SidenotePlugin extends Plugin {
 
 		const editor = view.editor;
 
-		// Preserve scroll like your current finishMarginEdit does
 		const scroller =
 			this.cmRoot?.querySelector<HTMLElement>(".cm-scroller");
 		const scrollTop = scroller?.scrollTop ?? 0;
 
 		this.isEditingMargin = true;
 
-		const content = editor.getValue();
-		const sidenoteRegex =
-			/<span\s+class\s*=\s*["']sidenote["'][^>]*>([\s\S]*?)<\/span>/gi;
+		const found = this.findHtmlSidenoteInSource(originalText);
+		if (found) {
+			const from = editor.offsetToPos(found.index);
+			const to = editor.offsetToPos(found.index + found.fullMatch.length);
+			const newSpan = `${found.openingTag}${newText}</span>`;
 
-		let match: RegExpExecArray | null;
-		let currentIndex = 0;
-
-		while ((match = sidenoteRegex.exec(content)) !== null) {
-			currentIndex++;
-			if (currentIndex === sidenoteIndex) {
-				const from = editor.offsetToPos(match.index);
-				const to = editor.offsetToPos(match.index + match[0].length);
-				const newSpan = `<span class="sidenote">${newText}</span>`;
-
-				this.isMutating = true;
-				try {
-					editor.replaceRange(newSpan, from, to);
-				} finally {
-					this.isMutating = false;
-				}
-				break;
+			this.isMutating = true;
+			try {
+				editor.replaceRange(newSpan, from, to);
+			} finally {
+				this.isMutating = false;
 			}
 		}
 
-		// Restore scroll
 		if (scroller) scroller.scrollTop = scrollTop;
-
 		this.isEditingMargin = false;
 	}
 
