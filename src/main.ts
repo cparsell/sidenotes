@@ -863,10 +863,31 @@ export default class SidenotePlugin extends Plugin {
 					footnoteText,
 				);
 			} else if (sidenoteType === "html") {
-				const marginText = margin.textContent ?? "";
-				const found = this.findHtmlSidenoteInSource(marginText);
-				if (found) {
-					this.startReadingModeHtmlEdit(margin, found.text);
+				const rawText = margin.dataset.sidenoteRawText ?? "";
+				console.log("[Sidenotes] HTML edit click:", {
+					rawText,
+					hasRawText: !!margin.dataset.sidenoteRawText,
+					marginText: margin.textContent,
+				});
+				if (!rawText) return;
+
+				// Find this exact text in the source to confirm it exists
+				const view2 = this.app.workspace.getActiveViewOfType(MarkdownView);
+				const content =
+					view2?.editor?.getValue() ||
+					(view2 as any)?.data ||
+					this.cachedSourceContent ||
+					"";
+				if (!content) return;
+
+				// Search for a span containing this exact raw text
+				const regex = SIDENOTE_SPAN_REGEX();
+				let m: RegExpExecArray | null;
+				while ((m = regex.exec(content)) !== null) {
+					if (m[1] === rawText) {
+						this.startReadingModeHtmlEdit(margin, rawText);
+						break;
+					}
 				}
 			}
 		};
@@ -1432,9 +1453,23 @@ export default class SidenotePlugin extends Plugin {
 
 		const regex = SIDENOTE_SPAN_REGEX();
 		let match: RegExpExecArray | null;
-		const normalized = this.normalizeText(sidenoteText);
 
+		// Try exact match first
 		while ((match = regex.exec(content)) !== null) {
+			if ((match[1] ?? "") === sidenoteText) {
+				return {
+					text: match[1] ?? "",
+					fullMatch: match[0],
+					index: match.index,
+					openingTag: match[0].substring(0, match[0].indexOf(">") + 1),
+				};
+			}
+		}
+
+		// Fallback: try normalized match
+		const normalized = this.normalizeText(sidenoteText);
+		const regex2 = SIDENOTE_SPAN_REGEX();
+		while ((match = regex2.exec(content)) !== null) {
 			if (this.normalizeText(match[1] ?? "") === normalized) {
 				return {
 					text: match[1] ?? "",
@@ -1568,10 +1603,10 @@ export default class SidenotePlugin extends Plugin {
 
 		const isFullRefresh = this.needsReadingModeRefresh;
 
-		console.log(
-			"[Sidenotes] processReadingModeSidenotes: isFullRefresh =",
-			isFullRefresh,
-		);
+		// console.log(
+		// 	"[Sidenotes] processReadingModeSidenotes: isFullRefresh =",
+		// 	isFullRefresh,
+		// );
 
 		// console.log("[Sidenotes] processReadingModeSidenotes called");
 
@@ -1618,6 +1653,7 @@ export default class SidenotePlugin extends Plugin {
 			rect: DOMRect;
 			type: "sidenote" | "footnote";
 			text: string;
+			rawText?: string;
 			footnoteId?: string;
 			footnoteHtml?: HTMLElement;
 		}[] = [];
@@ -1628,8 +1664,25 @@ export default class SidenotePlugin extends Plugin {
 			this.settings.sidenoteFormat === "footnote" ||
 			this.settings.sidenoteFormat === "footnote-edit";
 
+		// Build list of raw source texts for HTML sidenotes
+		const htmlSidenoteRawTexts: string[] = [];
 		if (useHtmlSidenotes) {
-			// Get HTML sidenote spans
+			const view2 = this.app.workspace.getActiveViewOfType(MarkdownView);
+			const sourceContent =
+				view2?.editor?.getValue() ||
+				(view2 as any)?.data ||
+				this.cachedSourceContent ||
+				"";
+			if (sourceContent) {
+				const regex = SIDENOTE_SPAN_REGEX();
+				let m: RegExpExecArray | null;
+				while ((m = regex.exec(sourceContent)) !== null) {
+					htmlSidenoteRawTexts.push(m[1] ?? "");
+				}
+			}
+		}
+
+		if (useHtmlSidenotes) {
 			const spans = Array.from(
 				readingRoot.querySelectorAll<HTMLElement>("span.sidenote"),
 			).filter(
@@ -1637,13 +1690,16 @@ export default class SidenotePlugin extends Plugin {
 					!span.parentElement?.classList.contains("sidenote-number"),
 			);
 
+			let rawIdx = 0;
 			for (const el of spans) {
 				allItems.push({
 					el,
 					rect: el.getBoundingClientRect(),
 					type: "sidenote",
 					text: el.textContent ?? "",
+					rawText: htmlSidenoteRawTexts[rawIdx] ?? el.textContent ?? "",
 				});
+				rawIdx++;
 			}
 		}
 
@@ -1796,11 +1852,11 @@ export default class SidenotePlugin extends Plugin {
 			}
 		}
 
-		console.log(
-			"[Sidenotes] allItems:",
-			allItems.length,
-			allItems.map((i) => i.footnoteId),
-		);
+		// console.log(
+		// 	"[Sidenotes] allItems:",
+		// 	allItems.length,
+		// 	allItems.map((i) => i.footnoteId),
+		// );
 
 		if (allItems.length === 0) {
 			readingRoot.dataset.hasSidenotes = "false";
@@ -1877,6 +1933,7 @@ export default class SidenotePlugin extends Plugin {
 				if (this.settings.editInReadingMode) {
 					margin.dataset.editing = "false";
 					margin.dataset.sidenoteType = "html";
+					margin.dataset.sidenoteRawText = item.rawText ?? item.text;
 					margin.style.cursor = "pointer";
 				}
 			} else {
@@ -1998,7 +2055,6 @@ export default class SidenotePlugin extends Plugin {
 	}
 
 	private scheduleFootnoteProcessing() {
-		// console.log("[Sidenotes] scheduleFootnoteProcessing called");
 		// Debounce multiple calls
 		if (this.footnoteProcessingTimer !== null) {
 			window.clearTimeout(this.footnoteProcessingTimer);
@@ -3529,17 +3585,17 @@ export default class SidenotePlugin extends Plugin {
 		cmRoot.dataset.hasSidenotes = this.documentHasSidenotes
 			? "true"
 			: "false";
-		console.warn(
-			"[Sidenotes] Processing sidenotes in editing mode... Has sidenotes?",
-			this.documentHasSidenotes,
-		);
+		// console.warn(
+		// 	"[Sidenotes] Processing sidenotes in editing mode... Has sidenotes?",
+		// 	this.documentHasSidenotes,
+		// );
 		// Get unwrapped sidenote spans (not yet processed)
 		const unwrappedSpans = Array.from(
 			cmRoot.querySelectorAll<HTMLElement>("span.sidenote"),
 		).filter(
 			(span) => !span.parentElement?.classList.contains("sidenote-number"),
 		);
-		console.warn(unwrappedSpans.length, "unwrapped sidenote spans found");
+		// console.warn(unwrappedSpans.length, "unwrapped sidenote spans found");
 		// If there are new sidenotes to process, we need to renumber everything
 		if (unwrappedSpans.length > 0 && mode !== "hidden") {
 			// Remove all existing sidenote wrappers and margins to renumber from scratch
@@ -4084,17 +4140,28 @@ export default class SidenotePlugin extends Plugin {
 
 		this.isEditingMargin = true;
 
-		const found = this.findHtmlSidenoteInSource(originalText);
-		if (found) {
-			const from = editor.offsetToPos(found.index);
-			const to = editor.offsetToPos(found.index + found.fullMatch.length);
-			const newSpan = `${found.openingTag}${newText}</span>`;
+		const content = editor.getValue();
+		const regex = SIDENOTE_SPAN_REGEX();
+		let match: RegExpExecArray | null;
 
-			this.isMutating = true;
-			try {
-				editor.replaceRange(newSpan, from, to);
-			} finally {
-				this.isMutating = false;
+		while ((match = regex.exec(content)) !== null) {
+			if (match[1] === originalText) {
+				const from = editor.offsetToPos(match.index);
+				const to = editor.offsetToPos(match.index + match[0].length);
+
+				const originalTag = match[0].substring(
+					0,
+					match[0].indexOf(">") + 1,
+				);
+				const newSpan = `${originalTag}${newText}</span>`;
+
+				this.isMutating = true;
+				try {
+					editor.replaceRange(newSpan, from, to);
+				} finally {
+					this.isMutating = false;
+				}
+				break;
 			}
 		}
 
