@@ -15,14 +15,16 @@ _Editing a sidenote in the margin and then adding a new sidenote_
 
 ### Features
 
-- **Sidenotes**: Sidenotes are displayed in the margin of an Obsidian note.
+- **Sidenotes**: Sidenotes are displayed in the margin of an Obsidian note. Sidenotes show in _Editing_ and _Reading_ modes. It's possible to enable editing of sidenotes in Reading Mode.
   Run command `Insert Sidenote` to start one.
   - **External and Internal link support**
   - **Supports basic Markdown formatting:** **Bold**, _italic_, and `inline code`
   - Sidenotes can be configured to work one of two ways:
     - **Markdown footnotes**: `This is a sentence[^1].`
     - **an HTML tag**: `<span class="sidenote">`.
-  - HTML Tag sidenotes work in _Editing_ and _Reading_ modes. When using footnotes, this currently only works in Reading Mode.
+  - **Margin Notes**: Non-numbered notes displayed in the margin. In Editing Mode, it will display a **※** symbol in the main text where the margin note is "placed".
+    - **Markdown footnotes**: Written as `[^mn-1]` or `[^mn-kitchen]`
+    - **HTML**: Written as `<span class="sidenote margin-note">`.
 
 - **They are editable in the margin**. Click on it, edit, and press enter.
 - **Dynamic styling**: Font size shrinks as horizontal space get smaller. At a certain breakpoint, sidenotes hide when a window gets too skinny.
