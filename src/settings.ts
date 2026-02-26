@@ -318,7 +318,7 @@ export class SidenoteSettingTab extends PluginSettingTab {
 			)
 			.addSlider((slider) =>
 				slider
-					.setLimits(0, 1, 0.1)
+					.setLimits(-1, 1, 0.1)
 					.setValue(this.plugin.settings.sidenoteGapDrift)
 					.setDynamicTooltip()
 					.onChange(async (value) => {

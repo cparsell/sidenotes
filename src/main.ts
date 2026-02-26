@@ -1,4 +1,5 @@
 /* eslint-disable obsidianmd/ui/sentence-case */
+
 import {
 	MarkdownView,
 	Plugin,
@@ -714,9 +715,7 @@ export default class SidenotePlugin extends Plugin {
 			// Don't manually remove DOM inside .cm-content — that corrupts
 			// CM6's internal state. Instead, force CM6 to re-render.
 			const mdView = this.app.workspace.getActiveViewOfType(MarkdownView);
-			const cmEditor = (mdView?.editor as any)?.cm as
-				| EditorView
-				| undefined;
+			const cmEditor = (mdView?.editor as { cm?: EditorView })?.cm;
 			if (cmEditor) {
 				// requestMeasure triggers a geometry pass, which causes
 				// the ViewPlugin's update() to fire and see the bumped
@@ -875,7 +874,7 @@ export default class SidenotePlugin extends Plugin {
 				const view2 = this.app.workspace.getActiveViewOfType(MarkdownView);
 				const content =
 					view2?.editor?.getValue() ||
-					(view2 as any)?.data ||
+					(view2 as { data?: string })?.data ||
 					this.cachedSourceContent ||
 					"";
 				if (!content) return;
@@ -1400,9 +1399,9 @@ export default class SidenotePlugin extends Plugin {
 		);
 
 		for (const wrapper of Array.from(wrappers)) {
-			const indentedParent = wrapper.closest(
+			const indentedParent = wrapper.closest<HTMLElement>(
 				"li, blockquote, .callout-content",
-			) as HTMLElement | null;
+			);
 
 			if (!indentedParent) {
 				// Not indented — inherit the global offset
@@ -1446,7 +1445,7 @@ export default class SidenotePlugin extends Plugin {
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
 		const content =
 			view?.editor?.getValue() ||
-			(view as any)?.data ||
+			(view as { data?: string })?.data ||
 			this.cachedSourceContent ||
 			"";
 		if (!content) return null;
@@ -1670,7 +1669,7 @@ export default class SidenotePlugin extends Plugin {
 			const view2 = this.app.workspace.getActiveViewOfType(MarkdownView);
 			const sourceContent =
 				view2?.editor?.getValue() ||
-				(view2 as any)?.data ||
+				(view2 as { data?: string })?.data ||
 				this.cachedSourceContent ||
 				"";
 			if (sourceContent) {
@@ -1717,7 +1716,7 @@ export default class SidenotePlugin extends Plugin {
 			const view2 = this.app.workspace.getActiveViewOfType(MarkdownView);
 			let sourceContent =
 				view2?.editor?.getValue() ||
-				(view2 as any)?.data ||
+				(view2 as { data?: string })?.data ||
 				this.cachedSourceContent ||
 				"";
 
@@ -2263,7 +2262,7 @@ export default class SidenotePlugin extends Plugin {
 		const content =
 			this.cachedSourceContent ||
 			view?.editor?.getValue() ||
-			(view as any)?.data ||
+			(view as { data?: string })?.data ||
 			"";
 		if (!content) return null;
 
@@ -2920,7 +2919,8 @@ export default class SidenotePlugin extends Plugin {
 	 */
 	private refreshCachedSourceContent() {
 		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-		const content = view?.editor?.getValue() || (view as any)?.data || "";
+		const content =
+			view?.editor?.getValue() || (view as { data?: string })?.data || "";
 		if (content) {
 			this.cachedSourceContent = content;
 		}
@@ -2998,7 +2998,10 @@ export default class SidenotePlugin extends Plugin {
 	 * Runs synchronously so the elements exist before Obsidian
 	 * captures the DOM for PDF export.
 	 */
-	private injectPrintSidenotes(element: HTMLElement, context?: any) {
+	private injectPrintSidenotes(
+		element: HTMLElement,
+		context?: { sourcePath?: string },
+	) {
 		// Only inject print sidenotes when rendering for PDF export.
 		// Check if the element is inside a .print container.
 		const isPrintContext =
@@ -5107,11 +5110,19 @@ export function cmEditorAdapter(view: EditorView): MinimalEditor {
 	};
 }
 
+type WorkspaceWithActiveEditor = {
+	activeEditor: null | {
+		editor: MinimalEditor;
+		file: TFile | null;
+	};
+};
+
 function setWorkspaceActiveEditor(
 	plugin: SidenotePlugin,
 	view: EditorView | null,
 ) {
-	const ws: any = plugin.app.workspace;
+	const ws = plugin.app.workspace as unknown as WorkspaceWithActiveEditor;
+
 	if (!view) {
 		ws.activeEditor = null;
 		return;
