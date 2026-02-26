@@ -671,3 +671,22 @@ section.footnotes li:has(> p > a[data-footref^="mn-"]) {
 	vertical-align: super;
 	line-height: 1;
 }
+
+/* Hide badge styles for margin notes */
+[data-sn-badge-style="neumorphic"] .sidenote-number.margin-note::after {
+	display: none !important;
+}
+
+[data-sn-badge-style="neumorphic"]
+	.sidenote-margin.margin-note[data-sidenote-num]::before {
+	display: none !important;
+}
+
+[data-sn-badge-style="pill"]
+	.sidenote-margin.margin-note[data-sidenote-num]::before {
+	display: none !important;
+}
+
+[data-sn-badge-style="plain"] .sidenote-number.margin-note::after {
+	display: none !important;
+}
