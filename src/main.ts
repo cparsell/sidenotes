@@ -6,6 +6,7 @@ import {
 	TFile,
 	EditorPosition,
 	Menu,
+	Editor,
 } from "obsidian";
 import {
 	EditorView,
@@ -274,10 +275,18 @@ export default class SidenotePlugin extends Plugin {
 			},
 		});
 
-		// Add command to insert margin note (unnumbered)
+		// Command for resequencing footnotes
 		this.addCommand({
-			id: "insert-margin-note",
-			name: "Insert margin note",
+			id: "resequence-footnotes",
+			name: "Resequence footnotes (if out of order)",
+			editorCallback: (editor) => {
+				this.resequenceFootnotes(editor);
+			},
+		});
+
+		this.addCommand({
+			id: "insert-sidenote",
+			name: "Insert sidenote",
 			editorCallback: (editor) => {
 				const cursor = editor.getCursor();
 				const selectedText = editor.getSelection();
@@ -285,34 +294,34 @@ export default class SidenotePlugin extends Plugin {
 				if (this.settings.sidenoteFormat === "html") {
 					if (selectedText) {
 						editor.replaceSelection(
-							`<span class="sidenote margin-note">${selectedText}</span>`,
+							`<span class="sidenote">${selectedText}</span>`,
 						);
 					} else {
-						const marginText =
-							'<span class="sidenote margin-note"></span>';
-						editor.replaceRange(marginText, cursor);
+						const sidenoteText = '<span class="sidenote"></span>';
+						editor.replaceRange(sidenoteText, cursor);
 						const newCursor = {
 							line: cursor.line,
-							ch: cursor.ch + '<span class="sidenote margin-note">'.length,
+							ch: cursor.ch + '<span class="sidenote">'.length,
 						};
 						editor.setCursor(newCursor);
 					}
 				} else {
-					// Footnote format — use mn- prefix
+					// Footnote format - need to find next available footnote number
 					const content = editor.getValue();
-					// Find next available mn- number
-					const existingMnRefs = content.match(/\[\^mn-(\d+)\]/g) ?? [];
-					const usedNumbers = existingMnRefs.map((fn) => {
-						const match = fn.match(/\[\^mn-(\d+)\]/);
+					const existingRefs = content.match(/\[\^(\d+)\]/g) ?? [];
+					const usedNumbers = existingRefs.map((fn) => {
+						const match = fn.match(/\[\^(\d+)\]/);
 						return match && match[1] ? parseInt(match[1], 10) : 0;
 					});
 					const nextNum =
 						usedNumbers.length > 0 ? Math.max(...usedNumbers) + 1 : 1;
 
+					// Determine the content for the footnote
 					const footnoteContent = selectedText
 						? selectedText
-						: "New margin note";
+						: "New sidenote";
 
+					// Find where footnote definitions are in the document
 					const lines = content.split("\n");
 					let lastFootnoteLine = -1;
 
@@ -323,14 +332,18 @@ export default class SidenotePlugin extends Plugin {
 						}
 					}
 
-					const definition = `[^mn-${nextNum}]: ${footnoteContent}`;
+					// Build the definition
+					const definition = `[^${nextNum}]: ${footnoteContent}`;
 
-					editor.replaceRange(`[^mn-${nextNum}]`, cursor);
+					// Insert the reference at cursor
+					editor.replaceRange(`[^${nextNum}]`, cursor);
 
+					// Re-read content after first insertion
 					const updatedContent = editor.getValue();
 					const updatedLines = updatedContent.split("\n");
 
 					if (lastFootnoteLine === -1) {
+						// No existing footnotes - add at the very end with blank lines
 						const lastLine = editor.lastLine();
 						const lastLineContent = editor.getLine(lastLine);
 						const prefix = lastLineContent.trim() ? "\n\n" : "\n";
@@ -339,6 +352,7 @@ export default class SidenotePlugin extends Plugin {
 							ch: lastLineContent.length,
 						});
 					} else {
+						// Find the last footnote line again in the updated content
 						let newLastFootnoteLine = -1;
 						for (let i = 0; i < updatedLines.length; i++) {
 							const line = updatedLines[i];
@@ -348,6 +362,7 @@ export default class SidenotePlugin extends Plugin {
 						}
 
 						if (newLastFootnoteLine !== -1) {
+							// Insert after the last footnote
 							const insertLineContent = editor.getLine(
 								newLastFootnoteLine,
 							);
@@ -358,8 +373,10 @@ export default class SidenotePlugin extends Plugin {
 						}
 					}
 
-					this.pendingFootnoteEdit = `mn-${nextNum}`;
+					// Set flag to auto-edit this footnote when the widget appears
+					this.pendingFootnoteEdit = String(nextNum);
 
+					// Schedule the auto-edit after widgets are rendered
 					setTimeout(() => {
 						this.triggerPendingFootnoteEdit();
 					}, SidenotePlugin.INSERT_SIDENOTE_DELAY);
@@ -2268,6 +2285,183 @@ export default class SidenotePlugin extends Plugin {
 
 		const definitions = this.parseFootnoteDefinitions(content);
 		return definitions.get(footnoteId) ?? null;
+	}
+
+	/**
+	 * Re-sequence all footnotes so references and definitions
+	 * are numbered sequentially in the order they appear in the text.
+	 * Margin notes ([^mn-...]) are re-sequenced separately.
+	 */
+	private resequenceFootnotes(editor: Editor) {
+		let content = editor.getValue();
+
+		// 1. Collect all references in order of appearance
+		//    Match [^...] that are NOT followed by : (i.e., not definitions)
+		const refRegex = /\[\^([^\]]+)\](?!:)/g;
+		const seenIds: string[] = [];
+		let m: RegExpExecArray | null;
+
+		while ((m = refRegex.exec(content)) !== null) {
+			const id = m[1];
+			if (id && !seenIds.includes(id)) {
+				seenIds.push(id);
+			}
+		}
+
+		if (seenIds.length === 0) return;
+
+		// 2. Build renumber map: old ID → new ID
+		const renumberMap = new Map<string, string>();
+		let regularCounter = 1;
+		let marginCounter = 1;
+
+		for (const oldId of seenIds) {
+			if (oldId.startsWith("mn-")) {
+				renumberMap.set(oldId, `mn-${marginCounter}`);
+				marginCounter++;
+			} else {
+				renumberMap.set(oldId, String(regularCounter));
+				regularCounter++;
+			}
+		}
+
+		// 3. Check if anything actually needs renumbering
+		let needsRenumber = false;
+		for (const [oldId, newId] of renumberMap) {
+			if (oldId !== newId) {
+				needsRenumber = true;
+				break;
+			}
+		}
+		if (!needsRenumber) return;
+
+		// 4. Replace all references and definitions using placeholder tokens
+		//    to avoid collisions (e.g., renaming "2" to "1" then "3" to "2"
+		//    would break if done directly)
+
+		// First pass: old IDs → unique placeholders
+		const placeholders = new Map<string, string>();
+		for (const oldId of seenIds) {
+			const placeholder = `__FN_PLACEHOLDER_${crypto.randomUUID().slice(0, 8)}__`;
+			placeholders.set(oldId, placeholder);
+		}
+
+		// Replace references: [^oldId] → [^placeholder]
+		for (const [oldId, placeholder] of placeholders) {
+			const escaped = oldId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+			const refPattern = new RegExp(`\\[\\^${escaped}\\]`, "g");
+			content = content.replace(refPattern, `[^${placeholder}]`);
+		}
+
+		// Second pass: placeholders → new IDs
+		for (const [oldId, placeholder] of placeholders) {
+			const newId = renumberMap.get(oldId)!;
+			const placeholderPattern = new RegExp(
+				`\\[\\^${placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\]`,
+				"g",
+			);
+			content = content.replace(placeholderPattern, `[^${newId}]`);
+		}
+
+		// 5. Reorder definitions to match new sequence
+		//    Extract all definitions, then re-insert in new order
+
+		// Parse definitions with their full text (including multi-line)
+		const defRegex = /^\[\^([^\]]+)\]:\s*(.*)$/gm;
+		const definitions = new Map<string, string>();
+		const defPositions: { start: number; end: number }[] = [];
+
+		const lines = content.split("\n");
+		let i = 0;
+		while (i < lines.length) {
+			const line = lines[i];
+			if (!line) {
+				i++;
+				continue;
+			}
+			const defMatch = line.match(/^\[\^([^\]]+)\]:\s*(.*)$/);
+			if (defMatch) {
+				const id = defMatch[1];
+				const textLines = [defMatch[2] || ""];
+				const startLine = i;
+
+				// Collect continuation lines
+				i++;
+				while (i < lines.length) {
+					const contLine = lines[i];
+					if (contLine && contLine.match(/^[ \t]+\S/)) {
+						textLines.push(contLine);
+						i++;
+					} else {
+						break;
+					}
+				}
+
+				if (id) {
+					definitions.set(id, textLines.join("\n"));
+					defPositions.push({ start: startLine, end: i - 1 });
+				}
+			} else {
+				i++;
+			}
+		}
+
+		// Remove old definitions (in reverse to preserve line indices)
+		for (let j = defPositions.length - 1; j >= 0; j--) {
+			const pos = defPositions[j];
+			if (!pos) continue;
+			lines.splice(pos.start, pos.end - pos.start + 1);
+		}
+
+		// Build new definitions in order
+		const newDefs: string[] = [];
+		// Regular footnotes first, then margin notes
+		const orderedIds = [...renumberMap.entries()]
+			.sort((a, b) => {
+				const aIsMargin = a[1].startsWith("mn-");
+				const bIsMargin = b[1].startsWith("mn-");
+				if (aIsMargin !== bIsMargin) return aIsMargin ? 1 : -1;
+				const aNum = parseInt(a[1].replace("mn-", ""), 10);
+				const bNum = parseInt(b[1].replace("mn-", ""), 10);
+				return aNum - bNum;
+			})
+			.map(([_, newId]) => newId);
+
+		for (const newId of orderedIds) {
+			const defText = definitions.get(newId);
+			if (defText !== undefined) {
+				newDefs.push(`[^${newId}]: ${defText}`);
+			}
+		}
+
+		// Find where definitions should go (end of file, or where they were)
+		// Remove trailing empty lines, add definitions, then trailing newline
+		while (
+			lines.length > 0 &&
+			(lines[lines.length - 1]?.trim() ?? "") === ""
+		) {
+			lines.pop();
+		}
+		lines.push(""); // blank line before definitions
+		lines.push(...newDefs);
+		lines.push(""); // trailing newline
+
+		content = lines.join("\n");
+
+		// 6. Apply to editor
+		const scrollInfo = (editor as any).cm?.scrollDOM?.scrollTop ?? 0;
+
+		this.isMutating = true;
+		try {
+			editor.setValue(content);
+		} finally {
+			this.isMutating = false;
+		}
+
+		// Restore scroll
+		const scroller =
+			this.cmRoot?.querySelector<HTMLElement>(".cm-scroller");
+		if (scroller) scroller.scrollTop = scrollInfo;
 	}
 
 	/**
