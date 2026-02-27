@@ -45,6 +45,7 @@ export interface SidenoteSettings {
 	resetNumberingPerHeading: boolean;
 	editInReadingMode: boolean;
 	pdfExport: boolean;
+	marginNoteDisplay: "margin" | "popup";
 }
 
 export const DEFAULT_SETTINGS: SidenoteSettings = {
@@ -88,6 +89,7 @@ export const DEFAULT_SETTINGS: SidenoteSettings = {
 	resetNumberingPerHeading: false,
 	editInReadingMode: false,
 	pdfExport: false,
+	marginNoteDisplay: "margin",
 };
 
 // ======================================================
@@ -534,6 +536,24 @@ export class SidenoteSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.editInReadingMode)
 					.onChange(async (value) => {
 						this.plugin.settings.editInReadingMode = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Margin note display")
+			.setDesc(
+				"Show margin notes in the margin, or as an ⓘ icon with a popup on click.",
+			)
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOption("margin", "Show in margin")
+					.addOption("popup", "Show as popup on click")
+					.setValue(this.plugin.settings.marginNoteDisplay)
+					.onChange(async (value) => {
+						this.plugin.settings.marginNoteDisplay = value as
+							| "margin"
+							| "popup";
 						await this.plugin.saveSettings();
 					}),
 			);

@@ -618,6 +618,22 @@ export default class SidenotePlugin extends Plugin {
 		return elOrId.classList.contains("margin-note");
 	}
 
+	public setupMarginNotePopupPublic(
+		wrapper: HTMLElement,
+		margin: HTMLElement,
+		contentText: string,
+		editable: boolean = false,
+		footnoteId?: string,
+	) {
+		this.setupMarginNotePopup(
+			wrapper,
+			margin,
+			contentText,
+			editable,
+			footnoteId,
+		);
+	}
+
 	private cleanupView(view: MarkdownView | null) {
 		if (!view) return;
 
@@ -671,6 +687,11 @@ export default class SidenotePlugin extends Plugin {
 					delete (el as HTMLElement).dataset.sidenotesProcessed;
 				});
 		}
+
+		// Clean up margin note popups appended to document.body
+		document
+			.querySelectorAll(".margin-note-popup")
+			.forEach((el) => el.remove());
 	}
 
 	async loadSettings() {
@@ -843,6 +864,11 @@ export default class SidenotePlugin extends Plugin {
 			const margin = target.closest<HTMLElement>("small.sidenote-margin");
 			if (!margin) return;
 
+			// Skip popup-mode margin notes — let the icon's own handler deal with it
+			if (margin.classList.contains("popup-mode-margin")) {
+				return;
+			}
+
 			// Don't interfere with an editor that's already open
 			if (margin.dataset.editing === "true") {
 				ev.stopPropagation();
@@ -880,11 +906,7 @@ export default class SidenotePlugin extends Plugin {
 				);
 			} else if (sidenoteType === "html") {
 				const rawText = margin.dataset.sidenoteRawText ?? "";
-				console.log("[Sidenotes] HTML edit click:", {
-					rawText,
-					hasRawText: !!margin.dataset.sidenoteRawText,
-					marginText: margin.textContent,
-				});
+
 				if (!rawText) return;
 
 				// Find this exact text in the source to confirm it exists
@@ -1619,13 +1641,6 @@ export default class SidenotePlugin extends Plugin {
 
 		const isFullRefresh = this.needsReadingModeRefresh;
 
-		// console.log(
-		// 	"[Sidenotes] processReadingModeSidenotes: isFullRefresh =",
-		// 	isFullRefresh,
-		// );
-
-		// console.log("[Sidenotes] processReadingModeSidenotes called");
-
 		const rect = readingRoot.getBoundingClientRect();
 		const width = rect.width;
 
@@ -1643,11 +1658,6 @@ export default class SidenotePlugin extends Plugin {
 		);
 
 		if (mode === "hidden") {
-			// console.log(
-			// 	"[Sidenotes] Mode is 'hidden' (width:",
-			// 	width,
-			// 	") — skipping",
-			// );
 			return;
 		}
 
@@ -1657,10 +1667,6 @@ export default class SidenotePlugin extends Plugin {
 		if (isFullRefresh) {
 			this.removeAllSidenoteMarkupFromReadingMode(readingRoot);
 		}
-
-		const sizer =
-			readingRoot.querySelector<HTMLElement>(".markdown-preview-sizer") ??
-			readingRoot;
 
 		// Collect items based on the sidenoteFormat setting
 		// Note: footnoteHtml is optional and only used for footnotes
@@ -1929,24 +1935,26 @@ export default class SidenotePlugin extends Plugin {
 
 			const wrapper = document.createElement("span");
 			wrapper.className = "sidenote-number";
+			const margin = document.createElement("small");
+			margin.className = "sidenote-margin";
+
 			if (isMargin) {
 				wrapper.classList.add("margin-note");
+				margin.classList.add("margin-note");
 			}
 			wrapper.dataset.sidenoteNum = numStr;
+			margin.dataset.sidenoteNum = numStr;
+
 			if (item.footnoteId) {
 				wrapper.dataset.footnoteId = item.footnoteId;
 			}
 
-			const margin = document.createElement("small");
-			margin.className = "sidenote-margin";
-			if (isMargin) {
-				margin.classList.add("margin-note");
-			}
-			margin.dataset.sidenoteNum = numStr;
-
 			if (item.type === "sidenote") {
 				this.cloneContentToMargin(item.el, margin);
-				if (this.settings.editInReadingMode) {
+				if (
+					this.settings.editInReadingMode &&
+					!(isMargin && this.settings.marginNoteDisplay === "popup")
+				) {
 					margin.dataset.editing = "false";
 					margin.dataset.sidenoteType = "html";
 					margin.dataset.sidenoteRawText = item.rawText ?? item.text;
@@ -1966,11 +1974,25 @@ export default class SidenotePlugin extends Plugin {
 
 				margin.dataset.editing = "false";
 
-				if (this.settings.editInReadingMode && item.footnoteId) {
+				if (
+					this.settings.editInReadingMode &&
+					item.footnoteId &&
+					!(isMargin && this.settings.marginNoteDisplay === "popup")
+				) {
 					margin.dataset.sidenoteType = "footnote";
 					margin.dataset.footnoteId = item.footnoteId;
 					margin.style.cursor = "pointer";
 				}
+			}
+
+			if (isMargin && this.settings.marginNoteDisplay === "popup") {
+				this.setupMarginNotePopup(
+					wrapper,
+					margin,
+					item.rawText ?? item.text,
+					false,
+					item.footnoteId,
+				);
 			}
 
 			item.el.parentNode?.insertBefore(wrapper, item.el);
@@ -3782,11 +3804,7 @@ export default class SidenotePlugin extends Plugin {
 		cmRoot.dataset.hasSidenotes = this.documentHasSidenotes
 			? "true"
 			: "false";
-		// console.warn(
-		// 	"[Sidenotes] Processing sidenotes in editing mode... Has sidenotes?",
-		// 	this.documentHasSidenotes,
-		// );
-		// Get unwrapped sidenote spans (not yet processed)
+
 		const unwrappedSpans = Array.from(
 			cmRoot.querySelectorAll<HTMLElement>("span.sidenote"),
 		).filter(
@@ -3851,33 +3869,40 @@ export default class SidenotePlugin extends Plugin {
 					const numStr = isMargin ? "" : this.formatNumber(item.index);
 					const wrapper = document.createElement("span");
 					wrapper.className = "sidenote-number";
-					if (isMargin) {
-						wrapper.classList.add("margin-note");
-						const marker = document.createElement("span");
-						marker.className = "margin-note-marker";
-						marker.textContent = "※";
-						marker.style.cursor = "pointer";
-						marker.addEventListener("click", (e) => {
-							e.preventDefault();
-							e.stopPropagation();
-							this.startMarginEdit(margin, item.el, item.index, e);
-						});
-						marker.addEventListener("mousedown", (e) => {
-							e.stopPropagation();
-						});
-						wrapper.appendChild(marker);
-					}
-					wrapper.dataset.sidenoteNum = numStr;
-
 					const margin = document.createElement("small");
 					margin.className = "sidenote-margin";
+
 					if (isMargin) {
+						wrapper.classList.add("margin-note");
 						margin.classList.add("margin-note");
 					}
+
+					wrapper.dataset.sidenoteNum = numStr;
 					margin.dataset.sidenoteNum = numStr;
 
 					const raw = this.normalizeText(item.el.textContent ?? "");
 					margin.appendChild(this.renderLinksToFragment(raw));
+
+					if (isMargin) {
+						const marker = document.createElement("span");
+						marker.className = "margin-note-marker";
+						marker.textContent = "※";
+						wrapper.appendChild(marker);
+
+						if (this.settings.marginNoteDisplay === "popup") {
+							this.setupMarginNotePopup(wrapper, margin, item.text, true);
+						} else {
+							marker.style.cursor = "pointer";
+							marker.addEventListener("click", (e) => {
+								e.preventDefault();
+								e.stopPropagation();
+								this.startMarginEdit(margin, item.el, item.index, e);
+							});
+							marker.addEventListener("mousedown", (e) => {
+								e.stopPropagation();
+							});
+						}
+					}
 
 					// Make margin editable and set up edit handling
 					this.setupMarginEditing(
@@ -4364,6 +4389,38 @@ export default class SidenotePlugin extends Plugin {
 
 		if (scroller) scroller.scrollTop = scrollTop;
 		this.isEditingMargin = false;
+	}
+
+	private commitFootnoteSidenoteText(footnoteId: string, newText: string) {
+		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+		if (!view?.editor) return;
+
+		const editor = view.editor;
+		const content = editor.getValue();
+
+		const defRegex = new RegExp(
+			`^(\\[\\^${footnoteId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\]:\\s*)(.*)$`,
+			"m",
+		);
+		const match = content.match(defRegex);
+		if (!match || match.index === undefined || !match[1]) return;
+
+		const from = editor.offsetToPos(match.index + match[1].length);
+		const to = editor.offsetToPos(match.index + match[0].length);
+
+		this.isMutating = true;
+		try {
+			editor.replaceRange(newText, from, to);
+		} finally {
+			this.isMutating = false;
+		}
+	}
+
+	public commitFootnoteSidenoteTextPublic(
+		footnoteId: string,
+		newText: string,
+	) {
+		this.commitFootnoteSidenoteText(footnoteId, newText);
 	}
 
 	// ==================== Collision Avoidance ====================
@@ -5221,6 +5278,250 @@ export default class SidenotePlugin extends Plugin {
 			menu.showAtMouseEvent(e);
 		});
 	}
+
+	/**
+	 * Convert a margin note wrapper to popup mode:
+	 * hide the margin, show an ⓘ icon inline, and display
+	 * content in a small popup on click.
+	 */
+	private setupMarginNotePopup(
+		wrapper: HTMLElement,
+		margin: HTMLElement,
+		contentText: string,
+		editable: boolean = false,
+		footnoteId?: string,
+	) {
+		wrapper.classList.add("popup-mode");
+		margin.classList.add("popup-mode-margin");
+
+		margin.innerHTML = "";
+		const icon = document.createElement("span");
+		icon.className = "margin-note-icon";
+		icon.textContent = "ⓘ";
+		icon.setAttribute("aria-label", "Show margin note");
+		margin.appendChild(icon);
+
+		const popup = document.createElement("div");
+		popup.className = "margin-note-popup";
+
+		const closeBtn = document.createElement("span");
+		closeBtn.className = "margin-note-popup-close";
+		closeBtn.textContent = "✕";
+		closeBtn.addEventListener("click", (e) => {
+			e.stopPropagation();
+			popup.classList.remove("is-visible");
+		});
+		popup.appendChild(closeBtn);
+
+		const contentEl = document.createElement("div");
+		contentEl.className = "margin-note-popup-content";
+
+		let currentRawText = contentText;
+
+		if (editable) {
+			let popupCmView: EditorView | null = null;
+
+			const commitAndClosePopup = (commit: boolean) => {
+				if (!popupCmView) return;
+				const newText = popupCmView.state.doc.toString();
+				if (commit && newText !== currentRawText) {
+					if (footnoteId) {
+						this.commitFootnoteSidenoteText(footnoteId, newText);
+					} else {
+						this.commitHtmlSpanSidenoteText(currentRawText, newText);
+					}
+					currentRawText = newText;
+				}
+				popupCmView.destroy();
+				popupCmView = null;
+				contentEl.innerHTML = "";
+				popup.classList.remove("is-visible");
+			};
+
+			const openEditor = () => {
+				if (popupCmView) {
+					popupCmView.destroy();
+					popupCmView = null;
+				}
+				contentEl.innerHTML = "";
+
+				const closeKeymap = keymap.of([
+					{
+						key: "Escape",
+						run: () => {
+							commitAndClosePopup(false);
+							return true;
+						},
+						preventDefault: true,
+					},
+					{
+						key: "Enter",
+						run: () => {
+							commitAndClosePopup(true);
+							return true;
+						},
+						preventDefault: true,
+					},
+					{
+						key: "Shift-Enter",
+						run: (view) => {
+							view.dispatch(view.state.replaceSelection("\n"));
+							return true;
+						},
+						preventDefault: true,
+					},
+				]);
+
+				const state = EditorState.create({
+					doc: currentRawText,
+					extensions: [
+						closeKeymap,
+						sidenoteEditorTheme,
+						history(),
+						markdown(),
+						syntaxHighlighting(sidenoteHighlightStyle, { fallback: true }),
+						markdownEditHotkeys,
+						keymap.of(historyKeymap),
+						keymap.of(defaultKeymap),
+						EditorView.lineWrapping,
+					],
+				});
+
+				popupCmView = new EditorView({
+					state,
+					parent: contentEl,
+				});
+
+				popupCmView.dom.classList.add("sidenote-cm-editor");
+
+				// Tell Obsidian this is the active editor so it routes shortcuts here
+				popupCmView.dom.addEventListener(
+					"focusin",
+					() => {
+						setWorkspaceActiveEditor(this, popupCmView);
+					},
+					true,
+				);
+
+				popupCmView.dom.addEventListener(
+					"focusout",
+					() => {
+						setWorkspaceActiveEditor(this, null);
+					},
+					true,
+				);
+
+				// Stop events from bubbling to Obsidian after CM6 processes them
+				popupCmView.dom.addEventListener("keydown", (e) => {
+					e.stopPropagation();
+				});
+
+				const scroller =
+					popupCmView.dom.querySelector<HTMLElement>(".cm-scroller");
+				if (scroller) {
+					scroller.style.padding = "0";
+					scroller.style.paddingLeft = "0";
+				}
+			};
+
+			icon.addEventListener("click", (e) => {
+				e.preventDefault();
+				e.stopPropagation();
+
+				const isVisible = popup.classList.contains("is-visible");
+
+				document
+					.querySelectorAll(".margin-note-popup.is-visible")
+					.forEach((el) => el.classList.remove("is-visible"));
+
+				if (!isVisible) {
+					const iconRect = icon.getBoundingClientRect();
+					popup.style.top = `${iconRect.bottom + window.scrollY + 4}px`;
+					popup.style.left = `${iconRect.left + window.scrollX}px`;
+					popup.classList.add("is-visible");
+					openEditor();
+				} else {
+					commitAndClosePopup(true);
+				}
+			});
+
+			icon.addEventListener("mousedown", (e) => {
+				e.stopPropagation();
+			});
+
+			const onOutsideClick = (e: MouseEvent) => {
+				if (
+					!popup.contains(e.target as Node) &&
+					!icon.contains(e.target as Node)
+				) {
+					commitAndClosePopup(true);
+				}
+			};
+			document.addEventListener("click", onOutsideClick, true);
+
+			(
+				wrapper as HTMLElement & { _popupCleanup?: () => void }
+			)._popupCleanup = () => {
+				document.removeEventListener("click", onOutsideClick, true);
+				if (popupCmView) {
+					popupCmView.destroy();
+					popupCmView = null;
+				}
+				popup.remove();
+			};
+
+			popup.appendChild(contentEl);
+			document.body.appendChild(popup);
+			return;
+		}
+
+		// Read-only path
+		contentEl.appendChild(
+			this.renderLinksToFragment(this.normalizeText(contentText)),
+		);
+
+		popup.appendChild(contentEl);
+		document.body.appendChild(popup);
+
+		icon.addEventListener("click", (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+
+			const isVisible = popup.classList.contains("is-visible");
+
+			document
+				.querySelectorAll(".margin-note-popup.is-visible")
+				.forEach((el) => el.classList.remove("is-visible"));
+
+			if (!isVisible) {
+				const iconRect = icon.getBoundingClientRect();
+				popup.style.top = `${iconRect.bottom + window.scrollY + 4}px`;
+				popup.style.left = `${iconRect.left + window.scrollX}px`;
+				popup.classList.add("is-visible");
+			}
+		});
+
+		icon.addEventListener("mousedown", (e) => {
+			e.stopPropagation();
+		});
+
+		const onOutsideClick = (e: MouseEvent) => {
+			if (
+				!popup.contains(e.target as Node) &&
+				!icon.contains(e.target as Node)
+			) {
+				popup.classList.remove("is-visible");
+			}
+		};
+		document.addEventListener("click", onOutsideClick, true);
+
+		(
+			wrapper as HTMLElement & { _popupCleanup?: () => void }
+		)._popupCleanup = () => {
+			document.removeEventListener("click", onOutsideClick, true);
+			popup.remove();
+		};
+	}
 }
 
 function setCssProps(
@@ -5522,9 +5823,7 @@ class FootnoteSidenoteWidget extends WidgetType {
 
 		const wrapper = document.createElement("span");
 		wrapper.className = "sidenote-number";
-		if (isMargin) {
-			wrapper.classList.add("margin-note");
-		}
+
 		wrapper.dataset.sidenoteNum = this.numberText;
 		wrapper.dataset.footnoteId = this.footnoteId;
 
@@ -5532,7 +5831,9 @@ class FootnoteSidenoteWidget extends WidgetType {
 		margin.className = "sidenote-margin";
 		if (isMargin) {
 			margin.classList.add("margin-note");
+			wrapper.classList.add("margin-note");
 		}
+
 		margin.dataset.sidenoteNum = this.numberText;
 		margin.style.setProperty("--sidenote-shift", "0px");
 		margin.style.setProperty("--sidenote-line-offset", "0px");
@@ -5542,6 +5843,17 @@ class FootnoteSidenoteWidget extends WidgetType {
 			this.plugin.normalizeTextPublic(this.content),
 		);
 		margin.appendChild(fragment);
+
+		// Setup popup
+		if (isMargin && this.plugin.settings.marginNoteDisplay === "popup") {
+			this.plugin.setupMarginNotePopupPublic(
+				wrapper,
+				margin,
+				this.content,
+				true,
+				this.footnoteId,
+			);
+		}
 
 		// Set up editing for the margin
 		this.setupMarginEditing(margin);
