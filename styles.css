@@ -672,6 +672,10 @@ section.footnotes li:has(> p > a[data-footref^="mn-"]) {
 	line-height: 1;
 }
 
+.margin-note-marker:hover {
+	color: var(--text-normal) !important;
+}
+
 .margin-note-marker-img {
 	width: 0.75em;
 	height: 0.75em;
