@@ -665,11 +665,20 @@ section.footnotes li:has(> p > a[data-footref^="mn-"]) {
 }
 
 .margin-note-marker {
-	font-size: 0.85em;
+	font-size: 1em;
 	color: var(--text-muted);
 	cursor: default;
-	vertical-align: super;
+	/* vertical-align: super; */
 	line-height: 1;
+}
+
+.margin-note-marker-img {
+	width: 0.75em;
+	height: 0.75em;
+	/* vertical-align: super; */
+	display: inline-block;
+	cursor: pointer;
+	pointer-events: none;
 }
 
 /* Hide badge styles for margin notes */
@@ -695,7 +704,8 @@ section.footnotes li:has(> p > a[data-footref^="mn-"]) {
 .margin-note-icon {
 	display: block;
 	cursor: pointer;
-	font-size: 1.3em;
+	font-size: 1.5em;
+	font-weight: bold;
 	color: var(--text-muted);
 	line-height: 1;
 	transition: color 0.15s ease;
@@ -769,4 +779,13 @@ section.footnotes li:has(> p > a[data-footref^="mn-"]) {
 .margin-note-popup-content[contenteditable="true"]:focus {
 	background: var(--background-secondary);
 	box-shadow: inset 0 0 0 1px var(--background-modifier-border);
+}
+
+.margin-note-icon-img {
+	width: 1.5em;
+	height: 1.5em;
+	vertical-align: middle;
+	display: inline-block;
+	cursor: pointer;
+	pointer-events: none;
 }

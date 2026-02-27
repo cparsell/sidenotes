@@ -46,6 +46,7 @@ export interface SidenoteSettings {
 	editInReadingMode: boolean;
 	pdfExport: boolean;
 	marginNoteDisplay: "margin" | "popup";
+	popupIcon: string;
 }
 
 export const DEFAULT_SETTINGS: SidenoteSettings = {
@@ -90,6 +91,7 @@ export const DEFAULT_SETTINGS: SidenoteSettings = {
 	editInReadingMode: false,
 	pdfExport: false,
 	marginNoteDisplay: "margin",
+	popupIcon: "ⓘ",
 };
 
 // ======================================================
@@ -554,6 +556,21 @@ export class SidenoteSettingTab extends PluginSettingTab {
 						this.plugin.settings.marginNoteDisplay = value as
 							| "margin"
 							| "popup";
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Margin note popup icon")
+			.setDesc(
+				"Specify an icon to use for margin notes when 'Show as popup on click' is selected. You can use any Unicode character, e.g. ⓘ or 🛈, or a filename (stored in plugins/sidenotes/assets)",
+			)
+			.addText((text) =>
+				text
+					.setPlaceholder("e.g. ⓘ or 🛈 or information_source.png")
+					.setValue(this.plugin.settings.popupIcon)
+					.onChange(async (value) => {
+						this.plugin.settings.popupIcon = value.trim();
 						await this.plugin.saveSettings();
 					}),
 			);

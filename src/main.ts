@@ -3979,22 +3979,46 @@ export default class SidenotePlugin extends Plugin {
 					if (isMargin) {
 						const marker = document.createElement("span");
 						marker.className = "margin-note-marker";
-						marker.textContent = "※";
-						wrapper.appendChild(marker);
 
-						if (this.settings.marginNoteDisplay === "popup") {
-							this.setupMarginNotePopup(wrapper, margin, item.text, true);
+						const iconSetting = this.settings.popupIcon || "ⓘ";
+
+						if (
+							iconSetting.endsWith(".png") ||
+							iconSetting.endsWith(".svg") ||
+							iconSetting.endsWith(".jpg")
+						) {
+							const img = document.createElement("img");
+							img.src = this.app.vault.adapter.getResourcePath(
+								`${this.manifest.dir}/assets/${iconSetting}`,
+							);
+							img.className = "margin-note-marker-img";
+							marker.appendChild(img);
 						} else {
-							marker.style.cursor = "pointer";
+							marker.textContent = iconSetting;
+						}
+
+						marker.style.cursor = "pointer";
+						if (this.settings.marginNoteDisplay === "popup") {
+							marker.addEventListener("click", (e) => {
+								e.preventDefault();
+								e.stopPropagation();
+								// Find the popup icon in the margin and click it
+								const popupIcon = margin.querySelector<HTMLElement>(
+									".margin-note-icon",
+								);
+								if (popupIcon) popupIcon.click();
+							});
+						} else {
 							marker.addEventListener("click", (e) => {
 								e.preventDefault();
 								e.stopPropagation();
 								this.startMarginEdit(margin, item.el, item.index, e);
 							});
-							marker.addEventListener("mousedown", (e) => {
-								e.stopPropagation();
-							});
 						}
+						marker.addEventListener("mousedown", (e) => {
+							e.stopPropagation();
+						});
+						wrapper.appendChild(marker);
 					}
 
 					// Make margin editable and set up edit handling
@@ -5405,8 +5429,27 @@ export default class SidenotePlugin extends Plugin {
 		margin.innerHTML = "";
 		const icon = document.createElement("span");
 		icon.className = "margin-note-icon";
-		icon.textContent = "ⓘ";
 		icon.setAttribute("aria-label", "Show margin note");
+
+		const iconSetting = this.settings.popupIcon || "ⓘ";
+
+		if (
+			iconSetting.endsWith(".png") ||
+			iconSetting.endsWith(".svg") ||
+			iconSetting.endsWith(".jpg")
+		) {
+			// Image file from plugin assets folder
+			const img = document.createElement("img");
+			img.src = this.app.vault.adapter.getResourcePath(
+				`${this.manifest.dir}/assets/${iconSetting}`,
+			);
+			img.className = "margin-note-icon-img";
+			icon.appendChild(img);
+		} else {
+			// Unicode character
+			icon.textContent = iconSetting;
+		}
+
 		margin.appendChild(icon);
 
 		const popup = document.createElement("div");
@@ -6281,8 +6324,23 @@ class MarginNoteMarkerWidget extends WidgetType {
 	toDOM(): HTMLElement {
 		const span = document.createElement("span");
 		span.className = "margin-note-marker";
-		span.textContent = "※";
-		span.style.cursor = "pointer";
+
+		const iconSetting = this.plugin.settings.popupIcon || "ⓘ";
+
+		if (
+			iconSetting.endsWith(".png") ||
+			iconSetting.endsWith(".svg") ||
+			iconSetting.endsWith(".jpg")
+		) {
+			const img = document.createElement("img");
+			img.src = this.plugin.app.vault.adapter.getResourcePath(
+				`${this.plugin.manifest.dir}/assets/${iconSetting}`,
+			);
+			img.className = "margin-note-marker-img";
+			span.appendChild(img);
+		} else {
+			span.textContent = iconSetting;
+		}
 
 		span.addEventListener("mousedown", (e) => {
 			e.stopPropagation();
@@ -6292,19 +6350,24 @@ class MarginNoteMarkerWidget extends WidgetType {
 			e.preventDefault();
 			e.stopPropagation();
 
-			// Find the sidenote-number wrapper for this footnote
 			const cmContent = span.closest(".cm-content");
 			if (!cmContent) return;
 			const wrapper = cmContent.querySelector<HTMLElement>(
 				`span.sidenote-number[data-footnote-id="${this.footnoteId}"]`,
 			);
 			if (!wrapper) return;
-			const margin = wrapper.querySelector<HTMLElement>(
-				"small.sidenote-margin",
-			);
-			if (!margin) return;
 
-			margin.click();
+			if (this.plugin.settings.marginNoteDisplay === "popup") {
+				const popupIcon = wrapper.querySelector<HTMLElement>(
+					".margin-note-icon",
+				);
+				if (popupIcon) popupIcon.click();
+			} else {
+				const marginEl = wrapper.querySelector<HTMLElement>(
+					"small.sidenote-margin",
+				);
+				if (marginEl) marginEl.click();
+			}
 		});
 
 		return span;
