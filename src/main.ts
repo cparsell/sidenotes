@@ -3973,9 +3973,6 @@ export default class SidenotePlugin extends Plugin {
 					wrapper.dataset.sidenoteNum = numStr;
 					margin.dataset.sidenoteNum = numStr;
 
-					const raw = this.normalizeText(item.el.textContent ?? "");
-					margin.appendChild(this.renderLinksToFragment(raw));
-
 					if (isMargin) {
 						const marker = document.createElement("span");
 						marker.className = "margin-note-marker";
@@ -4021,6 +4018,13 @@ export default class SidenotePlugin extends Plugin {
 						wrapper.appendChild(marker);
 					}
 
+					const raw = this.normalizeText(item.el.textContent ?? "");
+					margin.appendChild(this.renderLinksToFragment(raw));
+
+					// Setup popup AFTER margin has content
+					if (isMargin && this.settings.marginNoteDisplay === "popup") {
+						this.setupMarginNotePopup(wrapper, margin, item.text, true);
+					}
 					// Make margin editable and set up edit handling
 					this.setupMarginEditing(
 						margin,
