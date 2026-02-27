@@ -384,6 +384,99 @@ export default class SidenotePlugin extends Plugin {
 			},
 		});
 
+		// Add command to insert margin note (unnumbered)
+		this.addCommand({
+			id: "insert-margin-note",
+			name: "Insert margin note",
+			editorCallback: (editor) => {
+				const cursor = editor.getCursor();
+				const selectedText = editor.getSelection();
+
+				if (this.settings.sidenoteFormat === "html") {
+					if (selectedText) {
+						editor.replaceSelection(
+							`<span class="sidenote margin-note">${selectedText}</span>`,
+						);
+					} else {
+						const marginText =
+							'<span class="sidenote margin-note"></span>';
+						editor.replaceRange(marginText, cursor);
+						const newCursor = {
+							line: cursor.line,
+							ch: cursor.ch + '<span class="sidenote margin-note">'.length,
+						};
+						editor.setCursor(newCursor);
+					}
+				} else {
+					// Footnote format — use mn- prefix
+					const content = editor.getValue();
+					// Find next available mn- number
+					const existingMnRefs = content.match(/\[\^mn-(\d+)\]/g) ?? [];
+					const usedNumbers = existingMnRefs.map((fn) => {
+						const match = fn.match(/\[\^mn-(\d+)\]/);
+						return match && match[1] ? parseInt(match[1], 10) : 0;
+					});
+					const nextNum =
+						usedNumbers.length > 0 ? Math.max(...usedNumbers) + 1 : 1;
+
+					const footnoteContent = selectedText
+						? selectedText
+						: "New margin note";
+
+					const lines = content.split("\n");
+					let lastFootnoteLine = -1;
+
+					for (let i = 0; i < lines.length; i++) {
+						const line = lines[i];
+						if (line && line.match(/^\[\^[^\]]+\]:/)) {
+							lastFootnoteLine = i;
+						}
+					}
+
+					const definition = `[^mn-${nextNum}]: ${footnoteContent}`;
+
+					editor.replaceRange(`[^mn-${nextNum}]`, cursor);
+
+					const updatedContent = editor.getValue();
+					const updatedLines = updatedContent.split("\n");
+
+					if (lastFootnoteLine === -1) {
+						const lastLine = editor.lastLine();
+						const lastLineContent = editor.getLine(lastLine);
+						const prefix = lastLineContent.trim() ? "\n\n" : "\n";
+						editor.replaceRange(prefix + definition, {
+							line: lastLine,
+							ch: lastLineContent.length,
+						});
+					} else {
+						let newLastFootnoteLine = -1;
+						for (let i = 0; i < updatedLines.length; i++) {
+							const line = updatedLines[i];
+							if (line && line.match(/^\[\^[^\]]+\]:/)) {
+								newLastFootnoteLine = i;
+							}
+						}
+
+						if (newLastFootnoteLine !== -1) {
+							const insertLineContent = editor.getLine(
+								newLastFootnoteLine,
+							);
+							editor.replaceRange("\n" + definition, {
+								line: newLastFootnoteLine,
+								ch: insertLineContent.length,
+							});
+						}
+					}
+
+					this.pendingFootnoteEdit = `mn-${nextNum}`;
+
+					setTimeout(() => {
+						this.triggerPendingFootnoteEdit();
+					}, SidenotePlugin.INSERT_SIDENOTE_DELAY);
+				}
+			},
+		});
+
 		this.registerMarkdownPostProcessor((element, context) => {
 			let hasContent = false;
 
