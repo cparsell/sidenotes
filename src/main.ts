@@ -4653,6 +4653,7 @@ export default class SidenotePlugin extends Plugin {
 	/**
 	 * Run collision avoidance specifically for reading mode sidenotes.
 	 * This is called after processing sidenotes in reading mode.
+	 * @param readingRoot The root element of the reading view to search for margins
 	 */
 	private avoidCollisionsInReadingMode(readingRoot: HTMLElement) {
 		if (!readingRoot?.isConnected) return;
@@ -4845,6 +4846,10 @@ export default class SidenotePlugin extends Plugin {
 
 	/**
 	 * Public version for widget to use.
+	 * @param element The contenteditable element
+	 * @param prefix The prefix to add (e.g., "**" for bold, "*" for italic)
+	 * @param suffix The suffix to add (defaults to prefix)
+	 * @param linkMode If true, handle as a link with [text](url) format
 	 */
 	public applyMarkdownFormattingPublic(
 		element: HTMLElement,
@@ -4988,6 +4993,7 @@ export default class SidenotePlugin extends Plugin {
 	/**
 	 * Render markdown-formatted text to a DocumentFragment.
 	 * Supports: **bold**, *italic*, _italic_, `code`, [links](url), and [[wiki links]]
+	 * @param text The markdown-formatted text to render
 	 */
 	private renderLinksToFragment(text: string): DocumentFragment {
 		const frag = document.createDocumentFragment();
@@ -5099,6 +5105,8 @@ export default class SidenotePlugin extends Plugin {
 	/**
 	 * Get the start and end character offsets of the current selection
 	 * within a contentEditable element's text content.
+	 * @param element The contentEditable element
+	 * @param range The current selection range
 	 */
 	private getSelectionOffsets(
 		element: HTMLElement,
@@ -5169,6 +5177,7 @@ export default class SidenotePlugin extends Plugin {
 	 * We also attach on document as a fallback for reading mode (where there's no CM6).
 	 *
 	 * Returns a cleanup function.
+	 * @param margin The margin element being edited
 	 */
 	private setupMarginKeyboardCapture(margin: HTMLElement): () => void {
 		this.setCurrentlyEditingMargin(margin);
@@ -5337,6 +5346,12 @@ export default class SidenotePlugin extends Plugin {
 		return this.setupMarginKeyboardCapture(margin);
 	}
 
+	/**
+	 * Attach a context menu to a sidenote margin element with options to edit or delete the sidenote.
+	 * This is currently unused
+	 * @param margin The margin element to attach the context menu to
+	 * @param opts Options for the context menu actions
+	 */
 	private attachSidenoteContextMenu(
 		margin: HTMLElement,
 		opts: {
