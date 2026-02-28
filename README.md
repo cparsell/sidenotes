@@ -11,7 +11,7 @@ _Basic sidenote capabilities demonstrated_
 _An optional style that highlights references._
 
 ![Editing sidenotes](https://github.com/cparsell/sidenotes/blob/main/Screen-Record-Editing2.gif)
-_Editing a sidenote in the margin and then adding a new sidenote_
+_Editing a sidenote in the margin, adding a new sidenote, then adding a new margin note_
 
 ### Features
 
