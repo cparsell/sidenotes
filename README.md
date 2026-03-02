@@ -22,11 +22,11 @@ _Editing a sidenote in the margin, adding a new sidenote, then adding a new marg
   - Sidenotes can be configured to work one of two ways:
     - **Markdown footnotes**: `This is a sentence[^1].`
     - **an HTML tag**: `<span class="sidenote">`.
-  - **Margin Notes**: Non-numbered notes displayed in the margin. In Editing Mode, it will display a **※** symbol in the main text where the margin note is "placed".
-    - **Markdown footnotes**: Written as `[^mn-1]` or `[^mn-kitchen]`
-    - **HTML**: Written as `<span class="sidenote margin-note">`.
+- **Margin Notes**: Non-numbered notes displayed in the margin. In Editing Mode, it will display a symbol in the main text where the margin note is "placed".
+  - **Markdown footnotes**: Written as `[^mn-1]` or `[^mn-kitchen]`
+  - **HTML**: Written as `<span class="sidenote margin-note">`.
 
-- **They are editable in the margin**. Click on it, edit, and press enter.
+- **They are editable in the margin**. Click on it, edit, and press enter. `SHIFT+ENTER` for a new line.
 - **Dynamic styling**: Font size shrinks as horizontal space get smaller. At a certain breakpoint, sidenotes hide when a window gets too skinny.
 - **PDF Export**: This currently only works with HTML sidenotes. Footnotes are more complicated and will take time to (hopefully) figure that out
 - **Settings**:
@@ -39,13 +39,24 @@ _Editing a sidenote in the margin, adding a new sidenote, then adding a new marg
 
 ### Goal Features
 
-- [ ] Command: Re-sequence footnote numbers. They have a habit of getting out of order once you insert new ones.
-- [x] Option to have non-numbered sidenotes - aka "margin notes" ✅ 2026-02-26
 - [ ] Optional background color to sidenotes
+- [x] Command: Re-sequence footnote numbers. They have a habit of getting out of order once you insert new ones. ✅ 2026-02-27
+- [x] Option to have non-numbered sidenotes - aka "margin notes" ✅ 2026-02-26
+- [x] Add scaling option for margin note icon in text and in margin ✅ 2026-03-02
+- [x] Option for hidden margin notes: ✅ 2026-03-02
+  - ![:information_source:|30](https://forum.obsidian.md/images/emoji/apple/information_source.png?v=15 ":information_source:") (U+2139), 🛈 (U+1F6C8), 🛈 (U+1F6C8), 🗩 (U+1F5E9), 🗪 (U+1F5EA)
+  - 𝚤 (U+1D6A4) - best 1
+  - ⓘ (U+24D8) - best 2
+  - Ⓘ (U+24BE)
+  - 🄸 (U+1F138)
+
+### Maybe Features
+
+- [ ] Badge style for margin notes
 - [ ] Option for Sidenotes on both left and right margins (may only work with HTML, seems unlikely to allow coding like this with Markdown footnotes)
 - [ ] Option for style templates for multiple sidenotes types - e.g. one type has a background color, another does not.
 - [ ] Highlight the referencing _sentence_ in the main note text when hovering over a sidenote
-- [ ] Possible feature: Footnote-Sidenote switch command
+- [ ] Command: Switch between Footnotes visible <-> Sidenotes visible
 
 ## Alternatives and inspirations
 
