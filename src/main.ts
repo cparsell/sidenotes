@@ -6545,7 +6545,7 @@ class FootnoteSidenoteViewPlugin {
 
 			if (isMargin) {
 				decorations.push({
-					from: from,
+					from: to,
 					decoration: Decoration.widget({
 						widget: new MarginNoteMarkerWidget(this.plugin, id),
 						side: -1,

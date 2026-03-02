@@ -807,3 +807,10 @@ span.sidenote-number.margin-note {
 	cursor: pointer;
 	pointer-events: none;
 }
+
+/* .cm-margin-note-ref-hidden {
+	font-size: 0;
+	width: 0;
+	overflow: hidden;
+	display: inline-block;
+} */
