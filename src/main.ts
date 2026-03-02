@@ -1309,7 +1309,7 @@ export default class SidenotePlugin extends Plugin {
 			`${s.popupIconScaleFactor}em`,
 		);
 		root.style.setProperty(
-			"--sn-mn-scale",
+			"--sn-mn-marker-scale",
 			`${s.marginNoteScaleFactor}em`,
 		);
 	}

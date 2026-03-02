@@ -602,7 +602,7 @@ export class SidenoteSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Margin note text icon scale factor")
+			.setName("Margin note marker scale factor")
 			.setDesc(
 				"Scale factor for margin note icon placed in the main note (default: 1)",
 			)

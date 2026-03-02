@@ -667,7 +667,7 @@ section.footnotes li:has(> p > a[data-footref^="mn-"]) {
 .margin-note-marker {
 	position: relative;
 	display: inline;
-	font-size: var(--sn-mn-scale, 1em);
+	font-size: var(--sn-mn-marker-scale, 1em);
 	color: var(--text-muted);
 	cursor: pointer;
 	vertical-align: baseline;
@@ -685,8 +685,8 @@ section.footnotes li:has(> p > a[data-footref^="mn-"]) {
 }
 
 .margin-note-marker-img {
-	width: var(--sn-mn-scale, 1em);
-	height: var(--sn-mn-scale, 1em);
+	width: var(--sn-mn-marker-scale, 1em);
+	height: var(--sn-mn-marker-scale, 1em);
 	vertical-align: text-top;
 	display: inline-block;
 	cursor: pointer;
