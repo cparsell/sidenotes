@@ -1302,6 +1302,16 @@ export default class SidenotePlugin extends Plugin {
 		root.dataset.snHideFootnoteNumbers = s.hideFootnoteNumbers
 			? "true"
 			: "false";
+
+		// Margin note specific styles
+		root.style.setProperty(
+			"--sn-mn-popup-scale",
+			`${s.popupIconScaleFactor}em`,
+		);
+		root.style.setProperty(
+			"--sn-mn-scale",
+			`${s.marginNoteScaleFactor}em`,
+		);
 	}
 
 	/**

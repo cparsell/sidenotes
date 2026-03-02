@@ -667,7 +667,7 @@ section.footnotes li:has(> p > a[data-footref^="mn-"]) {
 .margin-note-marker {
 	position: relative;
 	display: inline;
-	font-size: 0.7em;
+	font-size: var(--sn-mn-scale, 1em);
 	color: var(--text-muted);
 	cursor: pointer;
 	vertical-align: baseline;
@@ -685,8 +685,8 @@ section.footnotes li:has(> p > a[data-footref^="mn-"]) {
 }
 
 .margin-note-marker-img {
-	width: 0.75em;
-	height: 0.75em;
+	width: var(--sn-mn-scale, 1em);
+	height: var(--sn-mn-scale, 1em);
 	vertical-align: text-top;
 	display: inline-block;
 	cursor: pointer;
@@ -716,7 +716,7 @@ section.footnotes li:has(> p > a[data-footref^="mn-"]) {
 .margin-note-icon {
 	display: block;
 	cursor: pointer;
-	font-size: 1.5em;
+	font-size: var(--sn-mn-popup-scale, 1.5em);
 	font-weight: bold;
 	color: var(--text-accent) !important;
 	line-height: 0.5 !important;
@@ -800,8 +800,8 @@ span.sidenote-number.margin-note {
 }
 
 .margin-note-icon-img {
-	width: 1.5em;
-	height: 1.5em;
+	width: var(--sn-mn-popup-scale, 1.5em);
+	height: var(--sn-mn-popup-scale, 1.5em);
 	vertical-align: middle;
 	display: inline-block;
 	cursor: pointer;

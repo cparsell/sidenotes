@@ -45,8 +45,13 @@ export interface SidenoteSettings {
 	resetNumberingPerHeading: boolean;
 	editInReadingMode: boolean;
 	pdfExport: boolean;
+
+	// Margin note
+
 	marginNoteDisplay: "margin" | "popup";
 	popupIcon: string;
+	marginNoteScaleFactor: number;
+	popupIconScaleFactor: number;
 }
 
 export const DEFAULT_SETTINGS: SidenoteSettings = {
@@ -90,8 +95,12 @@ export const DEFAULT_SETTINGS: SidenoteSettings = {
 	resetNumberingPerHeading: false,
 	editInReadingMode: false,
 	pdfExport: false,
+
+	// Margin note
 	marginNoteDisplay: "margin",
 	popupIcon: "ⓘ",
+	marginNoteScaleFactor: 1,
+	popupIconScaleFactor: 1,
 };
 
 // ======================================================
@@ -543,6 +552,23 @@ export class SidenoteSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
+			.setName(
+				"Include sidenotes in PDF export (HTML only - experimental)",
+			)
+			.setDesc(
+				"When enabled, sidenotes will be included in PDF exports. Note: this may cause formatting issues in some cases, and is not compatible with the Footnote format *yet*.",
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.pdfExport as boolean)
+					.onChange(async (value) => {
+						this.plugin.settings.pdfExport = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl).setName("Margin Notes").setHeading();
+		new Setting(containerEl)
 			.setName("Margin note display")
 			.setDesc(
 				"Show margin notes in the margin, or as an ⓘ icon with a popup on click.",
@@ -576,17 +602,33 @@ export class SidenoteSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName(
-				"Include sidenotes in PDF export (HTML only - experimental)",
-			)
+			.setName("Margin note text icon scale factor")
 			.setDesc(
-				"When enabled, sidenotes will be included in PDF exports. Note: this may cause formatting issues in some cases, and is not compatible with the Footnote format *yet*.",
+				"Scale factor for margin note icon placed in the main note (default: 1)",
 			)
-			.addToggle((toggle) =>
-				toggle
-					.setValue(this.plugin.settings.pdfExport as boolean)
+			.addSlider((slider) =>
+				slider
+					.setLimits(0.1, 3, 0.1)
+					.setValue(this.plugin.settings.marginNoteScaleFactor)
+					.setDynamicTooltip()
 					.onChange(async (value) => {
-						this.plugin.settings.pdfExport = value;
+						this.plugin.settings.marginNoteScaleFactor = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Margin note popup icon scale factor")
+			.setDesc(
+				"Scale factor for margin note popup icons - Only applies if using popup mode for margin notes(default: 1)",
+			)
+			.addSlider((slider) =>
+				slider
+					.setLimits(0.1, 3, 0.1)
+					.setValue(this.plugin.settings.popupIconScaleFactor)
+					.setDynamicTooltip()
+					.onChange(async (value) => {
+						this.plugin.settings.popupIconScaleFactor = value;
 						await this.plugin.saveSettings();
 					}),
 			);
