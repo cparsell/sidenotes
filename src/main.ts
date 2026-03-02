@@ -5485,6 +5485,16 @@ export default class SidenotePlugin extends Plugin {
 
 		if (editable) {
 			let popupCmView: EditorView | null = null;
+			let isEditing = false;
+
+			const renderReadOnly = () => {
+				contentEl.innerHTML = "";
+				contentEl.appendChild(
+					this.renderLinksToFragment(this.normalizeText(currentRawText)),
+				);
+				contentEl.style.cursor = "text";
+				isEditing = false;
+			};
 
 			const commitAndClosePopup = (commit: boolean) => {
 				if (!popupCmView) return;
@@ -5499,6 +5509,7 @@ export default class SidenotePlugin extends Plugin {
 				}
 				popupCmView.destroy();
 				popupCmView = null;
+				isEditing = false;
 				contentEl.innerHTML = "";
 				popup.classList.remove("is-visible");
 			};
@@ -5509,6 +5520,7 @@ export default class SidenotePlugin extends Plugin {
 					popupCmView = null;
 				}
 				contentEl.innerHTML = "";
+				isEditing = true;
 
 				const closeKeymap = keymap.of([
 					{
@@ -5559,7 +5571,6 @@ export default class SidenotePlugin extends Plugin {
 
 				popupCmView.dom.classList.add("sidenote-cm-editor");
 
-				// Tell Obsidian this is the active editor so it routes shortcuts here
 				popupCmView.dom.addEventListener(
 					"focusin",
 					() => {
@@ -5576,7 +5587,6 @@ export default class SidenotePlugin extends Plugin {
 					true,
 				);
 
-				// Stop events from bubbling to Obsidian after CM6 processes them
 				popupCmView.dom.addEventListener("keydown", (e) => {
 					e.stopPropagation();
 				});
@@ -5587,7 +5597,41 @@ export default class SidenotePlugin extends Plugin {
 					scroller.style.padding = "0";
 					scroller.style.paddingLeft = "0";
 				}
+
+				requestAnimationFrame(() => popupCmView?.focus());
 			};
+
+			// Click on content: if clicking a link, let it open; otherwise start editing
+			contentEl.addEventListener("click", (e) => {
+				if (isEditing) return;
+
+				const target = e.target as HTMLElement;
+				if (target.tagName === "A" || target.closest("a")) {
+					// Let the link open naturally
+					return;
+				}
+
+				e.preventDefault();
+				e.stopPropagation();
+				openEditor();
+			});
+
+			// Listen for links being clicked, close popup when that happens
+			contentEl.addEventListener(
+				"click",
+				(e) => {
+					const target = e.target as HTMLElement;
+					if (target.tagName === "A" || target.closest("a")) {
+						// Close popup when a link is clicked
+						popup.classList.remove("is-visible");
+					}
+				},
+				true,
+			);
+
+			contentEl.addEventListener("mousedown", (e) => {
+				e.stopPropagation();
+			});
 
 			icon.addEventListener("click", (e) => {
 				e.preventDefault();
@@ -5604,9 +5648,13 @@ export default class SidenotePlugin extends Plugin {
 					popup.style.top = `${iconRect.bottom + window.scrollY + 4}px`;
 					popup.style.left = `${iconRect.left + window.scrollX}px`;
 					popup.classList.add("is-visible");
-					openEditor();
+					renderReadOnly();
 				} else {
-					commitAndClosePopup(true);
+					if (popupCmView) {
+						commitAndClosePopup(true);
+					} else {
+						popup.classList.remove("is-visible");
+					}
 				}
 			});
 
@@ -5619,7 +5667,11 @@ export default class SidenotePlugin extends Plugin {
 					!popup.contains(e.target as Node) &&
 					!icon.contains(e.target as Node)
 				) {
-					commitAndClosePopup(true);
+					if (popupCmView) {
+						commitAndClosePopup(true);
+					} else {
+						popup.classList.remove("is-visible");
+					}
 				}
 			};
 			document.addEventListener("click", onOutsideClick, true);
