@@ -37,6 +37,7 @@ import {
 	syntaxHighlighting,
 	HighlightStyle,
 } from "@codemirror/language";
+// eslint-disable-next-line import/no-extraneous-dependencies
 import { tags } from "@lezer/highlight";
 
 type CleanupFn = () => void;
