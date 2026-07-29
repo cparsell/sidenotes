@@ -133,4 +133,4 @@ The snippet of CSS I've been using for web publishing is located in `/digital-ga
 
 ## Disclaimer
 
-Large Language Models were used in the production and editing of this code. I do have experience writing code. I'll do my best not to keep it from being slop.
+Large Language Models were used in the production and editing of this code. I do have experience writing code. I'll do my best to keep it from being slop.
