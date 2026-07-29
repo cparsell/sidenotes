@@ -21,7 +21,7 @@ Numbered notes displayed in the margin instead of at the bottom of the note. Run
 
 - **Two formats**, chosen in settings:
   - **HTML spans**: `<span class="sidenote">text</span>` — I use these because it was simple to make them work in my web-published notes too.
-  - **Markdown footnotes**: `This is a sentence[^1].`.
+  - **Markdown footnotes**: `This is a sentence[^1].`
 - **Visible in Editing and Reading modes.** Source mode is left alone: it shows the bare markdown.
 - **Editable in the margin.** Click a sidenote, edit it, and press `ENTER` to save; `SHIFT+ENTER` adds a new line (HTML format only — Markdown footnote definitions are single-line). Editing in Reading mode is optional and off by default.
 - **Supports internal and external links**, plus basic Markdown formatting: **bold**, _italic_, and `inline code`.
