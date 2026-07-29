@@ -15,28 +15,41 @@ _Editing a sidenote in the margin, adding a new sidenote, then adding a new marg
 
 ## Features
 
-- **Sidenotes**: Sidenotes are displayed in the margin of an Obsidian note. Sidenotes show in _Editing_ and _Reading_ modes. It's possible to enable editing of sidenotes in Reading Mode.
-  Run command `Insert Sidenote` to start one.
-  - **Supports external and internal links in sidenotes**
-  - **Supports basic Markdown formatting:** **Bold**, _italic_, and `inline code`
-  - Sidenotes can be configured to work one of two ways:
-    - **Markdown footnotes**: `This is a sentence[^1].`
-    - **an HTML tag**: `<span class="sidenote">`. I use these because it was simple for me to make sidenotes compatible with my web-published notes.
-  - HTML Tag sidenotes work in _Editing_ and _Reading_ modes. When using footnotes, this currently only works in Reading Mode.
-- **Margin Notes**: Non-numbered notes displayed in the margin. In Editing Mode, it will display a symbol in the main text where the margin note is "placed".
-  - **Markdown footnotes**: Written as `[^mn-1]` or `[^mn-kitchen]`
-  - **HTML**: Written as `<span class="sidenote margin-note">`.
+### Sidenotes
 
-- **They are editable in the margin**. Click on it, edit, and press enter. `SHIFT+ENTER` for a new line.
-- **Dynamic styling**: Font size shrinks as horizontal space get smaller. At a certain breakpoint, sidenotes hide when a window gets too skinny.
-- **PDF Export**: Works with both HTML sidenotes and footnotes. Notes are moved into the margin instead of being printed inline, and margin notes ([^mn-...]) are dropped from the endnote list
-- **Settings**:
-  - Show sidenotes in left or right margin
-  - Superscript numbers can be added to the text. The numbers increment automatically.
-  - Numbers displayed as Arabic numbers, Roman letters, or no numbers
-  - Numbers styled as plain or with badges to highlight them a bit
-  - Customize spacing to tweak how it takes up space in the margin
-  - Customize font size, line height, text alignment, and color
+Numbered notes displayed in the margin instead of at the bottom of the note. Run the `Insert sidenote` command to start one.
+
+- **Two formats**, chosen in settings:
+  - **HTML spans**: `<span class="sidenote">text</span>` — I use these because it was simple to make them work in my web-published notes too.
+  - **Markdown footnotes**: `This is a sentence[^1].` — still experimental.
+- **Visible in Editing and Reading modes.** Source mode is left alone: it shows the bare markdown.
+- **Editable in the margin.** Click a sidenote, edit it, and press `ENTER` to save; `SHIFT+ENTER` adds a new line (HTML format only — Markdown footnote definitions are single-line). Editing in Reading mode is optional and off by default.
+- **Supports internal and external links**, plus basic Markdown formatting: **bold**, _italic_, and `inline code`.
+
+### Margin notes
+
+Un-numbered notes in the margin, for asides that don't need a reference number. In Editing mode a small marker shows where the note is anchored; it can also be configured to open as a popup instead. Editable in the margin like sidenotes.
+
+- **Markdown footnotes**: `[^mn-1]` or `[^mn-kitchen]`
+- **HTML**: `<span class="sidenote margin-note">`
+
+### Numbering
+
+- Superscript reference numbers are added to the text and increment automatically.
+- Displayed as Arabic numerals, Roman numerals, letters, or hidden entirely.
+- Styled plain or as badges (including a neumorphic style) to make references easier to spot.
+- Optionally restart numbering at each heading.
+
+### Responsive layout
+
+- Sidenotes sit in the left or right margin, anchored to the referencing line.
+- Font size shrinks as horizontal space gets tighter; below configurable breakpoints the margin switches to a compact layout and then hides entirely.
+- Collision avoidance keeps notes from overlapping when several land close together.
+- Width, gaps, and page offset are all adjustable, as are font size, line height, text alignment, and colors.
+
+### PDF export
+
+Works with both HTML sidenotes and footnotes (experimental). Notes are laid out in the margin rather than inline, and margin notes are dropped from the endnote list at the end of the document.
 
 ## Goal Features
 
