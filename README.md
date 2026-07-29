@@ -1,4 +1,4 @@
-## Sidenotes
+# Sidenotes
 
 I first discovered sidenotes, at least in a conscious way, on [Gwern.net](https://gwern.net/sidenote) which was referencing [Edward Tufte's conventions](https://edwardtufte.github.io/tufte-css/).
 
@@ -13,7 +13,7 @@ _An optional style that highlights references._
 ![Editing sidenotes](https://github.com/cparsell/sidenotes/blob/main/Screen-Record-Editing2.gif)
 _Editing a sidenote in the margin, adding a new sidenote, then adding a new margin note_
 
-### Features
+## Features
 
 - **Sidenotes**: Sidenotes are displayed in the margin of an Obsidian note. Sidenotes show in _Editing_ and _Reading_ modes. It's possible to enable editing of sidenotes in Reading Mode.
   Run command `Insert Sidenote` to start one.
@@ -38,7 +38,7 @@ _Editing a sidenote in the margin, adding a new sidenote, then adding a new marg
   - Customize spacing to tweak how it takes up space in the margin
   - Customize font size, line height, text alignment, and color
 
-### Goal Features
+## Goal Features
 
 - [ ] Optional background color to sidenotes
 - [x] Command: Re-sequence footnote numbers. They have a habit of getting out of order once you insert new ones. ✅ 2026-02-27
@@ -51,7 +51,7 @@ _Editing a sidenote in the margin, adding a new sidenote, then adding a new marg
   - Ⓘ (U+24BE)
   - 🄸 (U+1F138)
 
-### Maybe Features
+## Maybe Features
 
 - [ ] Badge style for margin notes
 - [ ] Option for Sidenotes on both left and right margins (may only work with HTML, seems unlikely to allow coding like this with Markdown footnotes)
