@@ -176,12 +176,20 @@ export default class SidenotePlugin extends Plugin {
 	private activeFootnoteEdit: string | null = null;
 	private layoutTrailingTimer: number | null = null;
 
+	// Collision avoidance scheduling. Kept separate from `rafId` (used by
+	// scheduleLayout) so a pending layout never swallows a collision request.
+	private collisionRafId: number | null = null;
+	// Watches every margin for height changes (late image/embed loads, inline
+	// editor open/close, font swaps) and re-resolves collisions.
+	private marginResizeObserver: ResizeObserver | null = null;
+
 	async onload() {
 		await this.loadSettings();
 
 		this.addSettingTab(new SidenoteSettingTab(this.app, this));
 		this.injectStyles();
 		this.setupVisibilityObserver();
+		this.setupMarginResizeObserver();
 
 		// Register the CM6 extension for footnote sidenotes in editing mode
 		this.registerEditorExtension([createFootnoteSidenotePlugin(this)]);
@@ -635,6 +643,11 @@ export default class SidenotePlugin extends Plugin {
 			this.visibilityObserver = null;
 		}
 
+		if (this.marginResizeObserver) {
+			this.marginResizeObserver.disconnect();
+			this.marginResizeObserver = null;
+		}
+
 		if (this.styleEl) {
 			this.styleEl.remove();
 			this.styleEl = null;
@@ -686,6 +699,19 @@ export default class SidenotePlugin extends Plugin {
 
 	public scheduleEditingModeCollisionUpdate() {
 		this.scheduleCollisionUpdate();
+	}
+
+	/**
+	 * Register a widget-created margin with the visibility/resize observers.
+	 * Margins built by the CM6 widget bypass the layout() path that normally
+	 * does this, so without it their height changes go unnoticed.
+	 */
+	public observeSidenoteMarginPublic(margin: HTMLElement) {
+		this.observeSidenoteVisibility(margin);
+	}
+
+	public unobserveSidenoteMarginPublic(margin: HTMLElement) {
+		this.unobserveSidenoteVisibility(margin);
 	}
 
 	public getActiveFootnoteEdit(): string | null {
@@ -1139,6 +1165,10 @@ export default class SidenotePlugin extends Plugin {
 			cancelAnimationFrame(this.rafId);
 			this.rafId = null;
 		}
+		if (this.collisionRafId !== null) {
+			cancelAnimationFrame(this.collisionRafId);
+			this.collisionRafId = null;
+		}
 		if (this.scrollDebounceTimer !== null) {
 			window.clearTimeout(this.scrollDebounceTimer);
 			this.scrollDebounceTimer = null;
@@ -1237,9 +1267,31 @@ export default class SidenotePlugin extends Plugin {
 		);
 	}
 
+	/**
+	 * Watch margins for height changes.
+	 *
+	 * Collision avoidance is a one-shot measurement: once a pass has run, a
+	 * margin that *later* changes height (image or embed finishing loading, a
+	 * webfont swapping in, the inline editor opening/closing, a section
+	 * re-flowing after virtualisation) silently invalidates every shift below
+	 * it and nothing re-measures. That is what leaves sidenotes stacked on top
+	 * of each other until an unrelated event happens to trigger a layout.
+	 *
+	 * resolveCollisions only writes `transform`, which cannot change a margin's
+	 * own box size, so this cannot feed back into itself.
+	 */
+	private setupMarginResizeObserver() {
+		this.marginResizeObserver = new ResizeObserver(() => {
+			this.scheduleCollisionUpdate();
+		});
+	}
+
 	private observeSidenoteVisibility(margin: HTMLElement) {
 		if (this.visibilityObserver) {
 			this.visibilityObserver.observe(margin);
+		}
+		if (this.marginResizeObserver) {
+			this.marginResizeObserver.observe(margin);
 		}
 	}
 
@@ -1247,6 +1299,9 @@ export default class SidenotePlugin extends Plugin {
 		if (this.visibilityObserver) {
 			this.visibilityObserver.unobserve(margin);
 			this.visibleSidenotes.delete(margin);
+		}
+		if (this.marginResizeObserver) {
+			this.marginResizeObserver.unobserve(margin);
 		}
 	}
 
@@ -1295,11 +1350,23 @@ export default class SidenotePlugin extends Plugin {
 		root.style.setProperty("--sn-gap-full", `${s.sidenoteGap + 1}rem`);
 		root.style.setProperty("--sn-gap2-full", `${s.sidenoteGap2 + 0.5}rem`);
 
-		// Typography
-		root.style.setProperty("--sn-font-size", `${s.fontSize}%`);
+		// Typography.
+		//
+		// Resolve the size against Obsidian's base text size rather than
+		// emitting a bare percentage. A percentage font-size resolves against
+		// the *parent's* font size, so a sidenote anchored in an <h1> rendered
+		// at 80% of the heading — much larger than one in body text. The var()
+		// is substituted at the point of use, so it picks up --font-text-size
+		// from the note's own cascade (themes and the Appearance setting still
+		// apply); the px fallback only matters if that variable is missing.
+		const baseFontSize = "var(--font-text-size, 16px)";
+		root.style.setProperty(
+			"--sn-font-size",
+			`calc(${baseFontSize} * ${s.fontSize / 100})`,
+		);
 		root.style.setProperty(
 			"--sn-font-size-compact",
-			`${s.fontSizeCompact}%`,
+			`calc(${baseFontSize} * ${s.fontSizeCompact / 100})`,
 		);
 
 		// Text Color
@@ -2356,6 +2423,13 @@ export default class SidenotePlugin extends Plugin {
 					(el) => !el.closest(".sidenote-number"),
 				);
 				if (unwrappedRefs.length === 0 && !this.needsReadingModeRefresh) {
+					// Nothing new to wrap, but the DOM mutation that got us here
+					// still changed the page: Obsidian virtualises preview
+					// sections in and out, which adds/removes margins and moves
+					// the anchors of the ones that remain. Skipping the restack
+					// is what leaves sidenotes overlapping until an unrelated
+					// event happens to trigger one.
+					this.scheduleCollisionUpdate();
 					return;
 				}
 
@@ -3850,7 +3924,8 @@ export default class SidenotePlugin extends Plugin {
 	// ==================== Binding ====================
 
 	private rebind() {
-		// First confirm we have a view and cmRoot to bind to before tearing down the old setup,
+		// First confirm we have a view and something to bind to before tearing
+		// down the old setup.
 		const view = this.getMarkdownView();
 		if (!view) return; // Don't tear down if there's no view to bind to
 
@@ -3858,9 +3933,18 @@ export default class SidenotePlugin extends Plugin {
 		const cmRoot = root.querySelector<HTMLElement>(
 			".markdown-source-view.mod-cm6",
 		);
-		if (!cmRoot) return; // Don't tear down if there's no cmRoot
+		const readingRoot = root.querySelector<HTMLElement>(
+			".markdown-reading-view",
+		);
 
-		// Only now tear down the old setup after confirming we have a new view and cmRoot to bind to,
+		// A leaf opened straight into reading mode may have no source view at
+		// all. Bailing here used to skip the reading-mode scroll and mutation
+		// listeners entirely, so nothing ever re-resolved collisions and
+		// overlapping sidenotes stayed overlapped.
+		if (!cmRoot && !readingRoot) return;
+
+		// Only now tear down the old setup, after confirming we have something
+		// new to bind to.
 		this.cleanups.forEach((fn) => fn());
 		this.cleanups = [];
 
@@ -3871,14 +3955,6 @@ export default class SidenotePlugin extends Plugin {
 			this.resizeObserver = null;
 		}
 
-		this.cmRoot = cmRoot;
-
-		cmRoot.dataset.hasSidenotes = this.documentHasSidenotes
-			? "true"
-			: "false";
-		cmRoot.dataset.sidenotePosition = this.settings.sidenotePosition;
-		// cmRoot.dataset.sidenoteAnchor = this.settings.sidenoteAnchor;
-
 		// Handle resize events with a debounce to prevent thrashing
 		let resizeTimeout: number | null = null;
 		let lastObservedWidth = 0;
@@ -3886,12 +3962,6 @@ export default class SidenotePlugin extends Plugin {
 		this.resizeObserver = new ResizeObserver((entries) => {
 			const entry = entries[0];
 			const currentWidth = entry?.contentRect?.width ?? 0;
-
-			console.log("[Sidenotes] ResizeObserver fired:", {
-				currentWidth,
-				lastObservedWidth,
-				connected: cmRoot.isConnected,
-			});
 
 			if (Math.abs(currentWidth - lastObservedWidth) < 1) return;
 			lastObservedWidth = currentWidth;
@@ -3905,7 +3975,6 @@ export default class SidenotePlugin extends Plugin {
 				this.scheduleReadingModeLayout();
 			}, 50);
 		});
-		this.resizeObserver.observe(cmRoot);
 
 		// Store cleanup for the resize timeout
 		this.cleanups.push(() => {
@@ -3915,9 +3984,21 @@ export default class SidenotePlugin extends Plugin {
 			}
 		});
 
-		const readingRoot = root.querySelector<HTMLElement>(
-			".markdown-reading-view",
-		);
+		if (cmRoot) {
+			this.cmRoot = cmRoot;
+
+			cmRoot.dataset.hasSidenotes = this.documentHasSidenotes
+				? "true"
+				: "false";
+			cmRoot.dataset.sidenotePosition = this.settings.sidenotePosition;
+			// cmRoot.dataset.sidenoteAnchor = this.settings.sidenoteAnchor;
+
+			this.resizeObserver.observe(cmRoot);
+		} else {
+			// Reading-only leaf: don't keep pointing at another view's editor.
+			this.cmRoot = null;
+		}
+
 		if (readingRoot) {
 			this.resizeObserver.observe(readingRoot);
 			readingRoot.dataset.sidenotePosition =
@@ -3926,11 +4007,6 @@ export default class SidenotePlugin extends Plugin {
 
 			// Ensure delegated click handler for reading mode margins
 			this.ensureReadingModeDelegation(readingRoot);
-
-			// Add scroll listener for reading mode collision updates
-			const readingScroller =
-				readingRoot.querySelector<HTMLElement>(".markdown-preview-view") ??
-				readingRoot;
 
 			const onReadingScroll = () => {
 				if (this.readingModeScrollTimer !== null) {
@@ -3942,9 +4018,21 @@ export default class SidenotePlugin extends Plugin {
 				}, 100);
 			};
 
-			readingScroller.addEventListener("scroll", onReadingScroll, {
+			// Listen on the reading root in the capture phase rather than on
+			// .markdown-preview-view. Scroll doesn't bubble, but it does
+			// capture, so this keeps working when the preview scroller is
+			// mounted (or replaced) after rebind — previously we resolved the
+			// scroller once and silently fell back to a non-scrolling element.
+			readingRoot.addEventListener("scroll", onReadingScroll, {
 				passive: true,
+				capture: true,
 			});
+			this.cleanups.push(() =>
+				readingRoot.removeEventListener("scroll", onReadingScroll, {
+					capture: true,
+				}),
+			);
+
 			// Re-process reading mode when Obsidian virtualizes/mounts new preview DOM
 			const readingContent =
 				readingRoot.querySelector<HTMLElement>(
@@ -3990,6 +4078,8 @@ export default class SidenotePlugin extends Plugin {
 				}
 			});
 		}
+
+		if (!cmRoot) return;
 
 		const scroller = cmRoot.querySelector<HTMLElement>(".cm-scroller");
 		if (!scroller) return;
@@ -4636,6 +4726,9 @@ export default class SidenotePlugin extends Plugin {
 			margin.appendChild(
 				this.renderLinksToFragment(this.normalizeText(renderText)),
 			);
+
+			// Margin height changed (editor -> rendered text); restack.
+			this.scheduleCollisionUpdate();
 		};
 
 		// Keymap: ESC cancels; Enter commits; Shift-Enter inserts newline (optional)
@@ -4820,9 +4913,18 @@ export default class SidenotePlugin extends Plugin {
 		if (!margins || margins.length === 0) return;
 
 		// Filter to only connected, visible margins
-		const validMargins = margins.filter(
-			(m) => m.isConnected && m.offsetHeight > 0,
-		);
+		const validMargins: HTMLElement[] = [];
+		for (const m of margins) {
+			if (!m.isConnected) continue;
+			if (m.offsetHeight > 0) {
+				validMargins.push(m);
+				continue;
+			}
+			// Zero-height margins can't take part in the stacking chain, but a
+			// leftover shift from a previous pass would be applied verbatim once
+			// they render, so clear it. They rejoin via marginResizeObserver.
+			setCssProps(m, { "--sidenote-shift": "0px" });
+		}
 
 		if (validMargins.length === 0) return;
 
@@ -4895,26 +4997,43 @@ export default class SidenotePlugin extends Plugin {
 	}
 
 	/**
-	 * Schedule collision resolution for editing mode.
+	 * Schedule collision resolution for whichever root(s) currently hold margins.
+	 *
+	 * Uses its own rAF handle: `rafId` belongs to scheduleLayout, and gating on
+	 * it meant a pending layout silently dropped the collision request instead
+	 * of deferring it, leaving sidenotes stacked on top of each other.
 	 */
-	private scheduleCollisionUpdate() {
-		if (this.rafId !== null) return;
+	public scheduleCollisionUpdate() {
+		if (this.collisionRafId !== null) return;
 
-		this.rafId = requestAnimationFrame(() => {
-			this.rafId = null;
-			this.updateEditingModeCollisions();
+		this.collisionRafId = requestAnimationFrame(() => {
+			this.collisionRafId = null;
+			this.updateAllCollisions();
 		});
+	}
+
+	/**
+	 * Resolve collisions in both editing and reading roots.
+	 *
+	 * Callers (the visibility observer, margin resize observer, inline editors)
+	 * don't reliably know which mode the margins they care about live in, and
+	 * running against an empty root is a cheap no-op.
+	 */
+	private updateAllCollisions() {
+		this.updateEditingModeCollisions();
+		this.updateReadingModeCollisions();
 	}
 
 	/**
 	 * Update collisions in editing mode (source view).
 	 */
 	private updateEditingModeCollisions() {
-		if (!this.cmRoot) return;
+		if (!this.cmRoot?.isConnected) return;
 
 		const margins = Array.from(
 			this.cmRoot.querySelectorAll<HTMLElement>("small.sidenote-margin"),
 		);
+		if (margins.length === 0) return;
 
 		this.resolveCollisions(margins, this.settings.collisionSpacing);
 	}
@@ -4934,6 +5053,7 @@ export default class SidenotePlugin extends Plugin {
 		const margins = Array.from(
 			readingRoot.querySelectorAll<HTMLElement>("small.sidenote-margin"),
 		);
+		if (margins.length === 0) return;
 
 		this.resolveCollisions(margins, this.settings.collisionSpacing);
 	}
@@ -6375,7 +6495,16 @@ class FootnoteSidenoteWidget extends WidgetType {
 			}
 		});
 
+		// Track height changes on this margin (inline editor open/close, late
+		// image loads) so collisions get re-resolved instead of going stale.
+		this.plugin.observeSidenoteMarginPublic(margin);
+
 		return wrapper;
+	}
+
+	destroy(dom: HTMLElement): void {
+		const margin = dom.querySelector<HTMLElement>("small.sidenote-margin");
+		if (margin) this.plugin.unobserveSidenoteMarginPublic(margin);
 	}
 
 	private cmView: EditorView | null = null;
@@ -6465,6 +6594,10 @@ class FootnoteSidenoteWidget extends WidgetType {
 			this.plugin.needsReadingModeRefresh = true;
 			this.plugin.refreshCachedSourceContentPublic();
 		}
+
+		// The margin just swapped a CM editor for rendered text, so its height
+		// changed and every sidenote below it is now mispositioned.
+		this.plugin.scheduleEditingModeCollisionUpdate();
 	}
 
 	private commitFootnoteText(newText: string) {
@@ -6613,6 +6746,9 @@ class FootnoteSidenoteWidget extends WidgetType {
 		);
 
 		requestAnimationFrame(() => cm.focus());
+
+		// Opening the editor grows the margin; push the ones below it down.
+		this.plugin.scheduleEditingModeCollisionUpdate();
 	}
 
 	eq(other: FootnoteSidenoteWidget): boolean {

@@ -198,7 +198,9 @@
 	top: 0;
 	width: var(--sidenote-width);
 	color: var(--sn-text-color, var(--text-normal));
-	font-size: var(--sn-font-size, 80%);
+	/* Sized off the note's base text size, not the parent's, so a sidenote
+	   anchored in a heading isn't rendered at a fraction of the heading. */
+	font-size: var(--sn-font-size, calc(var(--font-text-size, 16px) * 0.8));
 	line-height: var(--sn-line-height, 1.35);
 	overflow-wrap: break-word;
 	transform: translateY(
@@ -208,6 +210,19 @@
 	z-index: 10;
 	pointer-events: auto;
 	transition: var(--sn-transition, none);
+}
+
+/* Don't inherit the anchor's typography. A sidenote attached to a heading
+   otherwise picks up the heading's font, weight and style along with its size.
+   Markdown emphasis inside the sidenote still works — the strong/em rules
+   below set their own weight and style. */
+.sidenote-margin,
+.margin-note-popup {
+	font-family: var(--font-text, inherit);
+	font-weight: var(--font-normal, normal);
+	font-style: normal;
+	font-variant: normal;
+	letter-spacing: normal;
 }
 
 .sidenote-margin:hover:not([data-editing="true"]) {
@@ -261,7 +276,10 @@
 .markdown-source-view.mod-cm6[data-sidenote-mode="compact"]
 	.sidenote-margin,
 .markdown-reading-view[data-sidenote-mode="compact"] .sidenote-margin {
-	font-size: var(--sn-font-size-compact, 70%);
+	font-size: var(
+		--sn-font-size-compact,
+		calc(var(--font-text-size, 16px) * 0.7)
+	);
 	line-height: var(--sn-line-height-compact, 1.25);
 }
 
@@ -599,7 +617,7 @@
 	top: 0;
 	width: var(--sidenote-width);
 	color: var(--sn-text-color, var(--text-normal));
-	font-size: var(--sn-font-size, 80%);
+	font-size: var(--sn-font-size, calc(var(--font-text-size, 16px) * 0.8));
 	line-height: var(--sn-line-height, 1.35);
 	overflow-wrap: break-word;
 	transform: translateY(
@@ -786,7 +804,7 @@ span.sidenote-number.margin-note {
 	border: 1px solid var(--background-modifier-border);
 	border-radius: 8px;
 	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
-	font-size: var(--sn-font-size, 80%);
+	font-size: var(--sn-font-size, calc(var(--font-text-size, 16px) * 0.8));
 	line-height: var(--sn-line-height, 1.35);
 	color: var(--text-normal);
 	opacity: 0;
