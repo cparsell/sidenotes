@@ -19,6 +19,12 @@
 	display: table !important;
 }
 
+/* Inline spans moved into the print margin column — the text lives in
+   .sidenote-print now, so the original must not render in the body */
+.sidenote-print-hidden {
+	display: none !important;
+}
+
 /* Visible in browser print */
 @media print {
 	.sidenote-print-table {

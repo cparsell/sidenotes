@@ -2544,6 +2544,13 @@ export default class SidenotePlugin extends Plugin {
 		}
 		// Also remove any print-only sidenote elements
 		root.querySelectorAll(".sidenote-print").forEach((el) => el.remove());
+		// …and restore spans that print export hid
+		root
+			.querySelectorAll<HTMLElement>(".sidenote-print-hidden")
+			.forEach((el) => {
+				el.classList.remove("sidenote-print-hidden");
+				el.style.removeProperty("display");
+			});
 	}
 
 	private findPrecedingHeading(el: HTMLElement): HTMLElement | null {
@@ -3616,7 +3623,20 @@ export default class SidenotePlugin extends Plugin {
 
 			for (const span of Array.from(spans)) {
 				const text = span.textContent ?? "";
-				if (!text.trim()) continue;
+				if (!text.trim()) {
+					// Nothing to move to the margin, but the span must not
+					// contribute to the body text either.
+					this.hidePrintSidenoteSpan(span);
+					continue;
+				}
+
+				// Without an anchor the note has nowhere to go in the margin
+				// column, so leave the span alone rather than dropping its
+				// content from the export.
+				const anchor = span.closest(
+					"p, li, h1, h2, h3, h4, h5, h6",
+				) as HTMLElement | null;
+				if (!anchor) continue;
 
 				const isMargin = this.isMarginNote(span);
 				if (!isMargin) {
@@ -3633,19 +3653,20 @@ export default class SidenotePlugin extends Plugin {
 					span.parentNode?.insertBefore(refNum, span.nextSibling);
 				}
 
+				// Reading-mode processing only runs on .markdown-reading-view,
+				// so the raw span is never turned into a margin note inside
+				// the print container — it would render as inline body text.
+				// Its content is reproduced in the sidenote column instead.
+				this.hidePrintSidenoteSpan(span);
+
 				const printEl = this.buildPrintSidenote(text, numStr);
 				if (isMargin) {
 					printEl.classList.add("margin-note");
 				}
 
-				const anchor = span.closest(
-					"p, li, h1, h2, h3, h4, h5, h6",
-				) as HTMLElement | null;
-				if (anchor) {
-					const list = sidenotesByAnchor.get(anchor) ?? [];
-					list.push(printEl);
-					sidenotesByAnchor.set(anchor, list);
-				}
+				const list = sidenotesByAnchor.get(anchor) ?? [];
+				list.push(printEl);
+				sidenotesByAnchor.set(anchor, list);
 			}
 
 			this.buildPrintTables(element, sidenotesByAnchor, isRight);
@@ -3842,6 +3863,15 @@ export default class SidenotePlugin extends Plugin {
 			`;
 			element.appendChild(style);
 		}
+	}
+
+	/**
+	 * Hide an inline `span.sidenote` in the PDF export DOM so its text
+	 * doesn't appear twice (once in the body, once in the margin column).
+	 */
+	private hidePrintSidenoteSpan(span: HTMLElement) {
+		span.classList.add("sidenote-print-hidden");
+		span.style.setProperty("display", "none", "important");
 	}
 
 	private buildPrintSidenote(text: string, numStr: string): HTMLElement {
