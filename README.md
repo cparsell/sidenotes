@@ -29,7 +29,7 @@ _Editing a sidenote in the margin, adding a new sidenote, then adding a new marg
 
 - **They are editable in the margin**. Click on it, edit, and press enter. `SHIFT+ENTER` for a new line.
 - **Dynamic styling**: Font size shrinks as horizontal space get smaller. At a certain breakpoint, sidenotes hide when a window gets too skinny.
-- **PDF Export**: This currently only works with HTML sidenotes. Footnotes are more complicated and will take time to (hopefully) figure that out
+- **PDF Export**: Works with both HTML sidenotes and footnotes. Notes are moved into the margin instead of being printed inline, and margin notes ([^mn-...]) are dropped from the endnote list
 - **Settings**:
   - Show sidenotes in left or right margin
   - Superscript numbers can be added to the text. The numbers increment automatically.
@@ -118,7 +118,7 @@ The snippet of CSS I've been using for web publishing is located in `/digital-ga
 
 ### Known issues
 
-- [ ] PDF export doubles sidenote text
+- [x] PDF export doubles sidenote text ✅ 2026-07-29
 - [x] Font size gets larger if sidenote is added to a header ✅ 2026-07-28
 - [x] Footnotes sometimes still overlap. Sometimes they fix themselves but sometimes it sticks for a while ✅ 2026-07-28
 - [ ] HTML sidenotes, in Reading Mode? - When pressing enter to update the last sidenote, it jumps up about 1 page

@@ -504,8 +504,9 @@ export default class SidenotePlugin extends Plugin {
 				hasContent = element.querySelectorAll("span.sidenote").length > 0;
 			} else {
 				hasContent =
-					element.querySelectorAll("sup.footnote-ref, section.footnotes")
-						.length > 0;
+					element.querySelectorAll(
+						"sup.footnote-ref, sup[id^='fnref-'], sup[data-footnote-id], a.footnote-link, section.footnotes",
+					).length > 0;
 			}
 
 			if (hasContent) {
@@ -2059,15 +2060,7 @@ export default class SidenotePlugin extends Plugin {
 			const definitions = this.parseFootnoteDefinitions(sourceContent);
 
 			// Build a map from rendered order to source ID
-			const refOrderRegex = /\[\^([^\]]+)\](?!:)/g;
-
-			let refMatch: RegExpExecArray | null;
-			while ((refMatch = refOrderRegex.exec(sourceContent)) !== null) {
-				const id = refMatch[1];
-				if (id && !sourceRefOrder.includes(id)) {
-					sourceRefOrder.push(id);
-				}
-			}
+			sourceRefOrder.push(...this.buildSourceRefOrder(sourceContent));
 			if (definitions.size === 0) {
 				if (!useHtmlSidenotes) return;
 			}
@@ -2085,50 +2078,8 @@ export default class SidenotePlugin extends Plugin {
 				// Skip elements inside the footnotes section (these are backrefs, not refs)
 				if (sup.closest("section.footnotes, .footnotes")) continue;
 
-				// Try multiple ways to extract the base footnote ID
-				const supId = sup.dataset.footnoteId || sup.id || "";
-				const anchor = sup.querySelector("a");
-				const anchorHref = anchor?.getAttribute("href") || "";
-				const anchorId = anchor?.id || "";
-
-				let baseId: string | null = null;
-
-				// Try from sup ID/data: fnref-1-hash or fnref-1
-				for (const rawId of [supId, anchorId]) {
-					if (!rawId) continue;
-					const hashMatch = rawId.match(/^fnref-(.+?)-[a-f0-9]+$/i);
-					if (hashMatch?.[1]) {
-						baseId = hashMatch[1];
-						break;
-					}
-					const simpleMatch = rawId.match(/^fnref-(.+)$/i);
-					if (simpleMatch?.[1]) {
-						baseId = simpleMatch[1];
-						break;
-					}
-				}
-
-				// Try from href: #fn-1-hash or #fn-1
-				if (!baseId && anchorHref) {
-					const hrefMatch = anchorHref.match(/#fn-(.+?)-[a-f0-9]+$/i);
-					if (hrefMatch?.[1]) {
-						baseId = hrefMatch[1];
-					} else {
-						const hrefSimple = anchorHref.match(/#fn-(.+)$/i);
-						if (hrefSimple?.[1]) {
-							baseId = hrefSimple[1];
-						}
-					}
-				}
-
-				// Last resort: use the displayed number text
-				if (!baseId) {
-					const supText = sup.textContent?.trim() || "";
-					const numMatch = supText.match(/^\[?(\d+)\]?$/);
-					if (numMatch?.[1]) {
-						baseId = numMatch[1];
-					}
-				}
+				// Extract the base footnote ID from the rendered markup
+				let baseId = this.resolveFootnoteBaseId(sup);
 
 				if (!baseId || processedBaseIds.has(baseId)) continue;
 
@@ -2156,6 +2107,7 @@ export default class SidenotePlugin extends Plugin {
 				if (!footnoteText) continue;
 
 				// For footnotes, hide the original [1] link
+				const anchor = sup.querySelector("a");
 				if (anchor && this.settings.hideFootnoteNumbers) {
 					anchor.classList.add("sidenote-fn-link-hidden");
 				}
@@ -2544,13 +2496,10 @@ export default class SidenotePlugin extends Plugin {
 		}
 		// Also remove any print-only sidenote elements
 		root.querySelectorAll(".sidenote-print").forEach((el) => el.remove());
-		// …and restore spans that print export hid
+		// …and un-hide anything print export hid
 		root
-			.querySelectorAll<HTMLElement>(".sidenote-print-hidden")
-			.forEach((el) => {
-				el.classList.remove("sidenote-print-hidden");
-				el.style.removeProperty("display");
-			});
+			.querySelectorAll(".sidenote-print-hidden")
+			.forEach((el) => el.classList.remove("sidenote-print-hidden"));
 	}
 
 	private findPrecedingHeading(el: HTMLElement): HTMLElement | null {
@@ -3604,10 +3553,10 @@ export default class SidenotePlugin extends Plugin {
 	) {
 		// Only inject print sidenotes when rendering for PDF export.
 		// Check if the element is inside a .print container.
-		const isPrintContext =
+		const printContainer =
 			element.closest?.(".print") ??
 			element.parentElement?.closest?.(".print");
-		if (!isPrintContext || !this.settings.pdfExport) return;
+		if (!printContainer || !this.settings.pdfExport) return;
 
 		if (element.querySelector(".sidenote-print")) return;
 
@@ -3626,7 +3575,7 @@ export default class SidenotePlugin extends Plugin {
 				if (!text.trim()) {
 					// Nothing to move to the margin, but the span must not
 					// contribute to the body text either.
-					this.hidePrintSidenoteSpan(span);
+					this.hideForPrint(span);
 					continue;
 				}
 
@@ -3657,7 +3606,7 @@ export default class SidenotePlugin extends Plugin {
 				// so the raw span is never turned into a margin note inside
 				// the print container — it would render as inline body text.
 				// Its content is reproduced in the sidenote column instead.
-				this.hidePrintSidenoteSpan(span);
+				this.hideForPrint(span);
 
 				const printEl = this.buildPrintSidenote(text, numStr);
 				if (isMargin) {
@@ -3673,45 +3622,84 @@ export default class SidenotePlugin extends Plugin {
 			return;
 		}
 
-		// Footnote format — get content from all available sources
-		const sourcePath = context?.sourcePath ?? "";
-		const content =
-			this.cachedSourceContent ||
-			(sourcePath ? this.fileContentCache.get(sourcePath) : "") ||
-			"";
-
-		if (!content) return;
-
+		// Footnote format — definitions come from the source markdown when it
+		// is available (it keeps the original [^label] IDs and markdown links)
+		// and from the rendered endnote list otherwise.
+		const content = this.getPrintSourceContent(context?.sourcePath ?? "");
 		const definitions = this.parseFootnoteDefinitions(content);
-		if (definitions.size === 0) return;
+		const sourceRefOrder = this.buildSourceRefOrder(content);
+
+		const printRoot = (printContainer as HTMLElement | null) ?? element;
+		const renderedDefinitions =
+			this.parseFootnoteDefinitionsFromDom(printRoot);
+
+		// Margin notes live in the margin only, so drop them from the
+		// endnote list the same way reading mode does.
+		this.prunePrintEndnotes(printRoot, sourceRefOrder);
+
+		if (definitions.size === 0 && renderedDefinitions.size === 0) return;
 
 		const refs = element.querySelectorAll<HTMLElement>(
-			"sup.footnote-ref, sup[class*='footnote'], sup[id^='fnref-'], a.footnote-link",
+			"sup.footnote-ref, sup[class*='footnote'], sup[id^='fnref-'], sup[data-footnote-id], a.footnote-link",
 		);
 		if (refs.length === 0) return;
 
 		const sidenotesByAnchor = new Map<HTMLElement, HTMLElement[]>();
 		const processedIds = new Set<string>();
-		let counter = 0;
 
 		for (const ref of Array.from(refs)) {
-			const id = this.extractFootnoteId(ref);
-			if (!id || processedIds.has(id)) continue;
-			processedIds.add(id);
+			// Links inside the endnote list are backrefs, not references
+			if (ref.closest("section.footnotes, .footnotes")) continue;
 
-			const text = definitions.get(id);
-			if (!text) continue;
+			const renderedId = this.resolveFootnoteBaseId(ref);
+			if (!renderedId) continue;
 
-			const isMargin = this.isMarginNote(id);
-			if (!isMargin) {
-				counter++;
+			// Obsidian renumbers footnotes sequentially when rendering, so
+			// map "1" back to the source label (e.g. [^mn-2]) before looking
+			// the definition up.
+			let id = renderedId;
+			const renderedNum = parseInt(renderedId, 10);
+			if (
+				!isNaN(renderedNum) &&
+				renderedNum >= 1 &&
+				renderedNum <= sourceRefOrder.length
+			) {
+				const sourceId = sourceRefOrder[renderedNum - 1];
+				if (sourceId && definitions.has(sourceId)) {
+					id = sourceId;
+				}
 			}
 
-			const numStr = isMargin ? "" : this.formatNumber(counter);
+			if (processedIds.has(renderedId) || processedIds.has(id)) continue;
+			processedIds.add(renderedId);
+			processedIds.add(id);
+
+			const text = definitions.get(id) ?? renderedDefinitions.get(renderedId);
+			if (!text) continue;
+
+			const refTarget =
+				ref.tagName === "SUP" ? ref : (ref.closest("sup") ?? ref);
+			const anchor = refTarget.closest<HTMLElement>(
+				"p, li, h1, h2, h3, h4, h5, h6",
+			);
+			// Without an anchor there is no margin column to move the note
+			// into, so leave the reference untouched.
+			if (!anchor) continue;
+
+			const isMargin = this.isMarginNote(id);
+			// Reading mode labels a footnote with its own source ID, so the
+			// export matches what the note looks like on screen.
+			const numStr = isMargin ? "" : id;
+
+			if (this.settings.hideFootnoteNumbers) {
+				const link =
+					ref.tagName === "A" ? ref : refTarget.querySelector("a");
+				if (link instanceof HTMLElement) {
+					link.classList.add("sidenote-fn-link-hidden");
+				}
+			}
 
 			if (!isMargin) {
-				const refTarget =
-					ref.tagName === "SUP" ? ref : (ref.closest("sup") ?? ref);
 				const refNum = document.createElement("sup");
 				refNum.style.cssText =
 					"font-size: 0.75em; font-weight: bold; color: #11111b;";
@@ -3724,18 +3712,122 @@ export default class SidenotePlugin extends Plugin {
 				printEl.classList.add("margin-note");
 			}
 
-			const sup = ref.tagName === "SUP" ? ref : ref.closest("sup");
-			const anchor = sup?.closest(
-				"p, li, h1, h2, h3, h4, h5, h6",
-			) as HTMLElement | null;
-			if (anchor) {
-				const list = sidenotesByAnchor.get(anchor) ?? [];
-				list.push(printEl);
-				sidenotesByAnchor.set(anchor, list);
-			}
+			const list = sidenotesByAnchor.get(anchor) ?? [];
+			list.push(printEl);
+			sidenotesByAnchor.set(anchor, list);
 		}
 
 		this.buildPrintTables(element, sidenotesByAnchor, isRight);
+	}
+
+	/**
+	 * Source markdown for the file being exported. Prefers the pre-cached
+	 * copy for that exact path so exporting a note other than the active
+	 * one doesn't pick up the active note's footnotes.
+	 */
+	private getPrintSourceContent(sourcePath: string): string {
+		if (sourcePath) {
+			const cached = this.fileContentCache.get(sourcePath);
+			if (cached) return cached;
+		}
+
+		const view = this.getMarkdownView();
+		if (sourcePath && view?.file?.path !== sourcePath) return "";
+
+		return (
+			view?.editor?.getValue() ||
+			(view as { data?: string })?.data ||
+			this.cachedSourceContent ||
+			""
+		);
+	}
+
+	/**
+	 * Footnote IDs in the order their references appear in the source,
+	 * which is the order Obsidian numbers them when rendering.
+	 */
+	private buildSourceRefOrder(content: string): string[] {
+		const order: string[] = [];
+		if (!content) return order;
+
+		const refOrderRegex = /\[\^([^\]]+)\](?!:)/g;
+		let match: RegExpExecArray | null;
+		while ((match = refOrderRegex.exec(content)) !== null) {
+			const id = match[1];
+			if (id && !order.includes(id)) {
+				order.push(id);
+			}
+		}
+		return order;
+	}
+
+	/**
+	 * Fallback definitions read from the rendered endnote list, keyed by the
+	 * rendered footnote number. Used when the source markdown isn't
+	 * available synchronously during export.
+	 */
+	private parseFootnoteDefinitionsFromDom(
+		root: HTMLElement,
+	): Map<string, string> {
+		const definitions = new Map<string, string>();
+		const items = root.querySelectorAll<HTMLElement>(
+			"section.footnotes li[id^='fn-'], .footnotes li[id^='fn-']",
+		);
+
+		for (const li of Array.from(items)) {
+			const id = this.parseFootnoteIdString(li.id, "fn");
+			if (!id) continue;
+
+			const clone = li.cloneNode(true) as HTMLElement;
+			clone
+				.querySelectorAll(".footnote-backref")
+				.forEach((el) => el.remove());
+			const text = this.normalizeText(clone.textContent ?? "");
+			if (text) definitions.set(id, text);
+		}
+
+		return definitions;
+	}
+
+	/**
+	 * Trim the endnote list for export: the whole thing when "Hide
+	 * footnotes" is on, otherwise just the margin notes ([^mn-...]), whose
+	 * text is already shown in the margin. Mirrors reading-mode behaviour.
+	 */
+	private prunePrintEndnotes(root: HTMLElement, sourceRefOrder: string[]) {
+		if (this.settings.hideFootnotes) {
+			root
+				.querySelectorAll<HTMLElement>("section.footnotes, .footnotes")
+				.forEach((section) => this.hideForPrint(section));
+			return;
+		}
+
+		if (sourceRefOrder.length === 0) return;
+
+		const list = root.querySelector<HTMLElement>(
+			"section.footnotes ol, .footnotes ol",
+		);
+		if (!list) return;
+
+		const items = Array.from(list.children) as HTMLElement[];
+		let hidden = 0;
+
+		items.forEach((li, index) => {
+			const id = sourceRefOrder[index];
+			if (id && this.isMarginNote(id)) {
+				this.hideForPrint(li);
+				hidden++;
+			}
+		});
+
+		// An endnote list of nothing but margin notes leaves an empty
+		// heading and rule behind — drop the whole section instead.
+		if (hidden > 0 && hidden === items.length) {
+			const section = list.closest("section.footnotes, .footnotes");
+			if (section instanceof HTMLElement) {
+				this.hideForPrint(section);
+			}
+		}
 	}
 
 	/**
@@ -3866,12 +3958,12 @@ export default class SidenotePlugin extends Plugin {
 	}
 
 	/**
-	 * Hide an inline `span.sidenote` in the PDF export DOM so its text
-	 * doesn't appear twice (once in the body, once in the margin column).
+	 * Hide an element in the PDF export DOM. The class carries
+	 * `display: none !important`, so nothing in the exported document can
+	 * bring the element back.
 	 */
-	private hidePrintSidenoteSpan(span: HTMLElement) {
-		span.classList.add("sidenote-print-hidden");
-		span.style.setProperty("display", "none", "important");
+	private hideForPrint(el: HTMLElement) {
+		el.classList.add("sidenote-print-hidden");
 	}
 
 	private buildPrintSidenote(text: string, numStr: string): HTMLElement {
@@ -3895,19 +3987,53 @@ export default class SidenotePlugin extends Plugin {
 		return printEl;
 	}
 
-	private extractFootnoteId(el: HTMLElement): string | null {
-		if (el.dataset.footnoteId) return el.dataset.footnoteId;
+	/**
+	 * Strip Obsidian's `fn-`/`fnref-` prefix and its per-render hash suffix
+	 * (`fnref-1-a1b2c3` → `1`, `fnref-1` → `1`).
+	 */
+	private parseFootnoteIdString(
+		raw: string,
+		prefix: "fn" | "fnref",
+	): string | null {
+		if (!raw) return null;
 
-		const id = el.id || el.closest("sup")?.id || "";
-		const idMatch = id.match(/^fnref-?(.+?)(?:-\d+)?$/);
-		if (idMatch?.[1]) return idMatch[1];
+		const hashMatch = raw.match(
+			new RegExp(`^${prefix}-(.+?)-[a-f0-9]+$`, "i"),
+		);
+		if (hashMatch?.[1]) return hashMatch[1];
 
-		const link = el.tagName === "A" ? el : el.querySelector("a");
-		const href = link?.getAttribute("href") ?? "";
-		const hrefMatch = href.match(/#fn-?(.+)/);
-		if (hrefMatch?.[1]) return hrefMatch[1];
+		const simpleMatch = raw.match(new RegExp(`^${prefix}-(.+)$`, "i"));
+		return simpleMatch?.[1] ?? null;
+	}
 
-		return null;
+	/**
+	 * Resolve the footnote ID a rendered reference points at. Accepts either
+	 * the `<sup>` or the inner `a.footnote-link`, and falls back to the
+	 * displayed number when the markup carries no usable ID.
+	 */
+	private resolveFootnoteBaseId(el: HTMLElement): string | null {
+		const sup = el.tagName === "SUP" ? el : (el.closest("sup") ?? el);
+		const anchor = el.tagName === "A" ? el : sup.querySelector("a");
+
+		const candidates = [
+			sup.dataset.footnoteId || "",
+			sup.id || "",
+			anchor?.id || "",
+		];
+		for (const raw of candidates) {
+			const id = this.parseFootnoteIdString(raw, "fnref");
+			if (id) return id;
+		}
+
+		const href = anchor?.getAttribute("href") ?? "";
+		if (href.startsWith("#")) {
+			const id = this.parseFootnoteIdString(href.slice(1), "fn");
+			if (id) return id;
+		}
+
+		// Last resort: the displayed number, e.g. "[1]"
+		const numMatch = (sup.textContent ?? "").trim().match(/^\[?(\d+)\]?$/);
+		return numMatch?.[1] ?? null;
 	}
 
 	// ==================== Scheduling ====================

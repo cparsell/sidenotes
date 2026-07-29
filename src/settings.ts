@@ -552,11 +552,9 @@ export class SidenoteSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName(
-				"Include sidenotes in PDF export (HTML only - experimental)",
-			)
+			.setName("Include sidenotes in PDF export (experimental)")
 			.setDesc(
-				"When enabled, sidenotes will be included in PDF exports. Note: this may cause formatting issues in some cases, and is not compatible with the Footnote format *yet*.",
+				"When enabled, sidenotes will be included in PDF exports, in the margin rather than inline. Works with both the HTML and Footnote formats. Note: this may cause formatting issues in some cases.",
 			)
 			.addToggle((toggle) =>
 				toggle
