@@ -55,7 +55,7 @@ _Editing a sidenote in the margin, adding a new sidenote, then adding a new marg
 
 - [ ] Badge style for margin notes
 - [ ] Option for Sidenotes on both left and right margins (may only work with HTML, seems unlikely to allow coding like this with Markdown footnotes)
-- [ ] Option for style templates for multiple sidenotes types - e.g. one type has a background color, another does not.
+- [ ] Option for style templates for multiple sidenotes types - e.g. one type has a background color, another does not. This seems more easily implemented if using HTML sidenotes.
 - [ ] Highlight the referencing _sentence_ in the main note text when hovering over a sidenote
 - [ ] Command: Switch between Footnotes visible <-> Sidenotes visible
 
