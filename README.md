@@ -46,8 +46,8 @@ _Editing a sidenote in the margin, adding a new sidenote, then adding a new marg
 - [x] Add scaling option for margin note icon in text and in margin ✅ 2026-03-02
 - [x] Option for hidden margin notes: ✅ 2026-03-02
   - ![:information_source:|15](https://forum.obsidian.md/images/emoji/apple/information_source.png?v=15 ":information_source:") (U+2139), 🛈 (U+1F6C8), 🛈 (U+1F6C8), 🗩 (U+1F5E9), 🗪 (U+1F5EA)
-  - 𝚤 (U+1D6A4) - best 1
-  - ⓘ (U+24D8) - best 2
+  - 𝚤 (U+1D6A4)
+  - ⓘ (U+24D8)
   - Ⓘ (U+24BE)
   - 🄸 (U+1F138)
 
