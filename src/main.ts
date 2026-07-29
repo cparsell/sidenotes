@@ -7,6 +7,7 @@ import {
 	EditorPosition,
 	Menu,
 	Editor,
+	editorLivePreviewField,
 } from "obsidian";
 import {
 	EditorView,
@@ -3436,17 +3437,17 @@ export default class SidenotePlugin extends Plugin {
 		if (cmRoot) {
 			let editingHasSidenotes = false;
 
-			if (this.settings.sidenoteFormat === "html") {
+			// Sidenotes only exist in Live Preview — Source mode shows the
+			// bare markdown
+			if (isSourceMode) {
+				editingHasSidenotes = false;
+			} else if (this.settings.sidenoteFormat === "html") {
 				editingHasSidenotes = SIDENOTE_PATTERN().test(content);
 				SIDENOTE_PATTERN().lastIndex = 0;
-			} else if (
-				this.settings.sidenoteFormat === "footnote-edit" &&
-				!isSourceMode
-			) {
-				// Only show sidenotes in Live Preview, not Source mode
+			} else if (this.settings.sidenoteFormat === "footnote-edit") {
 				editingHasSidenotes = /\[\^[^\]]+\](?!:)/.test(content);
 			}
-			// For "footnote" mode or "footnote-edit" in Source mode, editing has no sidenotes
+			// For "footnote" format, editing mode has no sidenotes at all
 
 			cmRoot.dataset.hasSidenotes = editingHasSidenotes ? "true" : "false";
 		}
@@ -4365,8 +4366,9 @@ export default class SidenotePlugin extends Plugin {
 		const processFootnoteSidenotes =
 			this.settings.sidenoteFormat === "footnote-edit" && !isSourceMode;
 
-		// For footnote-edit mode in Source view, don't show sidenotes
-		if (this.settings.sidenoteFormat === "footnote-edit" && isSourceMode) {
+		// Source mode shows the raw markdown — no sidenotes, and no page
+		// offset reserving margin space for them
+		if (isSourceMode) {
 			cmRoot.dataset.hasSidenotes = "false";
 			return;
 		}
@@ -6996,13 +6998,24 @@ class MarginNoteMarkerWidget extends WidgetType {
 class FootnoteSidenoteViewPlugin {
 	decorations: DecorationSet;
 	private lastSettingsVersion: number;
+	private lastLivePreview: boolean;
 
 	constructor(
 		private view: EditorView,
 		private plugin: SidenotePlugin,
 	) {
 		this.lastSettingsVersion = plugin.settingsVersion;
+		this.lastLivePreview = this.isLivePreview(view.state);
 		this.decorations = this.buildDecorations(view.state);
+	}
+
+	/**
+	 * Source mode shows the raw markdown, so sidenotes stay out of it.
+	 * The field is absent in the plugin's own margin editors — treat that
+	 * as "not a source-mode editor".
+	 */
+	private isLivePreview(state: EditorState): boolean {
+		return state.field(editorLivePreviewField, false) !== false;
 	}
 
 	update(update: ViewUpdate) {
@@ -7014,13 +7027,18 @@ class FootnoteSidenoteViewPlugin {
 		const settingsChanged =
 			this.plugin.settingsVersion !== this.lastSettingsVersion;
 
+		const livePreview = this.isLivePreview(update.state);
+		const modeChanged = livePreview !== this.lastLivePreview;
+
 		if (
 			update.docChanged ||
 			update.viewportChanged ||
 			update.geometryChanged ||
-			settingsChanged
+			settingsChanged ||
+			modeChanged
 		) {
 			this.lastSettingsVersion = this.plugin.settingsVersion;
+			this.lastLivePreview = livePreview;
 			this.decorations = this.buildDecorations(update.state);
 		}
 	}
@@ -7029,6 +7047,11 @@ class FootnoteSidenoteViewPlugin {
 	buildDecorations(state: EditorState): DecorationSet {
 		// Only show footnote sidenotes in editing mode when using footnote-edit format
 		if (this.plugin.settings.sidenoteFormat !== "footnote-edit") {
+			return Decoration.none;
+		}
+
+		// Source mode renders the bare markdown — no sidenotes
+		if (!this.isLivePreview(state)) {
 			return Decoration.none;
 		}
 
