@@ -575,16 +575,16 @@ export default class SidenotePlugin extends Plugin {
 			// Debug: log what state we're in
 			setTimeout(() => {
 				const cmRoot = this.cmRoot;
-				console.log("[Sidenotes] Startup check:", {
-					hasCmRoot: !!cmRoot,
-					cmRootConnected: cmRoot?.isConnected,
-					cmRootWidth: cmRoot?.getBoundingClientRect().width,
-					mode: cmRoot?.dataset.sidenoteMode,
-					hasSidenotes: cmRoot?.dataset.hasSidenotes,
-					marginCount: cmRoot?.querySelectorAll("small.sidenote-margin")
-						.length,
-					resizeObserverExists: !!this.resizeObserver,
-				});
+				// console.log("[Sidenotes] Startup check:", {
+				// 	hasCmRoot: !!cmRoot,
+				// 	cmRootConnected: cmRoot?.isConnected,
+				// 	cmRootWidth: cmRoot?.getBoundingClientRect().width,
+				// 	mode: cmRoot?.dataset.sidenoteMode,
+				// 	hasSidenotes: cmRoot?.dataset.hasSidenotes,
+				// 	marginCount: cmRoot?.querySelectorAll("small.sidenote-margin")
+				// 		.length,
+				// 	resizeObserverExists: !!this.resizeObserver,
+				// });
 			}, 2000);
 		});
 	}
@@ -1452,11 +1452,11 @@ export default class SidenotePlugin extends Plugin {
 		// Get root element rect
 		const rootRect = root.getBoundingClientRect();
 
-		console.log("[Sidenotes] updateSidenotePositioning:", {
-			rootWidth: rootRect.width,
-			isReadingMode,
-			isConnected: root.isConnected,
-		});
+		// console.log("[Sidenotes] updateSidenotePositioning:", {
+		// 	rootWidth: rootRect.width,
+		// 	isReadingMode,
+		// 	isConnected: root.isConnected,
+		// });
 
 		// Get rem to px conversion
 		const remToPx =
@@ -3733,7 +3733,7 @@ export default class SidenotePlugin extends Plugin {
 	private layout() {
 		const cmRoot = this.cmRoot;
 		if (!cmRoot) {
-			console.log("[Sidenotes] layout() - no cmRoot");
+			console.warn("[Sidenotes] layout() - no cmRoot");
 			return;
 		}
 
@@ -3741,16 +3741,16 @@ export default class SidenotePlugin extends Plugin {
 		const editorWidth = cmRootRect.width;
 		const mode = this.calculateMode(editorWidth);
 
-		console.log("[Sidenotes] layout():", {
-			editorWidth,
-			mode,
-			isConnected: cmRoot.isConnected,
-			unwrappedCount: cmRoot.querySelectorAll(
-				"span.sidenote:not(.sidenote-number span.sidenote)",
-			).length,
-			wrappedCount: cmRoot.querySelectorAll("small.sidenote-margin")
-				.length,
-		});
+		// console.log("[Sidenotes] layout():", {
+		// 	editorWidth,
+		// 	mode,
+		// 	isConnected: cmRoot.isConnected,
+		// 	unwrappedCount: cmRoot.querySelectorAll(
+		// 		"span.sidenote:not(.sidenote-number span.sidenote)",
+		// 	).length,
+		// 	wrappedCount: cmRoot.querySelectorAll("small.sidenote-margin")
+		// 		.length,
+		// });
 
 		cmRoot.style.setProperty("--editor-width", `${editorWidth}px`);
 		cmRoot.dataset.sidenoteMode = mode;
