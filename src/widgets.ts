@@ -15,13 +15,17 @@ import {
 	Command,
 } from "@codemirror/view";
 import { EditorState, EditorSelection } from "@codemirror/state";
-import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import {
+	defaultKeymap,
+	history,
+	historyKeymap,
+} from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { syntaxHighlighting, HighlightStyle } from "@codemirror/language";
 // eslint-disable-next-line import/no-extraneous-dependencies
 import { tags } from "@lezer/highlight";
-import { setCssProps } from "../dom-utils";
-import type SidenotePlugin from "../main";
+import { setCssProps } from "./dom-utils";
+import type SidenotePlugin from "./main";
 
 /** Minimal subset of Obsidian's Editor interface backed by a CM6 EditorView. */
 interface MinimalEditor {
