@@ -28,14 +28,17 @@ import {
 	resolveFootnoteBaseId,
 } from "./content";
 import { resolveCollisions } from "./collision";
-import { injectPrintSidenotes, type PrintExportContext } from "./print-export";
+import {
+	injectPrintSidenotes,
+	type PrintExportContext,
+} from "./print-export";
 import {
 	createFootnoteSidenotePlugin,
 	markdownEditHotkeys,
 	sidenoteEditorTheme,
 	sidenoteHighlightStyle,
 	setWorkspaceActiveEditor,
-} from "./editor/widgets";
+} from "./widgets";
 
 type CleanupFn = () => void;
 
@@ -1871,10 +1874,7 @@ export default class SidenotePlugin extends Plugin {
 						),
 					).filter((m) => m.isConnected);
 
-					resolveCollisions(
-						allMargins,
-						this.settings.collisionSpacing,
-					);
+					resolveCollisions(allMargins, this.settings.collisionSpacing);
 				});
 			}
 			return;
@@ -5448,4 +5448,3 @@ export default class SidenotePlugin extends Plugin {
 		};
 	}
 }
-
