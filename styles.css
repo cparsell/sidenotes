@@ -11,6 +11,12 @@
 /* Hidden on screen */
 .sidenote-print-table {
 	display: none !important;
+	width: 100%;
+	border-collapse: collapse;
+	border: none;
+	margin: 0;
+	padding: 0;
+	table-layout: fixed;
 }
 
 /* Visible in Obsidian PDF export */
@@ -19,10 +25,134 @@
 	display: table !important;
 }
 
+.sidenote-print-row {
+	border: none;
+	vertical-align: top;
+}
+
+.sidenote-print-content-cell {
+	border: none;
+	padding: 0;
+	vertical-align: top;
+	width: 70%;
+}
+
+.sidenote-print-sidenote-cell {
+	border: none;
+	padding: 2.5em 0 0 2em;
+	vertical-align: top;
+	width: 30%;
+	font-size: 0.75em;
+	line-height: 1.35;
+	color: #11111b;
+}
+
+.sidenote-print-sidenote-cell.is-left {
+	padding: 2.5em 2em 0 0;
+	text-align: right;
+}
+
+.sidenote-print-spacer {
+	height: 0.4em;
+}
+
+.sidenote-print {
+	display: block;
+	margin: 0;
+	padding: 0;
+}
+
+.sidenote-print-number {
+	font-weight: bold;
+	margin-right: 0.3em;
+	color: #11111b;
+}
+
+.sidenote-print-refnum-html {
+	font-size: 0.75em;
+	font-weight: bold;
+	color: #000;
+}
+
+.sidenote-print-refnum-footnote {
+	font-size: 0.75em;
+	font-weight: bold;
+	color: #11111b;
+}
+
+/* Width constraint for the export container — the anchor paragraphs need
+   to make room for the sidenote table column next to them */
+.sidenote-print-page
+	:is(
+		p,
+		li,
+		h1,
+		h2,
+		h3,
+		h4,
+		h5,
+		h6,
+		blockquote,
+		.callout,
+		ul,
+		ol,
+		hr,
+		.math,
+		.MathJax,
+		pre,
+		.contains-task-list
+	),
+.sidenote-print-page section.footnotes {
+	max-width: 70% !important;
+}
+.sidenote-print-page .sidenote-print-table,
+.sidenote-print-page .sidenote-print-table td,
+.sidenote-print-page .sidenote-print-table :is(p, li, h1, h2, h3, h4, h5, h6) {
+	max-width: none !important;
+}
+
+/* Left-margin layout additionally needs the body nudged right */
+.sidenote-print-page--left
+	:is(
+		p,
+		li,
+		h1,
+		h2,
+		h3,
+		h4,
+		h5,
+		h6,
+		blockquote,
+		.callout,
+		ul,
+		ol,
+		hr,
+		.math,
+		.MathJax,
+		pre,
+		.contains-task-list
+	),
+.sidenote-print-page--left section.footnotes {
+	margin-left: 30% !important;
+}
+.sidenote-print-page--left .sidenote-print-table,
+.sidenote-print-page--left .sidenote-print-table td,
+.sidenote-print-page--left
+	.sidenote-print-table
+	:is(p, li, h1, h2, h3, h4, h5, h6) {
+	margin-left: 0 !important;
+}
+
 /* Inline spans moved into the print margin column — the text lives in
    .sidenote-print now, so the original must not render in the body */
 .sidenote-print-hidden {
 	display: none !important;
+}
+
+/* Footnote list entries whose text already appears as a margin note in
+   reading mode, so the endnote list shouldn't repeat them */
+.sidenote-footnote-item-hidden {
+	display: none;
 }
 
 /* Visible in browser print */
@@ -35,7 +165,24 @@
 	} */
 }
 
+/* Margins swap sides with the sidenote position, set by the plugin as
+   --sn-print-margin-* custom properties on :root */
+@page {
+	margin-left: var(--sn-print-margin-left, 1.5cm);
+	margin-right: var(--sn-print-margin-right, 0.1cm);
+	margin-top: 1.5cm;
+	margin-bottom: 1.5cm;
+}
+
 /* LAYOUT */
+
+/* Off-screen probe used to measure a CSS length expression in pixels */
+.sidenote-measure-probe {
+	position: absolute;
+	visibility: hidden;
+	pointer-events: none;
+	height: 0;
+}
 
 /* === Layout variables === */
 .markdown-source-view.mod-cm6,
@@ -357,6 +504,12 @@
 /* .sidenote-margin[data-editing="true"]::before {
 	display: none;
 } */
+
+/* Hint that clicking starts an edit, when reading-mode editing is on */
+:root[data-sn-edit-in-reading-mode="true"]
+	.sidenote-margin[data-editing="false"] {
+	cursor: pointer;
+}
 
 .sidenote-margin[contenteditable="true"] {
 	white-space: pre-wrap;
@@ -840,6 +993,11 @@ span.sidenote-number.margin-note {
 
 .margin-note-popup .margin-note-popup-close:hover {
 	color: var(--text-normal);
+}
+
+/* Hint that clicking the popup body starts an edit */
+.margin-note-popup-content--readable {
+	cursor: text;
 }
 
 /* Margin note popup Editable content area */

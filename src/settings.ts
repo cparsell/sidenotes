@@ -1,4 +1,3 @@
-/* eslint-disable obsidianmd/ui/sentence-case */
 import { PluginSettingTab, Setting, App } from "obsidian";
 
 import SidenotePlugin from "./main";
@@ -119,7 +118,7 @@ export class SidenoteSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		new Setting(containerEl).setName("Sidenote Format").setHeading();
+		new Setting(containerEl).setName("Sidenote format").setHeading();
 
 		new Setting(containerEl)
 			.setName("Sidenote format")
@@ -142,7 +141,7 @@ export class SidenoteSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		new Setting(containerEl).setName("If using Footnotes").setHeading();
+		new Setting(containerEl).setName("If using footnotes").setHeading();
 
 		new Setting(containerEl)
 			.setName("Hide footnotes")
@@ -246,7 +245,7 @@ export class SidenoteSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		new Setting(containerEl).setName("Width & Spacing").setHeading();
+		new Setting(containerEl).setName("Width & spacing").setHeading();
 
 		new Setting(containerEl)
 			.setName("Sidenote anchor")
@@ -293,7 +292,7 @@ export class SidenoteSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Minimum Gap between sidenote and text")
+			.setName("Minimum gap between sidenote and text")
 			.setDesc(
 				"Space between the margin and body text in rem (default: 2)",
 			)
@@ -325,7 +324,7 @@ export class SidenoteSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Gap Drift Factor")
+			.setName("Gap drift factor")
 			.setDesc(
 				"Adjusts how much the gaps grow as editor width increases (default: 0.5). At 0, gaps stay at their minimum. At 1, gaps grow by the maximum amount (20% of extra space).",
 			)
@@ -341,7 +340,7 @@ export class SidenoteSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Page Offset Factor")
+			.setName("Page offset factor")
 			.setDesc(
 				"Adjusts how much body text gets nudged over when sidenotes are present (default: 0)",
 			)
@@ -459,7 +458,7 @@ export class SidenoteSettingTab extends PluginSettingTab {
 			)
 			.addText((text) =>
 				text
-					.setPlaceholder("e.g. #333333 or rgb(50,50,50)")
+					.setPlaceholder("E.g. #333333 or rgb(50,50,50)")
 					.setValue(this.plugin.settings.textColor)
 					.onChange(async (value) => {
 						this.plugin.settings.textColor = value.trim();
@@ -474,7 +473,7 @@ export class SidenoteSettingTab extends PluginSettingTab {
 			)
 			.addText((text) =>
 				text
-					.setPlaceholder("e.g. #333333 or rgb(50,50,50)")
+					.setPlaceholder("E.g. #333333 or rgb(50,50,50)")
 					.setValue(this.plugin.settings.hoverColor)
 					.onChange(async (value) => {
 						this.plugin.settings.hoverColor = value.trim();
@@ -538,9 +537,9 @@ export class SidenoteSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Allow Sidenote Edits in reading mode")
+			.setName("Allow sidenote edits in reading mode")
 			.setDesc(
-				"Click a sidenote in Reading Mode to edit the footnote text",
+				"Click a sidenote in reading mode to edit the footnote text",
 			)
 			.addToggle((toggle) =>
 				toggle
@@ -554,18 +553,18 @@ export class SidenoteSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Include sidenotes in PDF export (experimental)")
 			.setDesc(
-				"When enabled, sidenotes will be included in PDF exports, in the margin rather than inline. Works with both the HTML and Footnote formats. Note: this may cause formatting issues in some cases.",
+				"When enabled, sidenotes will be included in PDF exports, in the margin rather than inline. Works with both the HTML and footnote formats. Note: this may cause formatting issues in some cases.",
 			)
 			.addToggle((toggle) =>
 				toggle
-					.setValue(this.plugin.settings.pdfExport as boolean)
+					.setValue(this.plugin.settings.pdfExport)
 					.onChange(async (value) => {
 						this.plugin.settings.pdfExport = value;
 						await this.plugin.saveSettings();
 					}),
 			);
 
-		new Setting(containerEl).setName("Margin Notes").setHeading();
+		new Setting(containerEl).setName("Margin notes").setHeading();
 		new Setting(containerEl)
 			.setName("Margin note display")
 			.setDesc(
@@ -591,7 +590,7 @@ export class SidenoteSettingTab extends PluginSettingTab {
 			)
 			.addText((text) =>
 				text
-					.setPlaceholder("e.g. ⓘ or 🛈 or information_source.png")
+					.setPlaceholder("E.g. ⓘ or 🛈 or information_source.png")
 					.setValue(this.plugin.settings.popupIcon)
 					.onChange(async (value) => {
 						this.plugin.settings.popupIcon = value.trim();
@@ -618,7 +617,7 @@ export class SidenoteSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Margin note popup icon scale factor")
 			.setDesc(
-				"Scale factor for margin note popup icons - Only applies if using popup mode for margin notes(default: 1)",
+				"Scale factor for margin note popup icons - only applies if using popup mode for margin notes(default: 1)",
 			)
 			.addSlider((slider) =>
 				slider
@@ -632,7 +631,7 @@ export class SidenoteSettingTab extends PluginSettingTab {
 			);
 
 		// Help section
-		new Setting(containerEl).setName("Formatting Help").setHeading();
+		new Setting(containerEl).setName("Formatting help").setHeading();
 
 		const helpDiv = containerEl.createDiv({ cls: "sidenote-help" });
 		helpDiv.innerHTML = `

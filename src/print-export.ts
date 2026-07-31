@@ -77,8 +77,7 @@ export function injectPrintSidenotes(
 
 			if (!isMargin) {
 				const refNum = document.createElement("sup");
-				refNum.style.cssText =
-					"font-size: 0.75em; font-weight: bold; color: #000;";
+				refNum.className = "sidenote-print-refnum-html";
 				refNum.textContent = numStr;
 				span.parentNode?.insertBefore(refNum, span.nextSibling);
 			}
@@ -180,8 +179,7 @@ export function injectPrintSidenotes(
 
 		if (!isMargin) {
 			const refNum = document.createElement("sup");
-			refNum.style.cssText =
-				"font-size: 0.75em; font-weight: bold; color: #11111b;";
+			refNum.className = "sidenote-print-refnum-footnote";
 			refNum.textContent = numStr;
 			refTarget.parentNode?.insertBefore(refNum, refTarget.nextSibling);
 		}
@@ -311,39 +309,18 @@ function buildPrintTables(
 
 		const table = document.createElement("table");
 		table.className = "sidenote-print-table";
-		table.style.cssText = `
-			width: 100%;
-			border-collapse: collapse;
-			border: none;
-			margin: 0;
-			padding: 0;
-			table-layout: fixed;
-		`;
 
 		const row = document.createElement("tr");
-		row.style.cssText = "border: none; vertical-align: top;";
+		row.className = "sidenote-print-row";
 
 		const contentCell = document.createElement("td");
-		contentCell.style.cssText =
-			"border: none; padding: 0; vertical-align: top; width: 70%;";
+		contentCell.className = "sidenote-print-content-cell";
 
 		const sidenoteCell = document.createElement("td");
-		sidenoteCell.style.cssText = isRight
-			? `border: none;
-			padding: 2.5em 0 0 2em;
-			vertical-align: top;
-			width: 30%;
-			font-size: 0.75em;
-			line-height: 1.35;
-			color: #11111b;`
-			: `border: none;
-			padding: 2.5em 2em 0 0;
-			vertical-align: top;
-			width: 30%;
-			font-size: 0.75em;
-			line-height: 1.35;
-			color: #11111b;
-			text-align: right;`;
+		sidenoteCell.className = "sidenote-print-sidenote-cell";
+		if (!isRight) {
+			sidenoteCell.classList.add("is-left");
+		}
 
 		anchor.parentNode.insertBefore(table, anchor);
 		contentCell.appendChild(anchor);
@@ -351,7 +328,7 @@ function buildPrintTables(
 		for (const sn of sidenotes) {
 			if (sidenoteCell.childNodes.length > 0) {
 				const spacer = document.createElement("div");
-				spacer.style.cssText = "height: 0.4em;";
+				spacer.className = "sidenote-print-spacer";
 				sidenoteCell.appendChild(spacer);
 			}
 			sidenoteCell.appendChild(sn);
@@ -368,57 +345,11 @@ function buildPrintTables(
 		table.appendChild(row);
 	}
 
-	// Inject width-constraining style
-	if (!element.querySelector(".sidenote-print-width-style")) {
-		const style = document.createElement("style");
-		style.className = "sidenote-print-width-style";
-		style.textContent = isRight
-			? `
-			p, li, h1, h2, h3, h4, h5, h6, blockquote, .callout,
-			ul, ol, hr, .math, .MathJax, pre, .contains-task-list {
-				max-width: 70% !important;
-			}
-			section.footnotes {
-				max-width: 70% !important;
-			}
-			.sidenote-print-table,
-			.sidenote-print-table td,
-			.sidenote-print-table p,
-			.sidenote-print-table li,
-			.sidenote-print-table h1,
-			.sidenote-print-table h2,
-			.sidenote-print-table h3,
-			.sidenote-print-table h4,
-			.sidenote-print-table h5,
-			.sidenote-print-table h6 {
-				max-width: none !important;
-			}
-		`
-			: `
-			p, li, h1, h2, h3, h4, h5, h6, blockquote, .callout,
-			ul, ol, hr, .math, .MathJax, pre, .contains-task-list {
-				max-width: 70% !important;
-				margin-left: 30% !important;
-			}
-			section.footnotes {
-				max-width: 70% !important;
-				margin-left: 30% !important;
-			}
-			.sidenote-print-table,
-			.sidenote-print-table td,
-			.sidenote-print-table p,
-			.sidenote-print-table li,
-			.sidenote-print-table h1,
-			.sidenote-print-table h2,
-			.sidenote-print-table h3,
-			.sidenote-print-table h4,
-			.sidenote-print-table h5,
-			.sidenote-print-table h6 {
-				max-width: none !important;
-				margin-left: 0 !important;
-			}
-		`;
-		element.appendChild(style);
+	// Width-constraining rules live in styles.css, scoped to this class;
+	// applying it here just switches them on for this export container.
+	element.classList.add("sidenote-print-page");
+	if (!isRight) {
+		element.classList.add("sidenote-print-page--left");
 	}
 }
 
@@ -438,13 +369,10 @@ function buildPrintSidenote(
 ): HTMLElement {
 	const printEl = document.createElement("small");
 	printEl.className = "sidenote-print";
-	// Use inline style so nothing can override visibility
-	printEl.style.cssText = "display: block; margin: 0; padding: 0;";
 
 	if (ctx.settings.showSidenoteNumbers && numStr) {
 		const numSpan = document.createElement("span");
-		numSpan.style.cssText =
-			"font-weight: bold; margin-right: 0.3em; color: #11111b;";
+		numSpan.className = "sidenote-print-number";
 		numSpan.textContent = numStr + ".";
 		printEl.appendChild(numSpan);
 	}

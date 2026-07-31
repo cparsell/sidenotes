@@ -1,5 +1,3 @@
-/* eslint-disable obsidianmd/ui/sentence-case */
-
 import { MarkdownView, Plugin, TFile, Menu, Editor } from "obsidian";
 import { EditorView, keymap } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
@@ -659,6 +657,7 @@ export default class SidenotePlugin extends Plugin {
 		delete root.dataset.snFormat;
 		delete root.dataset.snHideFootnotes;
 		delete root.dataset.snHideFootnoteNumbers;
+		delete root.dataset.snEditInReadingMode;
 	}
 
 	// Add public methods that the widget can call
@@ -1418,6 +1417,9 @@ export default class SidenotePlugin extends Plugin {
 		root.dataset.snHideFootnoteNumbers = s.hideFootnoteNumbers
 			? "true"
 			: "false";
+		root.dataset.snEditInReadingMode = s.editInReadingMode
+			? "true"
+			: "false";
 
 		// Margin note specific styles
 		root.style.setProperty(
@@ -1590,11 +1592,8 @@ export default class SidenotePlugin extends Plugin {
 		cssLengthExpr: string,
 	): number {
 		const probe = document.createElement("div");
-		probe.style.position = "absolute";
-		probe.style.visibility = "hidden";
-		probe.style.pointerEvents = "none";
+		probe.classList.add("sidenote-measure-probe");
 		probe.style.width = cssLengthExpr;
-		probe.style.height = "0";
 		host.appendChild(probe);
 		const w = probe.getBoundingClientRect().width;
 		probe.remove();
@@ -2150,7 +2149,6 @@ export default class SidenotePlugin extends Plugin {
 					margin.dataset.editing = "false";
 					margin.dataset.sidenoteType = "html";
 					margin.dataset.sidenoteRawText = item.rawText ?? item.text;
-					margin.style.cursor = "pointer";
 				}
 			} else {
 				// For footnotes, hide the original [1] link inside the sup
@@ -2173,7 +2171,6 @@ export default class SidenotePlugin extends Plugin {
 				) {
 					margin.dataset.sidenoteType = "footnote";
 					margin.dataset.footnoteId = item.footnoteId;
-					margin.style.cursor = "pointer";
 				}
 			}
 
@@ -2210,7 +2207,7 @@ export default class SidenotePlugin extends Plugin {
 							renderedIndex
 						] as HTMLElement | null;
 						if (li) {
-							li.style.display = "none";
+							li.classList.add("sidenote-footnote-item-hidden");
 						}
 					}
 				}
@@ -2260,28 +2257,13 @@ export default class SidenotePlugin extends Plugin {
 	}
 
 	private injectPrintPageStyle() {
-		document.getElementById("sidenote-print-page-style")?.remove();
-
-		const style = document.createElement("style");
-		style.id = "sidenote-print-page-style";
-
+		// @page (in styles.css) reads these as CSS variables on :root, since
+		// Obsidian doesn't allow plugins to inject <style> elements.
 		const isRight = this.settings.sidenotePosition !== "left";
-
-		style.textContent = isRight
-			? `@page { 
-				margin-left: 1.5cm; 
-				margin-right: 0.1cm; 
-				margin-top: 1.5cm; 
-				margin-bottom: 1.5cm; 
-			}`
-			: `@page { 
-				margin-left: 0.1cm; 
-				margin-right: 1.5cm; 
-				margin-top: 1.5cm; 
-				margin-bottom: 1.5cm; 
-			}`;
-
-		document.head.appendChild(style);
+		setCssProps(document.documentElement, {
+			"--sn-print-margin-left": isRight ? "1.5cm" : "0.1cm",
+			"--sn-print-margin-right": isRight ? "0.1cm" : "1.5cm",
+		});
 	}
 
 	private scheduleFootnoteProcessing() {
@@ -2803,10 +2785,6 @@ export default class SidenotePlugin extends Plugin {
 				this.renderLinksToFragment(this.normalizeText(renderText)),
 			);
 
-			if (this.settings.editInReadingMode) {
-				margin.style.cursor = "pointer";
-			}
-
 			this.activeReadingModeMargin = null;
 
 			if (opts.commit && newText !== this.spanOriginalText) {
@@ -2934,7 +2912,6 @@ export default class SidenotePlugin extends Plugin {
 		margin.dataset.editing = "true";
 		this.activeReadingModeMargin = margin;
 		margin.innerHTML = "";
-		margin.style.cursor = "";
 
 		const commitAndClose = (opts: { commit: boolean }) => {
 			this.finishReadingModeFootnoteEdit(margin, opts.commit);
@@ -3165,10 +3142,6 @@ export default class SidenotePlugin extends Plugin {
 			resolveCollisions(allMargins, this.settings.collisionSpacing);
 		});
 
-		// Restore click cursor if editing is enabled
-		if (this.settings.editInReadingMode) {
-			margin.style.cursor = "pointer";
-		}
 	}
 
 	/**
@@ -3904,7 +3877,6 @@ export default class SidenotePlugin extends Plugin {
 							marker.textContent = iconSetting;
 						}
 
-						marker.style.cursor = "pointer";
 						if (this.settings.marginNoteDisplay === "popup") {
 							marker.addEventListener("click", (e) => {
 								e.preventDefault();
@@ -5200,7 +5172,7 @@ export default class SidenotePlugin extends Plugin {
 				contentEl.appendChild(
 					this.renderLinksToFragment(this.normalizeText(currentRawText)),
 				);
-				contentEl.style.cursor = "text";
+				contentEl.classList.add("margin-note-popup-content--readable");
 				isEditing = false;
 			};
 
@@ -5302,8 +5274,7 @@ export default class SidenotePlugin extends Plugin {
 				const scroller =
 					popupCmView.dom.querySelector<HTMLElement>(".cm-scroller");
 				if (scroller) {
-					scroller.style.padding = "0";
-					scroller.style.paddingLeft = "0";
+					setCssProps(scroller, { "padding-left": "0", padding: "0" }, true);
 				}
 
 				requestAnimationFrame(() => popupCmView?.focus());

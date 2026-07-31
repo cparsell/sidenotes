@@ -7,53 +7,49 @@
    */
 
 body {
-  counter-reset: sidenote-counter;
+	counter-reset: sidenote-counter;
 }
-
 
 /* Side notes */
 .sidenote {
-  float: left;
-  top: -12px;
-  position: relative;
-  margin-left: -20vw;
-  text-align: right;
-  font-size: 80%;
-  // left: -200px;
-  // width: 40vw;
-  // width: 100%;
-  max-width: 30%;
-  margin-top: 1em;
-  clear: both; // Ensure sidenotes do not overlap
+	float: left;
+	top: -12px;
+	position: relative;
+	margin-left: -20vw;
+	text-align: right;
+	font-size: 80%;
+	max-width: 30%;
+	margin-top: 1em;
+	clear: both; /* Ensure sidenotes do not overlap */
 }
 
 /* HTML sidenotes - Narrow viewport */
 @media (max-width: 1200px) {
-  .sidenote {
-    display: none; // Hide sidenotes for narrow viewports
-  }
+	.sidenote {
+		display: none; /* Hide sidenotes for narrow viewports */
+	}
 }
 
 /* HTML Sidenote - number counter */
 .sidenote-number {
-  counter-increment: sidenote-counter;
+	counter-increment: sidenote-counter;
 }
 
 /* HTML sidenote - Counter before the sidenote in the margin. */
 .sidenote::before {
-  content: counter(sidenote-counter) '. ';
-  position: relative;
-  vertical-align: baseline;
-  font-size: 0.9em;
-  font-weight: bold;
+	content: counter(sidenote-counter) ". ";
+	position: relative;
+	vertical-align: baseline;
+	font-size: 0.9em;
+	font-weight: bold;
 }
 
 /* HTML sidenote - Counter in the main body. */
 .sidenote-number::after {
-  content: counter(sidenote-counter);
-  vertical-align: super;
-  font-size: 0.7em;
-  font-weight: bold;
-  margin-right: 0.5rem;
+	content: counter(sidenote-counter);
+	vertical-align: super;
+	font-size: 0.7em;
+	font-weight: bold;
+	margin-right: 0.5rem;
 }
 /* End HTML Side notes  */

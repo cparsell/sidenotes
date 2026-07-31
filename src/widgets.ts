@@ -22,7 +22,7 @@ import {
 } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { syntaxHighlighting, HighlightStyle } from "@codemirror/language";
-// eslint-disable-next-line import/no-extraneous-dependencies
+// eslint-disable-next-line import/no-extraneous-dependencies -- @lezer/highlight is a transitive dependency pulled in by @codemirror/language, used directly here for syntax tags
 import { tags } from "@lezer/highlight";
 import { setCssProps } from "./dom-utils";
 import type SidenotePlugin from "./main";
@@ -346,8 +346,10 @@ class FootnoteSidenoteWidget extends WidgetType {
 		}
 
 		margin.dataset.sidenoteNum = this.numberText;
-		margin.style.setProperty("--sidenote-shift", "0px");
-		margin.style.setProperty("--sidenote-line-offset", "0px");
+		setCssProps(margin, {
+			"--sidenote-shift": "0px",
+			"--sidenote-line-offset": "0px",
+		});
 
 		// Render the content with markdown formatting support
 		const fragment = this.plugin.renderLinksToFragmentPublic(
