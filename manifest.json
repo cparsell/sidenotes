@@ -5,6 +5,6 @@
 	"minAppVersion": "1.10.0",
 	"description": "Adds ability to create sidenotes in Obsidian with incrementing numbers.",
 	"author": "FriedFishsticks",
-	"authorUrl": "https://github.com/cparsell/sidenotes/",
+	"authorUrl": "https://github.com/cparsell/",
 	"isDesktopOnly": false
 }
