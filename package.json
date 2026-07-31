@@ -11,7 +11,7 @@
 		"lint": "eslint ."
 	},
 	"keywords": [],
-	"license": "0-BSD",
+	"license": "MIT",
 	"devDependencies": {
 		"@codemirror/commands": "^6.10.2",
 		"@codemirror/lang-markdown": "^6.5.0",
