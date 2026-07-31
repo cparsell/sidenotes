@@ -571,19 +571,19 @@ export default class SidenotePlugin extends Plugin {
 			void this.preCacheFileContent();
 
 			// Debug: log what state we're in
-			setTimeout(() => {
-				const cmRoot = this.cmRoot;
-				// console.log("[Sidenotes] Startup check:", {
-				// 	hasCmRoot: !!cmRoot,
-				// 	cmRootConnected: cmRoot?.isConnected,
-				// 	cmRootWidth: cmRoot?.getBoundingClientRect().width,
-				// 	mode: cmRoot?.dataset.sidenoteMode,
-				// 	hasSidenotes: cmRoot?.dataset.hasSidenotes,
-				// 	marginCount: cmRoot?.querySelectorAll("small.sidenote-margin")
-				// 		.length,
-				// 	resizeObserverExists: !!this.resizeObserver,
-				// });
-			}, 2000);
+			// setTimeout(() => {
+			// 	const cmRoot = this.cmRoot;
+			// 	console.log("[Sidenotes] Startup check:", {
+			// 		hasCmRoot: !!cmRoot,
+			// 		cmRootConnected: cmRoot?.isConnected,
+			// 		cmRootWidth: cmRoot?.getBoundingClientRect().width,
+			// 		mode: cmRoot?.dataset.sidenoteMode,
+			// 		hasSidenotes: cmRoot?.dataset.hasSidenotes,
+			// 		marginCount: cmRoot?.querySelectorAll("small.sidenote-margin")
+			// 			.length,
+			// 		resizeObserverExists: !!this.resizeObserver,
+			// 	});
+			// }, 2000);
 		});
 	}
 
@@ -3141,7 +3141,6 @@ export default class SidenotePlugin extends Plugin {
 
 			resolveCollisions(allMargins, this.settings.collisionSpacing);
 		});
-
 	}
 
 	/**
@@ -5274,7 +5273,11 @@ export default class SidenotePlugin extends Plugin {
 				const scroller =
 					popupCmView.dom.querySelector<HTMLElement>(".cm-scroller");
 				if (scroller) {
-					setCssProps(scroller, { "padding-left": "0", padding: "0" }, true);
+					setCssProps(
+						scroller,
+						{ "padding-left": "0", padding: "0" },
+						true,
+					);
 				}
 
 				requestAnimationFrame(() => popupCmView?.focus());
