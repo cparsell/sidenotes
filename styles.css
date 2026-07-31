@@ -394,14 +394,6 @@
 	shape-outside: margin-box;
 }
 
-.sidenote-margin[data-editing="true"] > .cm-editor {
-	display: contents;
-}
-
-.sidenote-margin[data-editing="true"] > .cm-editor > .cm-scroller {
-	display: contents;
-}
-
 .sidenote-margin[data-editing="true"]
 	> .cm-editor
 	> .cm-scroller
