@@ -8,76 +8,78 @@
    Print / PDF Export
    ========================================================== */
 
-/* Hidden on screen */
+/* Hidden on screen. !important throughout this block: these override the
+   theme's own table/border styling during PDF export, the same as the
+   inline styles this used to be set with did. */
 .sidenote-print-table {
-	display: none;
-	width: 100%;
-	border-collapse: collapse;
-	border: none;
-	margin: 0;
-	padding: 0;
-	table-layout: fixed;
+	display: none !important;
+	width: 100% !important;
+	border-collapse: collapse !important;
+	border: none !important;
+	margin: 0 !important;
+	padding: 0 !important;
+	table-layout: fixed !important;
 }
 
 /* Visible in Obsidian PDF export */
 .print .sidenote-print-table {
-	top: 10px;
-	display: table;
+	top: 10px !important;
+	display: table !important;
 }
 
 .sidenote-print-row {
-	border: none;
-	vertical-align: top;
+	border: none !important;
+	vertical-align: top !important;
 }
 
 .sidenote-print-content-cell {
-	border: none;
-	padding: 0;
-	vertical-align: top;
-	width: 70%;
+	border: none !important;
+	padding: 0 !important;
+	vertical-align: top !important;
+	width: 70% !important;
 }
 
 .sidenote-print-sidenote-cell {
-	border: none;
-	padding: 2.5em 0 0 2em;
-	vertical-align: top;
-	width: 30%;
-	font-size: 0.75em;
-	line-height: 1.35;
-	color: #11111b;
+	border: none !important;
+	padding: 2.5em 0 0 2em !important;
+	vertical-align: top !important;
+	width: 30% !important;
+	font-size: 0.75em !important;
+	line-height: 1.35 !important;
+	color: #11111b !important;
 }
 
 .sidenote-print-sidenote-cell.is-left {
-	padding: 2.5em 2em 0 0;
-	text-align: right;
+	padding: 2.5em 2em 0 0 !important;
+	text-align: right !important;
 }
 
 .sidenote-print-spacer {
-	height: 0.4em;
+	height: 0.4em !important;
 }
 
 .sidenote-print {
-	display: block;
-	margin: 0;
-	padding: 0;
+	display: block !important;
+	margin: 0 !important;
+	padding: 0 !important;
 }
 
 .sidenote-print-number {
-	font-weight: bold;
-	margin-right: 0.3em;
-	color: #11111b;
+	font-weight: bold !important;
+	margin-right: 0.3em !important;
+	color: #11111b !important;
 }
 
 .sidenote-print-refnum-html {
-	font-size: 0.75em;
-	font-weight: bold;
-	color: #000;
+	font-size: 0.75em !important;
+	font-weight: bold !important;
+	color: #000 !important;
 }
 
 .sidenote-print-refnum-footnote {
-	font-size: 0.75em;
-	font-weight: bold;
-	color: #11111b;
+	font-size: 0.75em !important;
+	font-weight: bold !important;
+	color: #11111b !important;
 }
 
 /* Width constraint for the export container — the anchor paragraphs need
@@ -103,14 +105,14 @@
 		.contains-task-list
 	),
 .sidenote-print-page section.footnotes {
-	max-width: 70%;
+	max-width: 70% !important;
 }
 .sidenote-print-page .sidenote-print-table,
 .sidenote-print-page .sidenote-print-table td,
 .sidenote-print-page
 	.sidenote-print-table
 	:is(p, li, h1, h2, h3, h4, h5, h6) {
-	max-width: none;
+	max-width: none !important;
 }
 
 /* Left-margin layout additionally needs the body nudged right */
@@ -135,20 +137,20 @@
 		.contains-task-list
 	),
 .sidenote-print-page--left section.footnotes {
-	margin-left: 30%;
+	margin-left: 30% !important;
 }
 .sidenote-print-page--left .sidenote-print-table,
 .sidenote-print-page--left .sidenote-print-table td,
 .sidenote-print-page--left
 	.sidenote-print-table
 	:is(p, li, h1, h2, h3, h4, h5, h6) {
-	margin-left: 0;
+	margin-left: 0 !important;
 }
 
 /* Inline spans moved into the print margin column — the text lives in
    .sidenote-print now, so the original must not render in the body */
 .sidenote-print-hidden {
-	display: none;
+	display: none !important;
 }
 
 /* Footnote list entries whose text already appears as a margin note in
