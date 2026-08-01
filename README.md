@@ -4,13 +4,13 @@ I first discovered sidenotes, at least in a conscious way, on [Gwern.net](https:
 
 My goal is to have sidenotes work in **Obsidian** as well as my **notes published on the web**. More recently, I've started working on making it compatible with PDF export (still in progress)
 
-![Sidenotes Basics](https://github.com/cparsell/sidenotes/blob/main/Screenshot2.png)
+![Sidenotes Basics](https://github.com/cparsell/sidenotes/blob/main/gh_assets/Screenshot2.png)
 _Basic sidenote capabilities demonstrated_
 
-![Neumorphic badges](https://github.com/cparsell/sidenotes/blob/main/Screenshot-badges-multi.png)
+![Neumorphic badges](https://github.com/cparsell/sidenotes/blob/main/gh_assets/Screenshot-badges-multi.png)
 _An optional style that highlights references._
 
-![Editing sidenotes](https://github.com/cparsell/sidenotes/blob/main/Screen-Record-Editing2.gif)
+![Editing sidenotes](https://github.com/cparsell/sidenotes/blob/main/gh_assets/Screen-Record-Editing2.gif)
 _Editing a sidenote in the margin, adding a new sidenote, then adding a new margin note_
 
 ## Features
@@ -144,4 +144,6 @@ The snippet of CSS I've been using for web publishing is located in `/digital-ga
 - [x] When editing sidenotes in the margin, after pressing enter, the wrong sidenote may get updated if two sidenotes have the same text (Fixed 1/31/26). ✅ 2026-01-31
 - [x] Also when editing sidenotes in the margins, especially lower down in a note, the numbers may reset. e.g. instead of being 5,6 and 7, they become 1, 2, and 3 ✅ 2026-01-31
 
+## Support
 
+<a href="https://buymeacoffee.com/netsurgem"><img src="https://github.com/cparsell/sidenotes/blob/main/gh_assets/bmc-button.png?raw=true" width="150"></a>
