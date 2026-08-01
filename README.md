@@ -2,8 +2,6 @@
 
 I first discovered sidenotes, at least in a conscious way, on [Gwern.net](https://gwern.net/sidenote) which was referencing [Edward Tufte's conventions](https://edwardtufte.github.io/tufte-css/).
 
-My goal is to have sidenotes work in **Obsidian** as well as my **notes published on the web**. More recently, I've started working on making it compatible with PDF export (still in progress)
-
 ![Sidenotes Basics](https://github.com/cparsell/sidenotes/blob/main/gh_assets/Screenshot2.png)
 _Basic sidenote capabilities demonstrated_
 
@@ -28,7 +26,7 @@ Numbered notes displayed in the margin instead of at the bottom of the note. Run
 
 ### Margin notes
 
-Un-numbered notes in the margin, for asides that don't need a reference number. In Editing mode a small marker shows where the note is anchored; it can also be configured to open as a popup instead. Editable in the margin like sidenotes.
+Un-numbered notes in the margin, for asides that don't need a reference number. In Editing mode a small marker shows where the note is anchored; it can also be configured to open as a popup instead. Click to edit.
 
 - **Markdown footnotes**: `[^mn-1]` or `[^mn-kitchen]`
 - **HTML**: `<span class="sidenote margin-note">`
@@ -58,11 +56,6 @@ Works with both HTML sidenotes and footnotes (experimental). Notes are laid out 
 - [x] Option to have non-numbered sidenotes - aka "margin notes" ✅ 2026-02-26
 - [x] Add scaling option for margin note icon in text and in margin ✅ 2026-03-02
 - [x] Option for hidden margin notes: ✅ 2026-03-02
-  - ![:information_source:|15](https://forum.obsidian.md/images/emoji/apple/information_source.png?v=15 ":information_source:") (U+2139), 🛈 (U+1F6C8), 🛈 (U+1F6C8), 🗩 (U+1F5E9), 🗪 (U+1F5EA)
-  - 𝚤 (U+1D6A4)
-  - ⓘ (U+24D8)
-  - Ⓘ (U+24BE)
-  - 🄸 (U+1F138)
 
 ## Maybe Features
 
