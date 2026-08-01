@@ -144,6 +144,4 @@ The snippet of CSS I've been using for web publishing is located in `/digital-ga
 - [x] When editing sidenotes in the margin, after pressing enter, the wrong sidenote may get updated if two sidenotes have the same text (Fixed 1/31/26). ✅ 2026-01-31
 - [x] Also when editing sidenotes in the margins, especially lower down in a note, the numbers may reset. e.g. instead of being 5,6 and 7, they become 1, 2, and 3 ✅ 2026-01-31
 
-## Disclaimer
 
-Large Language Models were used in the production and editing of this code. I do have experience writing code. I'll do my best to keep it from being slop.
