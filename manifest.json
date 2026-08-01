@@ -1,7 +1,7 @@
 {
 	"id": "side-notes",
 	"name": "Side-Notes",
-	"version": "0.4.2",
+	"version": "0.4.3",
 	"minAppVersion": "1.10.0",
 	"description": "Adds ability to create sidenotes with incrementing numbers.",
 	"author": "FriedFishsticks",
