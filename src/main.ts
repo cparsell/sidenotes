@@ -3591,8 +3591,20 @@ export default class SidenotePlugin extends Plugin {
 					window.clearTimeout(readingMutationTimer);
 				readingMutationTimer = window.setTimeout(() => {
 					readingMutationTimer = null;
-					// This will now run even if <section.footnotes> is not mounted
-					this.scheduleFootnoteProcessing();
+					if (this.settings.sidenoteFormat === "html") {
+						// HTML sidenotes have no footnote refs for
+						// scheduleFootnoteProcessing to find, so newly
+						// virtualized <span class="sidenote"> sections need
+						// their own reprocessing pass here.
+						window.requestAnimationFrame(() => {
+							window.requestAnimationFrame(() => {
+								this.processReadingModeSidenotes(readingRoot);
+							});
+						});
+					} else {
+						// This will now run even if <section.footnotes> is not mounted
+						this.scheduleFootnoteProcessing();
+					}
 				}, 75);
 			});
 
