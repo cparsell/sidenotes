@@ -63,9 +63,9 @@ export function injectPrintSidenotes(
 			// Without an anchor the note has nowhere to go in the margin
 			// column, so leave the span alone rather than dropping its
 			// content from the export.
-			const anchor = span.closest(
+			const anchor = span.closest<HTMLElement>(
 				"p, li, h1, h2, h3, h4, h5, h6",
-			) as HTMLElement | null;
+			);
 			if (!anchor) continue;
 
 			const isMargin = isMarginNote(span);
@@ -76,7 +76,7 @@ export function injectPrintSidenotes(
 			const numStr = isMargin ? "" : formatNumber(counter, ctx.settings.numberStyle);
 
 			if (!isMargin) {
-				const refNum = document.createElement("sup");
+				const refNum = createEl("sup");
 				refNum.className = "sidenote-print-refnum-html";
 				refNum.textContent = numStr;
 				span.parentNode?.insertBefore(refNum, span.nextSibling);
@@ -178,7 +178,7 @@ export function injectPrintSidenotes(
 		}
 
 		if (!isMargin) {
-			const refNum = document.createElement("sup");
+			const refNum = createEl("sup");
 			refNum.className = "sidenote-print-refnum-footnote";
 			refNum.textContent = numStr;
 			refTarget.parentNode?.insertBefore(refNum, refTarget.nextSibling);
@@ -307,16 +307,16 @@ function buildPrintTables(
 	for (const [anchor, sidenotes] of sidenotesByAnchor) {
 		if (!anchor.parentNode) continue;
 
-		const table = document.createElement("table");
+		const table = createEl("table");
 		table.className = "sidenote-print-table";
 
-		const row = document.createElement("tr");
+		const row = createEl("tr");
 		row.className = "sidenote-print-row";
 
-		const contentCell = document.createElement("td");
+		const contentCell = createEl("td");
 		contentCell.className = "sidenote-print-content-cell";
 
-		const sidenoteCell = document.createElement("td");
+		const sidenoteCell = createEl("td");
 		sidenoteCell.className = "sidenote-print-sidenote-cell";
 		if (!isRight) {
 			sidenoteCell.classList.add("is-left");
@@ -327,7 +327,7 @@ function buildPrintTables(
 
 		for (const sn of sidenotes) {
 			if (sidenoteCell.childNodes.length > 0) {
-				const spacer = document.createElement("div");
+				const spacer = createDiv();
 				spacer.className = "sidenote-print-spacer";
 				sidenoteCell.appendChild(spacer);
 			}
@@ -367,11 +367,11 @@ function buildPrintSidenote(
 	text: string,
 	numStr: string,
 ): HTMLElement {
-	const printEl = document.createElement("small");
+	const printEl = createEl("small");
 	printEl.className = "sidenote-print";
 
 	if (ctx.settings.showSidenoteNumbers && numStr) {
-		const numSpan = document.createElement("span");
+		const numSpan = createSpan();
 		numSpan.className = "sidenote-print-number";
 		numSpan.textContent = numStr + ".";
 		printEl.appendChild(numSpan);

@@ -79,7 +79,7 @@ function appendTextWithBreaks(
 			frag.appendChild(document.createTextNode(part));
 		}
 		if (i < parts.length - 1) {
-			frag.appendChild(document.createElement("br"));
+			frag.appendChild(createEl("br"));
 		}
 	}
 }
@@ -94,7 +94,7 @@ export function renderLinksToFragment(
 	text: string,
 	app: App,
 ): DocumentFragment {
-	const frag = document.createDocumentFragment();
+	const frag = createFragment();
 
 	// Combined regex for all supported formats:
 	// - Bold: **text** or __text__
@@ -119,27 +119,27 @@ export function renderLinksToFragment(
 
 		if (m[1] !== undefined) {
 			// Bold: **text**
-			const strong = document.createElement("strong");
+			const strong = createEl("strong");
 			strong.textContent = m[1];
 			frag.appendChild(strong);
 		} else if (m[2] !== undefined) {
 			// Bold: __text__
-			const strong = document.createElement("strong");
+			const strong = createEl("strong");
 			strong.textContent = m[2];
 			frag.appendChild(strong);
 		} else if (m[3] !== undefined) {
 			// Italic: *text*
-			const em = document.createElement("em");
+			const em = createEl("em");
 			em.textContent = m[3];
 			frag.appendChild(em);
 		} else if (m[4] !== undefined) {
 			// Italic: _text_
-			const em = document.createElement("em");
+			const em = createEl("em");
 			em.textContent = m[4];
 			frag.appendChild(em);
 		} else if (m[5] !== undefined) {
 			// Code: `text`
-			const code = document.createElement("code");
+			const code = createEl("code");
 			code.textContent = m[5];
 			frag.appendChild(code);
 		} else if (m[6] !== undefined && m[7] !== undefined) {
@@ -152,7 +152,7 @@ export function renderLinksToFragment(
 				url.startsWith("https://") ||
 				url.startsWith("mailto:");
 
-			const a = document.createElement("a");
+			const a = createEl("a");
 			a.textContent = label;
 
 			if (isExternal) {
@@ -176,7 +176,7 @@ export function renderLinksToFragment(
 			const target = m[8].trim();
 			const display = m[9]?.trim() || target;
 
-			const a = document.createElement("a");
+			const a = createEl("a");
 			a.textContent = display;
 			a.className = "internal-link";
 			a.setAttribute("data-href", target);

@@ -268,7 +268,7 @@ export default class SidenotePlugin extends Plugin {
 					this.pendingFootnoteEdit = String(nextNum);
 
 					// Schedule the auto-edit after widgets are rendered
-					setTimeout(() => {
+					window.setTimeout(() => {
 						this.triggerPendingFootnoteEdit();
 					}, SidenotePlugin.INSERT_SIDENOTE_DELAY);
 				}
@@ -377,7 +377,7 @@ export default class SidenotePlugin extends Plugin {
 					this.pendingFootnoteEdit = String(nextNum);
 
 					// Schedule the auto-edit after widgets are rendered
-					setTimeout(() => {
+					window.setTimeout(() => {
 						this.triggerPendingFootnoteEdit();
 					}, SidenotePlugin.INSERT_SIDENOTE_DELAY);
 				}
@@ -470,7 +470,7 @@ export default class SidenotePlugin extends Plugin {
 
 					this.pendingFootnoteEdit = `mn-${nextNum}`;
 
-					setTimeout(() => {
+					window.setTimeout(() => {
 						this.triggerPendingFootnoteEdit();
 					}, SidenotePlugin.INSERT_SIDENOTE_DELAY);
 				}
@@ -493,9 +493,9 @@ export default class SidenotePlugin extends Plugin {
 				if (this.settings.sidenoteFormat !== "html") {
 					this.scheduleFootnoteProcessing();
 				} else {
-					setTimeout(() => {
-						requestAnimationFrame(() => {
-							requestAnimationFrame(() => {
+					window.setTimeout(() => {
+						window.requestAnimationFrame(() => {
+							window.requestAnimationFrame(() => {
 								this.processReadingModeSidenotes(element);
 							});
 						});
@@ -980,7 +980,7 @@ export default class SidenotePlugin extends Plugin {
 		readingRoot.style.removeProperty("--sidenote-scale");
 
 		// Schedule reprocessing with a delay to ensure cleanup is complete
-		setTimeout(() => {
+		window.setTimeout(() => {
 			const useFootnotes =
 				this.settings.sidenoteFormat === "footnote" ||
 				this.settings.sidenoteFormat === "footnote-edit";
@@ -991,8 +991,8 @@ export default class SidenotePlugin extends Plugin {
 				return;
 			}
 
-			requestAnimationFrame(() => {
-				requestAnimationFrame(() => {
+			window.requestAnimationFrame(() => {
+				window.requestAnimationFrame(() => {
 					this.processReadingModeSidenotes(readingRoot);
 				});
 			});
@@ -1118,7 +1118,7 @@ export default class SidenotePlugin extends Plugin {
 			) {
 				this.pendingFootnoteEdit = footnoteId;
 				this.pendingFootnoteEditRetries++;
-				setTimeout(() => {
+				window.setTimeout(() => {
 					this.triggerPendingFootnoteEdit();
 				}, SidenotePlugin.FOOTNOTE_RENDER_DELAY);
 			} else {
@@ -1138,7 +1138,7 @@ export default class SidenotePlugin extends Plugin {
 		margin.click();
 
 		// After editing starts, select all the text
-		setTimeout(() => {
+		window.setTimeout(() => {
 			const selection = window.getSelection();
 			if (selection && margin.contentEditable === "true") {
 				const range = document.createRange();
@@ -1591,7 +1591,7 @@ export default class SidenotePlugin extends Plugin {
 		host: HTMLElement,
 		cssLengthExpr: string,
 	): number {
-		const probe = document.createElement("div");
+		const probe = createDiv();
 		probe.classList.add("sidenote-measure-probe");
 		probe.style.width = cssLengthExpr;
 		host.appendChild(probe);
@@ -1854,7 +1854,7 @@ export default class SidenotePlugin extends Plugin {
 		// This is required when settings like sidenoteAnchor / sidenotePosition change.
 		if (!this.needsReadingModeRefresh && !hasUnwrapped) {
 			if (hasAnyMargins) {
-				requestAnimationFrame(() => {
+				window.requestAnimationFrame(() => {
 					if (!readingRoot.isConnected) return;
 
 					// Force reflow so measurements are accurate
@@ -2124,9 +2124,9 @@ export default class SidenotePlugin extends Plugin {
 				numStr = this.formatNumber(num++);
 			}
 
-			const wrapper = document.createElement("span");
+			const wrapper = createSpan();
 			wrapper.className = "sidenote-number";
-			const margin = document.createElement("small");
+			const margin = createEl("small");
 			margin.className = "sidenote-margin";
 
 			if (isMargin) {
@@ -2217,8 +2217,8 @@ export default class SidenotePlugin extends Plugin {
 		// Run positioning after DOM is fully settled and elements are laid out.
 		// We defer twice: once to let the browser insert elements, once to lay them out.
 
-		requestAnimationFrame(() => {
-			requestAnimationFrame(() => {
+		window.requestAnimationFrame(() => {
+			window.requestAnimationFrame(() => {
 				if (!readingRoot.isConnected) return;
 
 				// Force reflow
@@ -2310,8 +2310,8 @@ export default class SidenotePlugin extends Plugin {
 					return;
 				}
 
-				requestAnimationFrame(() => {
-					requestAnimationFrame(() => {
+				window.requestAnimationFrame(() => {
+					window.requestAnimationFrame(() => {
 						this.processReadingModeSidenotes(readingRoot);
 					});
 				});
@@ -2351,8 +2351,8 @@ export default class SidenotePlugin extends Plugin {
 			const positionedParent =
 				(wrapper.closest(
 					"p, li, h1, h2, h3, h4, h5, h6, blockquote, .callout",
-				) as HTMLElement | null) ??
-				(wrapper.parentElement as HTMLElement | null);
+				)) ??
+				(wrapper.parentElement);
 
 			if (!positionedParent) return;
 
@@ -2461,11 +2461,11 @@ export default class SidenotePlugin extends Plugin {
 		for (const child of Array.from(source.childNodes)) {
 			const cloned = child.cloneNode(true);
 
-			if (cloned instanceof HTMLAnchorElement) {
+			if (cloned.instanceOf(HTMLAnchorElement)) {
 				this.setupLink(cloned);
 			}
 
-			if (cloned instanceof HTMLElement) {
+			if (cloned.instanceOf(HTMLElement)) {
 				const links = cloned.querySelectorAll("a");
 				links.forEach((link) => this.setupLink(link));
 			}
@@ -2561,7 +2561,7 @@ export default class SidenotePlugin extends Plugin {
 			// After removing orphan mn-* refs, there may be nothing left to resequence.
 			// Still apply the deletion to the editor if we changed content.
 			if (orphanMarginIds.length > 0) {
-				const scrollInfo = (editor as any).cm?.scrollDOM?.scrollTop ?? 0;
+				const scrollInfo = this.getScrollTopFromEditor(editor);
 				this.isMutating = true;
 				try {
 					editor.setValue(content);
@@ -2603,7 +2603,7 @@ export default class SidenotePlugin extends Plugin {
 		// Continue only if renumber needed; otherwise just apply orphan deletions.
 		if (!needsRenumber) {
 			if (orphanMarginIds.length > 0) {
-				const scrollInfo = (editor as any).cm?.scrollDOM?.scrollTop ?? 0;
+				const scrollInfo = this.getScrollTopFromEditor(editor);
 				this.isMutating = true;
 				try {
 					editor.setValue(content);
@@ -2878,7 +2878,7 @@ export default class SidenotePlugin extends Plugin {
 			true,
 		);
 
-		requestAnimationFrame(() => cm.focus());
+		window.requestAnimationFrame(() => cm.focus());
 	}
 
 	// ==================== Reading Mode Footnote Editing ====================
@@ -3004,7 +3004,7 @@ export default class SidenotePlugin extends Plugin {
 			true,
 		);
 
-		requestAnimationFrame(() => cm.focus());
+		window.requestAnimationFrame(() => cm.focus());
 
 		// Watch for editor height changes and re-run collision avoidance
 		const resizeObs = new ResizeObserver(() => {
@@ -3129,7 +3129,7 @@ export default class SidenotePlugin extends Plugin {
 		}
 
 		// Re-run collision avoidance since the margin height changed
-		requestAnimationFrame(() => {
+		window.requestAnimationFrame(() => {
 			const readingRoot = this.app.workspace
 				.getActiveViewOfType(MarkdownView)
 				?.containerEl.querySelector<HTMLElement>(".markdown-reading-view");
@@ -3260,7 +3260,7 @@ export default class SidenotePlugin extends Plugin {
 	// ==================== Reading Mode Layout ====================
 
 	private scheduleReadingModeLayout() {
-		requestAnimationFrame(() => {
+		window.requestAnimationFrame(() => {
 			const view = this.getMarkdownView();
 			if (!view) return;
 
@@ -3298,7 +3298,7 @@ export default class SidenotePlugin extends Plugin {
 
 			// Update positioning and run collision avoidance
 			if (mode !== "hidden" && hasMargins) {
-				requestAnimationFrame(() => {
+				window.requestAnimationFrame(() => {
 					this.updateSidenotePositioning(readingRoot, true);
 					this.correctIndentedSidenotePositions(readingRoot);
 					this.updateReadingModeCollisions();
@@ -3422,7 +3422,7 @@ export default class SidenotePlugin extends Plugin {
 
 	private scheduleLayout() {
 		this.cancelScheduled();
-		this.rafId = requestAnimationFrame(() => {
+		this.rafId = window.requestAnimationFrame(() => {
 			this.rafId = null;
 			this.layout();
 		});
@@ -3432,7 +3432,7 @@ export default class SidenotePlugin extends Plugin {
 		this.cancelScheduled();
 
 		// Leading pass: ASAP
-		this.rafId = requestAnimationFrame(() => {
+		this.rafId = window.requestAnimationFrame(() => {
 			this.rafId = null;
 			this.layout();
 		});
@@ -3736,7 +3736,7 @@ export default class SidenotePlugin extends Plugin {
 		const isSourceMode = !cmRoot.classList.contains("is-live-preview");
 
 		// Determine if we should process sidenotes in editing mode
-		const processHtmlSidenotes = this.settings.sidenoteFormat === "html";
+		// const processHtmlSidenotes = this.settings.sidenoteFormat === "html";
 		const processFootnoteSidenotes =
 			this.settings.sidenoteFormat === "footnote-edit" && !isSourceMode;
 
@@ -3756,9 +3756,9 @@ export default class SidenotePlugin extends Plugin {
 
 			// Run positioning and collision avoidance for widget-created margins
 			if (mode !== "hidden" && this.documentHasSidenotes) {
-				setTimeout(() => {
-					requestAnimationFrame(() => {
-						requestAnimationFrame(() => {
+				window.setTimeout(() => {
+					window.requestAnimationFrame(() => {
+						window.requestAnimationFrame(() => {
 							if (!cmRoot.isConnected) return;
 							this.updateSidenotePositioning(cmRoot, false);
 							this.updateEditingModeCollisions();
@@ -3842,9 +3842,9 @@ export default class SidenotePlugin extends Plugin {
 				for (const item of itemsWithSourceIndex) {
 					const isMargin = this.isMarginNote(item.el);
 					const numStr = isMargin ? "" : this.formatNumber(item.index);
-					const wrapper = document.createElement("span");
+					const wrapper = createSpan();
 					wrapper.className = "sidenote-number";
-					const margin = document.createElement("small");
+					const margin = createEl("small");
 					margin.className = "sidenote-margin";
 
 					if (isMargin) {
@@ -3856,7 +3856,7 @@ export default class SidenotePlugin extends Plugin {
 					margin.dataset.sidenoteNum = numStr;
 
 					if (isMargin) {
-						const marker = document.createElement("span");
+						const marker = createSpan();
 						marker.className = "margin-note-marker";
 
 						const iconSetting = this.settings.popupIcon || "ⓘ";
@@ -3866,7 +3866,7 @@ export default class SidenotePlugin extends Plugin {
 							iconSetting.endsWith(".svg") ||
 							iconSetting.endsWith(".jpg")
 						) {
-							const img = document.createElement("img");
+							const img = createEl("img");
 							img.src = this.app.vault.adapter.getResourcePath(
 								`${this.manifest.dir}/assets/${iconSetting}`,
 							);
@@ -3934,8 +3934,8 @@ export default class SidenotePlugin extends Plugin {
 				cmRoot.querySelectorAll(".sidenote-margin").length;
 
 			// Run positioning and collision avoidance after DOM is settled
-			requestAnimationFrame(() => {
-				requestAnimationFrame(() => {
+			window.requestAnimationFrame(() => {
+				window.requestAnimationFrame(() => {
 					if (!cmRoot.isConnected) return;
 					this.updateSidenotePositioning(cmRoot, false);
 					this.updateEditingModeCollisions();
@@ -3948,8 +3948,8 @@ export default class SidenotePlugin extends Plugin {
 
 			if (this.lastSidenoteCount > 0 && mode !== "hidden") {
 				// Still run positioning and collision avoidance for existing sidenotes
-				requestAnimationFrame(() => {
-					requestAnimationFrame(() => {
+				window.requestAnimationFrame(() => {
+					window.requestAnimationFrame(() => {
 						if (!cmRoot.isConnected) return;
 						this.updateSidenotePositioning(cmRoot, false);
 						this.updateEditingModeCollisions();
@@ -4326,7 +4326,7 @@ export default class SidenotePlugin extends Plugin {
 			true,
 		);
 
-		requestAnimationFrame(() => cm.focus());
+		window.requestAnimationFrame(() => cm.focus());
 	}
 
 	private commitHtmlSpanSidenoteText(
@@ -4417,7 +4417,7 @@ export default class SidenotePlugin extends Plugin {
 	public scheduleCollisionUpdate() {
 		if (this.collisionRafId !== null) return;
 
-		this.collisionRafId = requestAnimationFrame(() => {
+		this.collisionRafId = window.requestAnimationFrame(() => {
 			this.collisionRafId = null;
 			this.updateAllCollisions();
 		});
@@ -4634,7 +4634,7 @@ export default class SidenotePlugin extends Plugin {
 		element.textContent = newText;
 
 		// Restore cursor position
-		requestAnimationFrame(() => {
+		window.requestAnimationFrame(() => {
 			element.focus();
 			const sel = window.getSelection();
 			if (!sel) return;
@@ -4729,7 +4729,7 @@ export default class SidenotePlugin extends Plugin {
 		element.textContent = newText;
 
 		// Restore cursor
-		requestAnimationFrame(() => {
+		window.requestAnimationFrame(() => {
 			element.focus();
 			const sel = window.getSelection();
 			if (!sel || !element.firstChild) return;
@@ -4785,7 +4785,7 @@ export default class SidenotePlugin extends Plugin {
 
 		element.textContent = newText;
 
-		requestAnimationFrame(() => {
+		window.requestAnimationFrame(() => {
 			element.focus();
 			const sel = window.getSelection();
 			if (!sel || !element.firstChild) return;
@@ -5120,7 +5120,7 @@ export default class SidenotePlugin extends Plugin {
 		margin.classList.add("popup-mode-margin");
 
 		margin.innerHTML = "";
-		const icon = document.createElement("span");
+		const icon = createSpan();
 		icon.className = "margin-note-icon";
 		icon.setAttribute("aria-label", "Show margin note");
 
@@ -5132,7 +5132,7 @@ export default class SidenotePlugin extends Plugin {
 			iconSetting.endsWith(".jpg")
 		) {
 			// Image file from plugin assets folder
-			const img = document.createElement("img");
+			const img = createEl("img");
 			img.src = this.app.vault.adapter.getResourcePath(
 				`${this.manifest.dir}/assets/${iconSetting}`,
 			);
@@ -5145,10 +5145,10 @@ export default class SidenotePlugin extends Plugin {
 
 		margin.appendChild(icon);
 
-		const popup = document.createElement("div");
+		const popup = createDiv();
 		popup.className = "margin-note-popup";
 
-		const closeBtn = document.createElement("span");
+		const closeBtn = createSpan();
 		closeBtn.className = "margin-note-popup-close";
 		closeBtn.textContent = "✕";
 		closeBtn.addEventListener("click", (e) => {
@@ -5157,7 +5157,7 @@ export default class SidenotePlugin extends Plugin {
 		});
 		popup.appendChild(closeBtn);
 
-		const contentEl = document.createElement("div");
+		const contentEl = createDiv();
 		contentEl.className = "margin-note-popup-content";
 
 		let currentRawText = contentText;
@@ -5280,7 +5280,7 @@ export default class SidenotePlugin extends Plugin {
 					);
 				}
 
-				requestAnimationFrame(() => popupCmView?.focus());
+				window.requestAnimationFrame(() => popupCmView?.focus());
 			};
 
 			// Click on content: if clicking a link, let it open; otherwise start editing

@@ -332,13 +332,13 @@ class FootnoteSidenoteWidget extends WidgetType {
 	toDOM(): HTMLElement {
 		const isMargin = this.plugin.isMarginNote(this.footnoteId);
 
-		const wrapper = document.createElement("span");
+		const wrapper = createSpan();
 		wrapper.className = "sidenote-number";
 
 		wrapper.dataset.sidenoteNum = this.numberText;
 		wrapper.dataset.footnoteId = this.footnoteId;
 
-		const margin = document.createElement("small");
+		const margin = createEl("small");
 		margin.className = "sidenote-margin";
 		if (isMargin) {
 			margin.classList.add("margin-note");
@@ -403,10 +403,10 @@ class FootnoteSidenoteWidget extends WidgetType {
 		});
 
 		// After the widget is attached to the DOM, calculate line offset and trigger collision avoidance
-		requestAnimationFrame(() => {
+		window.requestAnimationFrame(() => {
 			if (wrapper.isConnected) {
 				// Calculate line offset within the .cm-line
-				const line = wrapper.closest(".cm-line") as HTMLElement | null;
+				const line = wrapper.closest(".cm-line");
 				if (line) {
 					const wrapperRect = wrapper.getBoundingClientRect();
 					const lineRect = line.getBoundingClientRect();
@@ -438,12 +438,7 @@ class FootnoteSidenoteWidget extends WidgetType {
 	private originalText: string = "";
 
 	private setActiveEditorForMargin(cm: EditorView | null) {
-		(this.plugin.app.workspace as any).activeEditor = cm
-			? {
-					editor: cmEditorAdapter(cm),
-					file: this.plugin.app.workspace.getActiveFile(),
-				}
-			: null;
+		setWorkspaceActiveEditor(this.plugin, cm);
 	}
 
 	private makeCommitKeymap(margin: HTMLElement) {
@@ -671,7 +666,7 @@ class FootnoteSidenoteWidget extends WidgetType {
 			true,
 		);
 
-		requestAnimationFrame(() => cm.focus());
+		window.requestAnimationFrame(() => cm.focus());
 
 		// Opening the editor grows the margin; push the ones below it down.
 		this.plugin.scheduleEditingModeCollisionUpdate();
@@ -700,7 +695,7 @@ class MarginNoteMarkerWidget extends WidgetType {
 	}
 
 	toDOM(): HTMLElement {
-		const span = document.createElement("span");
+		const span = createSpan();
 		span.className = "margin-note-marker";
 
 		const iconSetting = this.plugin.settings.popupIcon || "ⓘ";
@@ -710,7 +705,7 @@ class MarginNoteMarkerWidget extends WidgetType {
 			iconSetting.endsWith(".svg") ||
 			iconSetting.endsWith(".jpg")
 		) {
-			const img = document.createElement("img");
+			const img = createEl("img");
 			img.src = this.plugin.app.vault.adapter.getResourcePath(
 				`${this.plugin.manifest.dir}/assets/${iconSetting}`,
 			);

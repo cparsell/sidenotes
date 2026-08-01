@@ -1,4 +1,9 @@
-import { PluginSettingTab, Setting, App } from "obsidian";
+import {
+	PluginSettingTab,
+	Setting,
+	App,
+	SettingDefinitionItem,
+} from "obsidian";
 
 import SidenotePlugin from "./main";
 
@@ -105,6 +110,53 @@ export const DEFAULT_SETTINGS: SidenoteSettings = {
 // ======================================================
 // ==================== Settings Tab ====================
 // ======================================================
+
+/** Static "how the Markdown shorthand maps to output" reference block. */
+function renderFormattingHelp(container: HTMLElement): void {
+	container.createEl("p", {
+		text: "Sidenotes support basic Markdown formatting:",
+	});
+
+	const list = container.createEl("ul");
+
+	const item = (build: (li: HTMLLIElement) => void) => {
+		build(list.createEl("li"));
+	};
+
+	item((li) => {
+		li.createEl("code", { text: "**bold**" });
+		li.appendText(" or ");
+		li.createEl("code", { text: "__bold__" });
+		li.appendText(" → ");
+		li.createEl("strong", { text: "bold" });
+	});
+	item((li) => {
+		li.createEl("code", { text: "*italic*" });
+		li.appendText(" or ");
+		li.createEl("code", { text: "_italic_" });
+		li.appendText(" → ");
+		li.createEl("em", { text: "italic" });
+	});
+	item((li) => {
+		li.createEl("code", { text: "`code`" });
+		li.appendText(" → ");
+		li.createEl("code", { text: "code" });
+	});
+	item((li) => {
+		li.createEl("code", { text: "[link](url)" });
+		li.appendText(" → clickable link");
+	});
+	item((li) => {
+		li.createEl("code", { text: "[[Note]]" });
+		li.appendText(" or ");
+		li.createEl("code", { text: "[[Note|display]]" });
+		li.appendText(" → internal link");
+	});
+
+	container.createEl("p", {
+		text: "Use the command palette to insert sidenotes quickly.",
+	});
+}
 
 export class SidenoteSettingTab extends PluginSettingTab {
 	plugin: SidenotePlugin;
@@ -270,7 +322,6 @@ export class SidenoteSettingTab extends PluginSettingTab {
 				slider
 					.setLimits(5, 25, 1)
 					.setValue(this.plugin.settings.minSidenoteWidth)
-					.setDynamicTooltip()
 					.onChange(async (value) => {
 						this.plugin.settings.minSidenoteWidth = value;
 						await this.plugin.saveSettings();
@@ -284,7 +335,6 @@ export class SidenoteSettingTab extends PluginSettingTab {
 				slider
 					.setLimits(10, 40, 1)
 					.setValue(this.plugin.settings.maxSidenoteWidth)
-					.setDynamicTooltip()
 					.onChange(async (value) => {
 						this.plugin.settings.maxSidenoteWidth = value;
 						await this.plugin.saveSettings();
@@ -300,7 +350,6 @@ export class SidenoteSettingTab extends PluginSettingTab {
 				slider
 					.setLimits(0.5, 30, 0.5)
 					.setValue(this.plugin.settings.sidenoteGap)
-					.setDynamicTooltip()
 					.onChange(async (value) => {
 						this.plugin.settings.sidenoteGap = value;
 						await this.plugin.saveSettings();
@@ -316,7 +365,6 @@ export class SidenoteSettingTab extends PluginSettingTab {
 				slider
 					.setLimits(0, 10, 0.5)
 					.setValue(this.plugin.settings.sidenoteGap2)
-					.setDynamicTooltip()
 					.onChange(async (value) => {
 						this.plugin.settings.sidenoteGap2 = value;
 						await this.plugin.saveSettings();
@@ -332,7 +380,6 @@ export class SidenoteSettingTab extends PluginSettingTab {
 				slider
 					.setLimits(-1, 1, 0.1)
 					.setValue(this.plugin.settings.sidenoteGapDrift)
-					.setDynamicTooltip()
 					.onChange(async (value) => {
 						this.plugin.settings.sidenoteGapDrift = value;
 						await this.plugin.saveSettings();
@@ -348,7 +395,6 @@ export class SidenoteSettingTab extends PluginSettingTab {
 				slider
 					.setLimits(0, 1, 0.1)
 					.setValue(this.plugin.settings.pageOffsetFactor)
-					.setDynamicTooltip()
 					.onChange(async (value) => {
 						this.plugin.settings.pageOffsetFactor = value;
 						await this.plugin.saveSettings();
@@ -416,7 +462,6 @@ export class SidenoteSettingTab extends PluginSettingTab {
 				slider
 					.setLimits(50, 100, 5)
 					.setValue(this.plugin.settings.fontSize)
-					.setDynamicTooltip()
 					.onChange(async (value) => {
 						this.plugin.settings.fontSize = value;
 						await this.plugin.saveSettings();
@@ -430,7 +475,6 @@ export class SidenoteSettingTab extends PluginSettingTab {
 				slider
 					.setLimits(50, 100, 5)
 					.setValue(this.plugin.settings.fontSizeCompact)
-					.setDynamicTooltip()
 					.onChange(async (value) => {
 						this.plugin.settings.fontSizeCompact = value;
 						await this.plugin.saveSettings();
@@ -444,7 +488,6 @@ export class SidenoteSettingTab extends PluginSettingTab {
 				slider
 					.setLimits(1, 2, 0.05)
 					.setValue(this.plugin.settings.lineHeight)
-					.setDynamicTooltip()
 					.onChange(async (value) => {
 						this.plugin.settings.lineHeight = value;
 						await this.plugin.saveSettings();
@@ -505,7 +548,6 @@ export class SidenoteSettingTab extends PluginSettingTab {
 				slider
 					.setLimits(0, 20, 1)
 					.setValue(this.plugin.settings.collisionSpacing)
-					.setDynamicTooltip()
 					.onChange(async (value) => {
 						this.plugin.settings.collisionSpacing = value;
 						await this.plugin.saveSettings();
@@ -607,7 +649,6 @@ export class SidenoteSettingTab extends PluginSettingTab {
 				slider
 					.setLimits(0.1, 3, 0.1)
 					.setValue(this.plugin.settings.marginNoteScaleFactor)
-					.setDynamicTooltip()
 					.onChange(async (value) => {
 						this.plugin.settings.marginNoteScaleFactor = value;
 						await this.plugin.saveSettings();
@@ -623,7 +664,6 @@ export class SidenoteSettingTab extends PluginSettingTab {
 				slider
 					.setLimits(0.1, 3, 0.1)
 					.setValue(this.plugin.settings.popupIconScaleFactor)
-					.setDynamicTooltip()
 					.onChange(async (value) => {
 						this.plugin.settings.popupIconScaleFactor = value;
 						await this.plugin.saveSettings();
@@ -634,16 +674,469 @@ export class SidenoteSettingTab extends PluginSettingTab {
 		new Setting(containerEl).setName("Formatting help").setHeading();
 
 		const helpDiv = containerEl.createDiv({ cls: "sidenote-help" });
-		helpDiv.innerHTML = `
-            <p>Sidenotes support basic Markdown formatting:</p>
-            <ul>
-                <li><code>**bold**</code> or <code>__bold__</code> → <strong>bold</strong></li>
-                <li><code>*italic*</code> or <code>_italic_</code> → <em>italic</em></li>
-                <li><code>\`code\`</code> → <code>code</code></li>
-                <li><code>[link](url)</code> → clickable link</li>
-                <li><code>[[Note]]</code> or <code>[[Note|display]]</code> → internal link</li>
-            </ul>
-            <p>Use the command palette to insert sidenotes quickly.</p>
-        `;
+		renderFormattingHelp(helpDiv);
+	}
+
+	// ==================== Declarative settings (Obsidian 1.13+) ====================
+	// Mirrors display() above so settings surface in Obsidian's settings
+	// search. display() is left in place for older Obsidian versions, which
+	// don't call getSettingDefinitions().
+
+	getControlValue(key: string): unknown {
+		return (this.plugin.settings as unknown as Record<string, unknown>)[
+			key
+		];
+	}
+
+	async setControlValue(key: string, value: unknown): Promise<void> {
+		const settings = this.plugin.settings as unknown as Record<
+			string,
+			unknown
+		>;
+		settings[key] = typeof value === "string" ? value.trim() : value;
+		await this.plugin.saveSettings();
+	}
+
+	getSettingDefinitions(): SettingDefinitionItem[] {
+		const s = DEFAULT_SETTINGS;
+
+		return [
+			{
+				type: "group",
+				heading: "Sidenote format",
+				items: [
+					{
+						name: "Sidenote format",
+						desc: "Choose how sidenotes are written in your documents",
+						control: {
+							type: "dropdown",
+							key: "sidenoteFormat",
+							defaultValue: s.sidenoteFormat,
+							options: {
+								html: 'HTML spans: <span class="sidenote">text</span>',
+								"footnote-edit":
+									"Footnotes (reading + editing mode) [experimental]",
+							},
+						},
+					},
+				],
+			},
+			{
+				type: "group",
+				heading: "If using footnotes",
+				items: [
+					{
+						name: "Hide footnotes",
+						desc: "Hides the footnotes at the bottom of the document (only relevant if using footnote format)",
+						control: {
+							type: "toggle",
+							key: "hideFootnotes",
+							defaultValue: s.hideFootnotes,
+						},
+					},
+					{
+						name: "Hide footnote numbers in text",
+						desc: "Hides the Markdown style footnote reference numbers in the text body, and replaces with sidenote numbers only (only relevant if using footnote format)",
+						control: {
+							type: "toggle",
+							key: "hideFootnoteNumbers",
+							defaultValue: s.hideFootnoteNumbers,
+						},
+					},
+				],
+			},
+			{
+				type: "group",
+				heading: "Display",
+				items: [
+					{
+						name: "Sidenote position",
+						desc: "Which margin to display sidenotes in (text will be offset to the opposite side)",
+						control: {
+							type: "dropdown",
+							key: "sidenotePosition",
+							defaultValue: s.sidenotePosition,
+							options: { left: "Left margin", right: "Right margin" },
+						},
+					},
+					{
+						name: "Show sidenote numbers",
+						desc: "Display reference numbers in text and sidenotes",
+						control: {
+							type: "toggle",
+							key: "showSidenoteNumbers",
+							defaultValue: s.showSidenoteNumbers,
+						},
+					},
+					{
+						name: "Number style",
+						desc: "How to format sidenote numbers",
+						control: {
+							type: "dropdown",
+							key: "numberStyle",
+							defaultValue: s.numberStyle,
+							options: {
+								arabic: "Arabic (1, 2, 3)",
+								roman: "Roman (i, ii, iii)",
+								letters: "Letters (a, b, c)",
+							},
+						},
+					},
+					{
+						name: "Number badge style",
+						desc: "Visual style for sidenote numbers",
+						control: {
+							type: "dropdown",
+							key: "numberBadgeStyle",
+							defaultValue: s.numberBadgeStyle,
+							options: {
+								plain: "Plain (superscript)",
+								neumorphic: "Neumorphic (subtle badge)",
+								pill: "Pill (colored capsule)",
+							},
+						},
+					},
+					{
+						name: "Number color",
+						desc: "Custom color for sidenote numbers (leave empty for theme default)",
+						control: {
+							type: "text",
+							key: "numberColor",
+							defaultValue: s.numberColor,
+							placeholder: "#666666 or rgb(100,100,100)",
+						},
+					},
+				],
+			},
+			{
+				type: "group",
+				heading: "Width & spacing",
+				items: [
+					{
+						name: "Sidenote anchor",
+						desc: "Whether sidenotes are positioned relative to the text body or the editor edge",
+						control: {
+							type: "dropdown",
+							key: "sidenoteAnchor",
+							defaultValue: s.sidenoteAnchor,
+							options: {
+								text: "Anchor to text (traditional)",
+								edge: "Anchor to editor edge",
+							},
+						},
+					},
+					{
+						name: "Minimum sidenote width",
+						desc: "Base width of sidenotes in rem (default: 10)",
+						control: {
+							type: "slider",
+							key: "minSidenoteWidth",
+							defaultValue: s.minSidenoteWidth,
+							min: 5,
+							max: 25,
+							step: 1,
+						},
+					},
+					{
+						name: "Maximum sidenote width",
+						desc: "Maximum width of sidenotes in rem (default: 18)",
+						control: {
+							type: "slider",
+							key: "maxSidenoteWidth",
+							defaultValue: s.maxSidenoteWidth,
+							min: 10,
+							max: 40,
+							step: 1,
+						},
+					},
+					{
+						name: "Minimum gap between sidenote and text",
+						desc: "Space between the margin and body text in rem (default: 2)",
+						control: {
+							type: "slider",
+							key: "sidenoteGap",
+							defaultValue: s.sidenoteGap,
+							min: 0.5,
+							max: 30,
+							step: 0.5,
+						},
+					},
+					{
+						name: "Minimum gap between sidenote and editor edge",
+						desc: "When anchored to text: minimum distance from editor edge. When anchored to edge: minimum distance from text body. (rem, default: 1)",
+						control: {
+							type: "slider",
+							key: "sidenoteGap2",
+							defaultValue: s.sidenoteGap2,
+							min: 0,
+							max: 10,
+							step: 0.5,
+						},
+					},
+					{
+						name: "Gap drift factor",
+						desc: "Adjusts how much the gaps grow as editor width increases (default: 0.5). At 0, gaps stay at their minimum. At 1, gaps grow by the maximum amount (20% of extra space).",
+						control: {
+							type: "slider",
+							key: "sidenoteGapDrift",
+							defaultValue: s.sidenoteGapDrift,
+							min: -1,
+							max: 1,
+							step: 0.1,
+						},
+					},
+					{
+						name: "Page offset factor",
+						desc: "Adjusts how much body text gets nudged over when sidenotes are present (default: 0)",
+						control: {
+							type: "slider",
+							key: "pageOffsetFactor",
+							defaultValue: s.pageOffsetFactor,
+							min: 0,
+							max: 1,
+							step: 0.1,
+						},
+					},
+				],
+			},
+			{
+				type: "group",
+				heading: "Breakpoints",
+				items: [
+					{
+						name: "Hide below width",
+						desc: "Hide sidenotes when editor width is below this (px)",
+						control: {
+							type: "number",
+							key: "hideBelow",
+							defaultValue: s.hideBelow,
+							placeholder: "700",
+							min: 1,
+							validate: (value) =>
+								value > 0 ? undefined : "Must be greater than 0",
+						},
+					},
+					{
+						name: "Compact below width",
+						desc: "Use compact mode when editor width is below this (px)",
+						control: {
+							type: "number",
+							key: "compactBelow",
+							defaultValue: s.compactBelow,
+							placeholder: "900",
+							min: 1,
+							validate: (value) =>
+								value > 0 ? undefined : "Must be greater than 0",
+						},
+					},
+					{
+						name: "Full width above",
+						desc: "Use full-width sidenotes when editor width is above this (px)",
+						control: {
+							type: "number",
+							key: "fullAbove",
+							defaultValue: s.fullAbove,
+							placeholder: "1400",
+							min: 1,
+							validate: (value) =>
+								value > 0 ? undefined : "Must be greater than 0",
+						},
+					},
+				],
+			},
+			{
+				type: "group",
+				heading: "Typography",
+				items: [
+					{
+						name: "Font size",
+						desc: "Font size as percentage of body text (default: 80)",
+						control: {
+							type: "slider",
+							key: "fontSize",
+							defaultValue: s.fontSize,
+							min: 50,
+							max: 100,
+							step: 5,
+						},
+					},
+					{
+						name: "Font size (compact mode)",
+						desc: "Font size in compact mode as percentage (default: 70)",
+						control: {
+							type: "slider",
+							key: "fontSizeCompact",
+							defaultValue: s.fontSizeCompact,
+							min: 50,
+							max: 100,
+							step: 5,
+						},
+					},
+					{
+						name: "Line height",
+						desc: "Line height for sidenote text (default: 1.35)",
+						control: {
+							type: "slider",
+							key: "lineHeight",
+							defaultValue: s.lineHeight,
+							min: 1,
+							max: 2,
+							step: 0.05,
+						},
+					},
+					{
+						name: "Sidenote text color",
+						desc: "Color for sidenote text. Leave empty to use Obsidian's default text color.",
+						control: {
+							type: "text",
+							key: "textColor",
+							defaultValue: s.textColor,
+							placeholder: "E.g. #333333 or rgb(50,50,50)",
+						},
+					},
+					{
+						name: "Sidenote hover color",
+						desc: "Color for sidenote text *on hover*. Leave empty to use Obsidian's default *muted text* color.",
+						control: {
+							type: "text",
+							key: "hoverColor",
+							defaultValue: s.hoverColor,
+							placeholder: "E.g. #333333 or rgb(50,50,50)",
+						},
+					},
+					{
+						name: "Text alignment",
+						desc: "How to align text in sidenotes",
+						control: {
+							type: "dropdown",
+							key: "textAlignment",
+							defaultValue: s.textAlignment,
+							options: { left: "Left", right: "Right", justify: "Justified" },
+						},
+					},
+				],
+			},
+			{
+				type: "group",
+				heading: "Behavior",
+				items: [
+					{
+						name: "Collision spacing",
+						desc: "Minimum pixels between stacked sidenotes (default: 8)",
+						control: {
+							type: "slider",
+							key: "collisionSpacing",
+							defaultValue: s.collisionSpacing,
+							min: 0,
+							max: 20,
+							step: 1,
+						},
+					},
+					{
+						name: "Enable smooth transitions",
+						desc: "Animate width and position changes",
+						control: {
+							type: "toggle",
+							key: "enableTransitions",
+							defaultValue: s.enableTransitions,
+						},
+					},
+					{
+						name: "Reset numbering per heading",
+						desc: "Restart sidenote numbering after each heading",
+						control: {
+							type: "toggle",
+							key: "resetNumberingPerHeading",
+							defaultValue: s.resetNumberingPerHeading,
+						},
+					},
+					{
+						name: "Allow sidenote edits in reading mode",
+						desc: "Click a sidenote in reading mode to edit the footnote text",
+						control: {
+							type: "toggle",
+							key: "editInReadingMode",
+							defaultValue: s.editInReadingMode,
+						},
+					},
+					{
+						name: "Include sidenotes in PDF export (experimental)",
+						desc: "When enabled, sidenotes will be included in PDF exports, in the margin rather than inline. Works with both the HTML and footnote formats. Note: this may cause formatting issues in some cases.",
+						control: {
+							type: "toggle",
+							key: "pdfExport",
+							defaultValue: s.pdfExport,
+						},
+					},
+				],
+			},
+			{
+				type: "group",
+				heading: "Margin notes",
+				items: [
+					{
+						name: "Margin note display",
+						desc: "Show margin notes in the margin, or as an ⓘ icon with a popup on click.",
+						control: {
+							type: "dropdown",
+							key: "marginNoteDisplay",
+							defaultValue: s.marginNoteDisplay,
+							options: {
+								margin: "Show in margin",
+								popup: "Show as popup on click",
+							},
+						},
+					},
+					{
+						name: "Margin note popup icon",
+						desc: "Specify an icon to use for margin notes when 'Show as popup on click' is selected. You can use any Unicode character, e.g. ⓘ or 🛈, or a filename (stored in plugins/sidenotes/assets)",
+						control: {
+							type: "text",
+							key: "popupIcon",
+							defaultValue: s.popupIcon,
+							placeholder: "E.g. ⓘ or 🛈 or information_source.png",
+						},
+					},
+					{
+						name: "Margin note marker scale factor",
+						desc: "Scale factor for margin note icon placed in the main note (default: 1)",
+						control: {
+							type: "slider",
+							key: "marginNoteScaleFactor",
+							defaultValue: s.marginNoteScaleFactor,
+							min: 0.1,
+							max: 3,
+							step: 0.1,
+						},
+					},
+					{
+						name: "Margin note popup icon scale factor",
+						desc: "Scale factor for margin note popup icons - only applies if using popup mode for margin notes(default: 1)",
+						control: {
+							type: "slider",
+							key: "popupIconScaleFactor",
+							defaultValue: s.popupIconScaleFactor,
+							min: 0.1,
+							max: 3,
+							step: 0.1,
+						},
+					},
+				],
+			},
+			{
+				type: "group",
+				heading: "Formatting help",
+				items: [
+					{
+						name: "",
+						render: (setting) => {
+							setting.settingEl.empty();
+							setting.settingEl.addClass("sidenote-help");
+							renderFormattingHelp(setting.settingEl);
+						},
+					},
+				],
+			},
+		];
 	}
 }

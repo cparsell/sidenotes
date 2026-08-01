@@ -1,4 +1,4 @@
-# Sidenotes
+# Side-Notes
 
 I first discovered sidenotes, at least in a conscious way, on [Gwern.net](https://gwern.net/sidenote) which was referencing [Edward Tufte's conventions](https://edwardtufte.github.io/tufte-css/).
 
