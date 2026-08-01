@@ -124,18 +124,8 @@ The snippet of CSS I've been using for web publishing is located in `/digital-ga
 
 ### Known issues
 
-- [x] PDF export doubles sidenote text ✅ 2026-07-29
-- [x] Font size gets larger if sidenote is added to a header ✅ 2026-07-28
-- [x] Footnotes sometimes still overlap. Sometimes they fix themselves but sometimes it sticks for a while ✅ 2026-07-28
 - [ ] HTML sidenotes, in Reading Mode? - When pressing enter to update the last sidenote, it jumps up about 1 page
 - [ ] Changing style settings causes Editing mode sidenotes to disappear until restart
-- [x] Footnotes, Reading Mode - Editing mode box will overlap over a sidenote just below it
-- [x] Footnotes, when converted to sidenotes, collide and/or are not positioned properly in the sidenote column.~~ (Tentatively fixed) ✅ 2026-02-03
-- [x] Sidenotes seem to collide with each other in certain circumstances. So far I just see it in Reading Mode. (Fixed 2/2/26) ✅ 2026-02-02
-- [x] Numbers may not update immediately when sequencing changes. For example, if the first sidenote is removed, the second one becomes the first but may still be annotated 2. Reopening the note fixes it (Fixed 1/30/26) ✅ 2026-01-30
-- [x] The cursor is brought to the top of the note after editing in the margin, if one edits/deletes the content in the note. (Fixed 1/31/26) ✅ 2026-01-31
-- [x] When editing sidenotes in the margin, after pressing enter, the wrong sidenote may get updated if two sidenotes have the same text (Fixed 1/31/26). ✅ 2026-01-31
-- [x] Also when editing sidenotes in the margins, especially lower down in a note, the numbers may reset. e.g. instead of being 5,6 and 7, they become 1, 2, and 3 ✅ 2026-01-31
 
 ## Support
 
