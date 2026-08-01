@@ -125,6 +125,7 @@ export function injectPrintSidenotes(
 
 	const sidenotesByAnchor = new Map<HTMLElement, HTMLElement[]>();
 	const processedIds = new Set<string>();
+	let sourceIndex = 0;
 
 	for (const ref of Array.from(refs)) {
 		// Links inside the endnote list are backrefs, not references
@@ -133,23 +134,27 @@ export function injectPrintSidenotes(
 		const renderedId = resolveFootnoteBaseId(ref);
 		if (!renderedId) continue;
 
-		// Obsidian renumbers footnotes sequentially when rendering, so
-		// map "1" back to the source label (e.g. [^mn-2]) before looking
-		// the definition up.
+		if (processedIds.has(renderedId)) continue;
+
+		// Obsidian renumbers footnotes sequentially when rendering, so map
+		// back to the source label (e.g. [^mn-2]) before looking the
+		// definition up. Rather than trusting the rendered number as a
+		// literal 1-based index (fragile: e.g. a margin note earlier in the
+		// document consumes a slot in Obsidian's numbering but doesn't
+		// change what the *next* ref's rendered id literally reads as),
+		// walk sourceRefOrder in lockstep with the deduped refs actually
+		// encountered in DOM order — both lists are "order of first
+		// reference appearance", so they line up 1:1 regardless of what
+		// Obsidian's own numbering scheme looks like.
 		let id = renderedId;
-		const renderedNum = parseInt(renderedId, 10);
-		if (
-			!isNaN(renderedNum) &&
-			renderedNum >= 1 &&
-			renderedNum <= sourceRefOrder.length
-		) {
-			const sourceId = sourceRefOrder[renderedNum - 1];
+		if (sourceIndex < sourceRefOrder.length) {
+			const sourceId = sourceRefOrder[sourceIndex];
 			if (sourceId && definitions.has(sourceId)) {
 				id = sourceId;
 			}
 		}
+		sourceIndex++;
 
-		if (processedIds.has(renderedId) || processedIds.has(id)) continue;
 		processedIds.add(renderedId);
 		processedIds.add(id);
 

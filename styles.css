@@ -83,7 +83,7 @@
 }
 
 /* Width constraint for the export container — the anchor paragraphs need
-   to make room for the sidenote table column next to them */
+   to make room for the sidenote table column next to them. */
 .sidenote-print-page
 	:is(
 		p,
@@ -107,15 +107,21 @@
 .sidenote-print-page section.footnotes {
 	max-width: 70% !important;
 }
+/* Both of these narrow a container that's already been narrowed once by a
+   rule above (the sidenote table's content cell, or section.footnotes
+   itself) — reset so the narrowing doesn't compound on their children. */
 .sidenote-print-page .sidenote-print-table,
 .sidenote-print-page .sidenote-print-table td,
 .sidenote-print-page
 	.sidenote-print-table
-	:is(p, li, h1, h2, h3, h4, h5, h6) {
+	:is(p, li, h1, h2, h3, h4, h5, h6),
+.sidenote-print-page
+	section.footnotes
+	:is(p, li, h1, h2, h3, h4, h5, h6, ul, ol, blockquote) {
 	max-width: none !important;
 }
 
-/* Left-margin layout additionally needs the body nudged right */
+/* Left-margin layout additionally needs the body nudged right. */
 .sidenote-print-page--left
 	:is(
 		p,
@@ -143,7 +149,10 @@
 .sidenote-print-page--left .sidenote-print-table td,
 .sidenote-print-page--left
 	.sidenote-print-table
-	:is(p, li, h1, h2, h3, h4, h5, h6) {
+	:is(p, li, h1, h2, h3, h4, h5, h6),
+.sidenote-print-page--left
+	section.footnotes
+	:is(p, li, h1, h2, h3, h4, h5, h6, ul, ol, blockquote) {
 	margin-left: 0 !important;
 }
 
@@ -224,10 +233,13 @@
 	--sidenote-gap2: var(--sn-gap2-full, 1.5rem);
 }
 
-/* === Scroller overflow === */
+/* === Scroller overflow ===
+   !important here and below on .cm-* selectors: these override CodeMirror's
+   own baseline styles (not just a theme's), which reassert themselves with
+   comparable specificity — plain classes lose that fight silently. */
 .markdown-source-view.mod-cm6 .cm-scroller {
-	overflow-y: auto;
-	overflow-x: visible;
+	overflow-y: auto !important;
+	overflow-x: visible !important;
 }
 
 /* === Page offset — LEFT position === */
@@ -237,8 +249,8 @@
 	.cm-scroller,
 .markdown-source-view.mod-cm6[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="full"]
 	.cm-scroller {
-	padding-left: var(--page-offset);
-	padding-right: 0;
+	padding-left: var(--page-offset) !important;
+	padding-right: 0 !important;
 }
 
 .markdown-reading-view[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="compact"]
@@ -247,8 +259,8 @@
 	.markdown-preview-sizer,
 .markdown-reading-view[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="full"]
 	.markdown-preview-sizer {
-	padding-left: var(--page-offset);
-	padding-right: 0;
+	padding-left: var(--page-offset) !important;
+	padding-right: 0 !important;
 }
 
 /* === Page offset — RIGHT position === */
@@ -258,8 +270,8 @@
 	.cm-scroller,
 .markdown-source-view.mod-cm6[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="full"]
 	.cm-scroller {
-	padding-right: var(--page-offset);
-	padding-left: 0;
+	padding-right: var(--page-offset) !important;
+	padding-left: 0 !important;
 }
 
 .markdown-reading-view[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="compact"]
@@ -268,8 +280,8 @@
 	.markdown-preview-sizer,
 .markdown-reading-view[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="full"]
 	.markdown-preview-sizer {
-	padding-right: var(--page-offset);
-	padding-left: 0;
+	padding-right: var(--page-offset) !important;
+	padding-left: 0 !important;
 }
 
 /* === Sidenote positioning (uses --sidenote-offset set by JS) === */
@@ -290,7 +302,7 @@
 			var(--sidenote-indent-adjust, 0px)
 	);
 	right: auto;
-	text-align: var(--sn-text-align, right);
+	text-align: var(--sn-text-align, right) !important;
 }
 
 /* RIGHT */
@@ -309,7 +321,7 @@
 			var(--sidenote-indent-adjust, 0px)
 	);
 	left: auto;
-	text-align: var(--sn-text-align, left);
+	text-align: var(--sn-text-align, left) !important;
 }
 
 /* === Prevent clipping by CM layers === */
@@ -317,7 +329,7 @@
 .markdown-source-view.mod-cm6 .cm-content,
 .markdown-source-view.mod-cm6 .cm-sizer,
 .markdown-source-view.mod-cm6 .cm-contentContainer {
-	overflow: visible;
+	overflow: visible !important;
 }
 
 /* Line = positioning context */
@@ -387,23 +399,23 @@
 }
 
 .sidenote-margin[data-editing="true"] {
-	display: block;
+	display: block !important;
 }
 
 .sidenote-margin[data-editing="true"]::before {
-	float: left;
-	margin-right: 0.3em;
-	shape-outside: margin-box;
+	float: left !important;
+	margin-right: 0.3em !important;
+	shape-outside: margin-box !important;
 }
 
 .sidenote-margin[data-editing="true"]
 	> .cm-editor
 	> .cm-scroller
 	> .cm-content {
-	display: block;
-	width: 100%;
-	min-width: 0;
-	box-sizing: border-box;
+	display: block !important;
+	width: 100% !important;
+	min-width: 0 !important;
+	box-sizing: border-box !important;
 }
 
 .sidenote-margin[data-editing="true"]
@@ -411,14 +423,14 @@
 	> .cm-scroller
 	> .cm-content
 	> .cm-line {
-	width: 100%;
-	min-width: 0;
-	word-break: break-word;
-	white-space: pre-wrap;
+	width: 100% !important;
+	min-width: 0 !important;
+	word-break: break-word !important;
+	white-space: pre-wrap !important;
 }
 
 .sidenote-margin[data-editing="true"] > .cm-editor > .cm-announced {
-	display: none;
+	display: none !important;
 }
 
 /* Compact mode typography */
@@ -442,9 +454,9 @@
 .markdown-source-view.mod-cm6[data-sidenote-mode="hidden"]
 	.sidenote-margin,
 .markdown-reading-view[data-sidenote-mode="hidden"] .sidenote-margin {
-	display: none;
-	visibility: hidden;
-	pointer-events: none;
+	display: none !important;
+	visibility: hidden !important;
+	pointer-events: none !important;
 }
 
 /* === Prevent clipping by CM layers (only when sidenotes are active) === */
@@ -464,7 +476,7 @@
 		[data-sidenote-mode="hidden"]
 	)
 	.cm-contentContainer {
-	overflow: visible;
+	overflow: visible !important;
 }
 
 /* Empty mode — opacity fade */
@@ -478,7 +490,7 @@
 /* === Defensive scoping: ensure plugin styles win === */
 .markdown-source-view.mod-cm6 .sidenote-margin,
 .markdown-reading-view .sidenote-margin {
-	box-sizing: border-box;
+	box-sizing: border-box !important;
 	z-index: 1;
 	contain: layout style;
 }
@@ -788,46 +800,46 @@
    Sidenote inline CM6 editor (footnote-edit mode)
    ========================================================== */
 .sidenote-margin .sidenote-cm-editor.cm-editor {
-	background: transparent;
-	color: inherit;
-	padding: 0;
-	margin: 0;
-	border: none;
-	height: auto;
+	background: transparent !important;
+	color: inherit !important;
+	padding: 0 !important;
+	margin: 0 !important;
+	border: none !important;
+	height: auto !important;
 }
 
 .sidenote-margin .sidenote-cm-editor .cm-scroller {
-	padding: 0;
-	margin: 0;
-	overflow-x: hidden;
-	overflow: visible;
-	height: auto;
+	padding: 0 !important;
+	margin: 0 !important;
+	overflow-x: hidden !important;
+	overflow: visible !important;
+	height: auto !important;
 }
 
 .sidenote-margin .sidenote-cm-editor .cm-content {
-	padding: 2px 0;
-	margin: 0;
+	padding: 2px 0 !important;
+	margin: 0 !important;
 }
 
 .sidenote-margin[data-editing="true"] .sidenote-cm-editor .cm-content {
-	color: var(--sn-text-color, var(--text-normal));
+	color: var(--sn-text-color, var(--text-normal)) !important;
 }
 
 .sidenote-margin .sidenote-cm-editor .cm-line {
-	padding: 0;
-	margin: 0;
+	padding: 0 !important;
+	margin: 0 !important;
 }
 
 .sidenote-margin .sidenote-cm-editor .cm-gutters {
-	display: none;
+	display: none !important;
 }
 
 .sidenote-margin .sidenote-cm-editor .cm-cursor {
-	border-left-color: var(--text-normal);
+	border-left-color: var(--text-normal) !important;
 }
 
 .sidenote-margin .sidenote-cm-editor .cm-focused {
-	outline: none;
+	outline: none !important;
 }
 
 /* Also reset the scroller/editor containers from the old styles */
@@ -840,8 +852,8 @@
 }
 
 .sidenote-editor .cm-scroller {
-	overflow: visible;
-	height: auto;
+	overflow: visible !important;
+	height: auto !important;
 }
 
 /* Margin notes: hide the number badge */
@@ -940,7 +952,7 @@ span.sidenote-number.margin-note {
 }
 
 .sidenote-margin.margin-note.popup-mode-margin {
-	overflow: visible;
+	overflow: visible !important;
 }
 
 .margin-note-popup {
