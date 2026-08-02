@@ -11,6 +11,10 @@ _An optional style that highlights references._
 ![Editing sidenotes](https://github.com/cparsell/sidenotes/blob/main/gh_assets/Screen-Record-Editing2.gif)
 _Editing a sidenote in the margin, adding a new sidenote, then adding a new margin note_
 
+## Download
+
+- Download: [Side-Notes from Community Plugins](https://community.obsidian.md/plugins/side-notes)
+
 ## Features
 
 ### Sidenotes
