@@ -56,12 +56,27 @@ type HasCmScrollTop = {
 	};
 };
 
+// Class-attribute fragment matching any span whose class list contains
+// "sidenote" as a whole token — so it also covers the extra classes the
+// per-note margin override adds (`sidenote right`, `sidenote margin-note
+// left`). Requiring a full token keeps it from matching our own generated
+// `sidenote-number` wrappers.
+const SIDENOTE_CLASS_ATTR = `class\\s*=\\s*["'](?:[^"']*\\s)?sidenote(?:\\s[^"']*)?["']`;
+
 // Regex to detect sidenote spans in source text (includes margin-note variant)
 const SIDENOTE_PATTERN = () =>
-	/<span\s+class\s*=\s*["']sidenote(?:\s+margin-note)?["'][^>]*>/gi;
+	new RegExp(`<span\\s+${SIDENOTE_CLASS_ATTR}[^>]*>`, "gi");
 
 const SIDENOTE_SPAN_REGEX = () =>
-	/<span\s+class\s*=\s*["']sidenote(?:\s+margin-note)?["'][^>]*>([\s\S]*?)<\/span>/gi;
+	new RegExp(
+		`<span\\s+${SIDENOTE_CLASS_ATTR}[^>]*>([\\s\\S]*?)<\\/span>`,
+		"gi",
+	);
+
+// Same as SIDENOTE_PATTERN but captures the class list, so callers can read
+// the per-note side override (`right` / `left`) out of the source text.
+const SIDENOTE_CLASS_CAPTURE_REGEX = () =>
+	/<span\s+class\s*=\s*["']((?:[^"']*\s)?sidenote(?:\s[^"']*)?)["'][^>]*>/gi;
 
 // ======================================================
 // ================= Main Plugin Class ==================
@@ -85,6 +100,16 @@ export default class SidenotePlugin extends Plugin {
 
 	// Track whether current document has any sidenotes
 	private documentHasSidenotes = false;
+
+	// Which margins the document's sidenotes actually occupy, derived from the
+	// SOURCE text rather than from mounted DOM. Both CM6 and reading mode
+	// virtualise content, so a DOM query only ever sees the notes near the
+	// viewport — reserving margin space off that would make the page offset
+	// (and therefore the body text) shift around as you scroll.
+	private documentSidenoteSides: Record<SidenoteSide, boolean> = {
+		left: false,
+		right: false,
+	};
 
 	// Performance: Debounce/throttle timers
 	private scrollDebounceTimer: number | null = null;
@@ -1663,13 +1688,17 @@ export default class SidenotePlugin extends Plugin {
 		// it, the override side has no room at all and edge-anchored notes
 		// collapse against (or past) the pane's real edge instead of
 		// respecting sidenoteGap/sidenoteGap2.
+		//
+		// This reads the source-derived map, NOT a DOM query: both CM6 and
+		// reading mode virtualise, so querying mounted `.sidenote-margin`
+		// elements returns null as soon as you scroll past the last override.
+		// That toggled the mirrored padding off mid-scroll and visibly shifted
+		// the body text sideways.
 		const oppositeSide: SidenoteSide =
 			position === "left" ? "right" : "left";
-		const hasOppositeOverride =
-			root.querySelector(
-				`.sidenote-margin[data-sidenote-side="${oppositeSide}"]`,
-			) !== null;
-		root.dataset.sidenoteHasOpposite = hasOppositeOverride
+		root.dataset.sidenoteHasOpposite = this.documentSidenoteSides[
+			oppositeSide
+		]
 			? "true"
 			: "false";
 
@@ -2309,14 +2338,21 @@ export default class SidenotePlugin extends Plugin {
 		// 	allItems.map((i) => i.footnoteId),
 		// );
 
+		// Drive the page-offset CSS from whether the *document* has sidenotes
+		// (computed from source in scanDocumentForSidenotes), not from how many
+		// sidenote elements happen to be mounted right now. Obsidian virtualizes
+		// long reading views, so `allItems` here only reflects the currently
+		// rendered section — using its length instead flipped the offset on and
+		// off as the mounted sidenotes came in and out of the DOM while scrolling.
+		readingRoot.dataset.hasSidenotes = this.documentHasSidenotes
+			? "true"
+			: "false";
+
 		if (allItems.length === 0) {
-			readingRoot.dataset.hasSidenotes = "false";
 			return;
 		}
 
 		this.needsReadingModeRefresh = false;
-
-		readingRoot.dataset.hasSidenotes = "true";
 
 		// Sort by vertical position. Items with valid rects sort by top position;
 		// items with zero rects (not yet laid out) sort by their DOM order,
@@ -3005,6 +3041,12 @@ export default class SidenotePlugin extends Plugin {
 	private startReadingModeHtmlEdit(margin: HTMLElement, rawText: string) {
 		if (this.spanCmView) return;
 
+		// Clear any lingering cooldown from a previous edit before starting
+		if (this.postEditCooldown !== null) {
+			window.clearTimeout(this.postEditCooldown);
+			this.postEditCooldown = null;
+		}
+
 		this.spanOriginalText = rawText;
 		this.activeReadingModeMargin = margin;
 
@@ -3017,6 +3059,7 @@ export default class SidenotePlugin extends Plugin {
 
 			const newText = cm.state.doc.toString();
 			const renderText = opts.commit ? newText : this.spanOriginalText;
+			const changed = opts.commit && newText !== this.spanOriginalText;
 
 			if (this.spanOutsidePointerDown) {
 				document.removeEventListener(
@@ -3032,9 +3075,19 @@ export default class SidenotePlugin extends Plugin {
 
 			setWorkspaceActiveEditor(this, null);
 
+			// Keep isEditingMargin = true through the commit so the reading-mode
+			// MutationObserver (which reacts to Obsidian's async preview
+			// re-render) doesn't kick off a full sidenote rebuild before we've
+			// re-rendered this margin ourselves — that rebuild was tearing down
+			// and recreating every sidenote in the document, which shifted the
+			// scroll position by roughly a page.
+			if (changed) {
+				this.isEditingMargin = true;
+			}
+
 			margin.dataset.editing = "false";
 
-			if (opts.commit && newText !== this.spanOriginalText) {
+			if (changed) {
 				this.commitHtmlSpanSidenoteText(this.spanOriginalText, newText);
 			}
 
@@ -3045,10 +3098,20 @@ export default class SidenotePlugin extends Plugin {
 
 			this.activeReadingModeMargin = null;
 
-			if (opts.commit && newText !== this.spanOriginalText) {
-				this.refreshCachedSourceContent();
-				this.needsReadingModeRefresh = true;
+			if (changed) {
+				this.isEditingMargin = false;
 				this.invalidateLayoutCache();
+
+				// Give Obsidian's async preview re-render time to settle before
+				// letting the MutationObserver process the document again —
+				// otherwise it can rebuild from a stale source cache.
+				if (this.postEditCooldown !== null) {
+					window.clearTimeout(this.postEditCooldown);
+				}
+				this.postEditCooldown = window.setTimeout(() => {
+					this.postEditCooldown = null;
+					this.refreshCachedSourceContent();
+				}, 500);
 			}
 		};
 
@@ -3579,12 +3642,14 @@ export default class SidenotePlugin extends Plugin {
 		const view = this.getMarkdownView();
 		if (!view) {
 			this.documentHasSidenotes = false;
+			this.documentSidenoteSides = { left: false, right: false };
 			return;
 		}
 
 		const editor = view.editor;
 		if (!editor) {
 			this.documentHasSidenotes = false;
+			this.documentSidenoteSides = { left: false, right: false };
 			return;
 		}
 
@@ -3602,6 +3667,13 @@ export default class SidenotePlugin extends Plugin {
 		} else {
 			this.documentHasSidenotes = /\[\^[^\]]+\](?!:)/.test(content);
 		}
+
+		// Fall back to the cache: getValue() returns "" on a reading-only leaf,
+		// and an empty result here would drop the mirrored margin's reserved
+		// space and shift the body text.
+		this.documentSidenoteSides = this.scanSidenoteSides(
+			content || this.cachedSourceContent,
+		);
 
 		// Check if we're in Source mode
 		const cmRoot = this.cmRoot;
@@ -3634,6 +3706,47 @@ export default class SidenotePlugin extends Plugin {
 				? "true"
 				: "false";
 		}
+	}
+
+	/**
+	 * Work out which margins the document's sidenotes occupy by reading the
+	 * SOURCE text, so the answer covers the whole document rather than just
+	 * the portion currently mounted in a virtualised view. Notes without an
+	 * explicit override count toward the document-wide "Sidenote position".
+	 */
+	private scanSidenoteSides(content: string): Record<SidenoteSide, boolean> {
+		const sides: Record<SidenoteSide, boolean> = {
+			left: false,
+			right: false,
+		};
+		if (!content) return sides;
+
+		const defaultSide = this.settings.sidenotePosition;
+		let match: RegExpExecArray | null;
+
+		if (this.settings.sidenoteFormat === "html") {
+			const regex = SIDENOTE_CLASS_CAPTURE_REGEX();
+			while ((match = regex.exec(content)) !== null) {
+				const classes = (match[1] ?? "").split(/\s+/);
+				let side: SidenoteSide | null = null;
+				if (classes.includes("right")) {
+					side = "right";
+				} else if (classes.includes("left")) {
+					side = "left";
+				}
+				sides[side ?? defaultSide] = true;
+			}
+		} else {
+			// Footnote refs (not definitions); the -r/-l suffix is read by
+			// getSidenoteSideOverride, which also handles the mn- prefix.
+			const regex = /\[\^([^\]]+)\](?!:)/g;
+			while ((match = regex.exec(content)) !== null) {
+				const side = getSidenoteSideOverride(match[1] ?? "");
+				sides[side ?? defaultSide] = true;
+			}
+		}
+
+		return sides;
 	}
 
 	/**
