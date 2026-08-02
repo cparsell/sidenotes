@@ -387,7 +387,7 @@ export default class SidenotePlugin extends Plugin {
 		// document-wide "Sidenote position" setting (see getSidenoteSideOverride).
 		this.addCommand({
 			id: "insert-sidenote-opposite-margin",
-			name: "Insert sidenote (opposite margin)",
+			name: "Insert sidenote (opposite margin, experimental)",
 			editorCallback: (editor) => {
 				const cursor = editor.getCursor();
 				const selectedText = editor.getSelection();
@@ -579,7 +579,7 @@ export default class SidenotePlugin extends Plugin {
 		// the document-wide "Sidenote position" setting.
 		this.addCommand({
 			id: "insert-margin-note-opposite-margin",
-			name: "Insert margin note (opposite margin)",
+			name: "Insert margin note (opposite margin, experimental)",
 			editorCallback: (editor) => {
 				const cursor = editor.getCursor();
 				const selectedText = editor.getSelection();

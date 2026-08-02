@@ -23,6 +23,9 @@ Numbered notes displayed in the margin instead of at the bottom of the note. Run
 - **Visible in Editing and Reading modes.** Source mode is left alone: it shows the bare markdown.
 - **Editable in the margin.** Click a sidenote, edit it, and press `ENTER` to save; `SHIFT+ENTER` adds a new line (HTML format only — Markdown footnote definitions are single-line). Editing in Reading mode is optional and off by default.
 - **Supports internal and external links**, plus basic Markdown formatting: **bold**, _italic_, and `inline code`.
+- **Per-note margin override.** Pin an individual sidenote to the margin opposite the global "Sidenote position" setting with the `Insert sidenote (opposite margin)` command, or by hand:
+  - **HTML**: add a `right` or `left` class, e.g. `<span class="sidenote right">text</span>`
+  - **Footnotes**: append `-r` or `-l` to the footnote ID, e.g. `[^3-r]`
 
 ### Margin notes
 
@@ -30,6 +33,7 @@ Un-numbered notes in the margin, for asides that don't need a reference number. 
 
 - **Markdown footnotes**: `[^mn-1]` or `[^mn-kitchen]`
 - **HTML**: `<span class="sidenote margin-note">`
+- **Per-note margin override**, same as sidenotes: use the `Insert margin note (opposite margin)` command, or add a `right`/`left` class (HTML) or `-r`/`-l` suffix (footnotes, composes with the `mn-` prefix, e.g. `[^mn-2-l]`).
 
 ### Numbering
 
@@ -56,11 +60,12 @@ Works with both HTML sidenotes and footnotes (experimental). Notes are laid out 
 - [x] Option to have non-numbered sidenotes - aka "margin notes" ✅ 2026-02-26
 - [x] Add scaling option for margin note icon in text and in margin ✅ 2026-03-02
 - [x] Option for hidden margin notes: ✅ 2026-03-02
+- [x] Per-note override to place an individual sidenote/margin note in the margin opposite the global setting ✅ 2026-08-01
 
 ## Maybe Features
 
 - [ ] Badge style for margin notes
-- [ ] Option for Sidenotes on both left and right margins (may only work with HTML, seems unlikely to allow coding like this with Markdown footnotes)
+- [ ] Option for Sidenotes on both left and right margins simultaneously, without per-note commands (per-note override already works for both HTML and Markdown footnotes — see Sidenotes and Margin notes above)
 - [ ] Option for style templates for multiple sidenotes types - e.g. one type has a background color, another does not. This seems more easily implemented if using HTML sidenotes.
 - [ ] Highlight the referencing _sentence_ in the main note text when hovering over a sidenote
 - [ ] Command: Switch between Footnotes visible <-> Sidenotes visible
@@ -115,6 +120,13 @@ Click on the sidenote to edit it in the margin. Press `ENTER` to update. Press `
 ### **If using footnotes**
 
 it will insert `[^1]` and add a footnote at the bottom of the document. Press `ENTER` to update. Using `SHIFT+ENTER` will not work to add a new line in a footnote because of how footnotes are formatted in Markdown.
+
+### Opposite margin
+
+By default, every sidenote and margin note lands in whichever margin the **Sidenote position** setting points to. To pin a single note to the other margin instead, run `Insert sidenote (opposite margin)` or `Insert margin note (opposite margin)` from the command palette. These insert the same markup as the regular commands, plus a side marker:
+
+- **HTML**: a `right` or `left` class is added, e.g. `<span class="sidenote right">{cursor}</span>`
+- **Footnotes**: a `-r` or `-l` suffix is added to the footnote ID, e.g. `[^3-r]` (composes with margin notes: `[^mn-2-l]`)
 
 ## Web Publishing
 
