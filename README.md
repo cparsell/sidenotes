@@ -128,6 +128,7 @@ The snippet of CSS I've been using for web publishing is located in `/digital-ga
 
 ## Known issues
 
+- [ ] Feature "Restart numbering after each heading" does not work currently.
 - [ ] HTML sidenotes, in Reading Mode? - When pressing enter to update the last sidenote, it jumps up about 1 page
 - [ ] Changing style settings causes Editing mode sidenotes to disappear until restart
 
