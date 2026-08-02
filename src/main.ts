@@ -116,7 +116,6 @@ export default class SidenotePlugin extends Plugin {
 	private static readonly MUTATION_DEBOUNCE = 100;
 	private static readonly FOOTNOTE_RENDER_DELAY = 100;
 	private static readonly WIDGET_LAYOUT_DELAY = 50;
-	private static readonly EDIT_TRIGGER_DELAY = 50;
 	private static readonly INSERT_SIDENOTE_DELAY = 150;
 	private static readonly MAX_FOOTNOTE_EDIT_RETRIES = 10;
 	private readingModeResizeThrottleTime: number = 0;
@@ -1339,19 +1338,13 @@ export default class SidenotePlugin extends Plugin {
 		);
 		if (!margin) return;
 
+		// Tell the CM6 editor (mounted by FootnoteSidenoteWidget.startMarginEdit)
+		// to select all its text as soon as it opens, so the placeholder
+		// content is easy to type over.
+		margin.dataset.selectAllOnOpen = "true";
+
 		// Simulate a click to start editing
 		margin.click();
-
-		// After editing starts, select all the text
-		window.setTimeout(() => {
-			const selection = window.getSelection();
-			if (selection && margin.contentEditable === "true") {
-				const range = document.createRange();
-				range.selectNodeContents(margin);
-				selection.removeAllRanges();
-				selection.addRange(range);
-			}
-		}, SidenotePlugin.EDIT_TRIGGER_DELAY);
 	}
 
 	// ==================== Performance Utilities ====================

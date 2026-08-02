@@ -597,10 +597,16 @@ class FootnoteSidenoteWidget extends WidgetType {
 		margin.dataset.editing = "true";
 		margin.innerHTML = "";
 
+		const selectAll = margin.dataset.selectAllOnOpen === "true";
+		delete margin.dataset.selectAllOnOpen;
+
 		const commitKeymap = this.makeCommitKeymap(margin);
 
 		const state = EditorState.create({
 			doc: this.content,
+			selection: selectAll
+				? EditorSelection.single(0, this.content.length)
+				: undefined,
 			extensions: [
 				commitKeymap,
 				sidenoteEditorTheme,
