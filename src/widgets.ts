@@ -25,6 +25,7 @@ import { syntaxHighlighting, HighlightStyle } from "@codemirror/language";
 // eslint-disable-next-line import/no-extraneous-dependencies -- @lezer/highlight is a transitive dependency pulled in by @codemirror/language, used directly here for syntax tags
 import { tags } from "@lezer/highlight";
 import { setCssProps } from "./dom-utils";
+import { getSidenoteSideOverride } from "./content";
 import type SidenotePlugin from "./main";
 
 /** Minimal subset of Obsidian's Editor interface backed by a CM6 EditorView. */
@@ -331,6 +332,7 @@ class FootnoteSidenoteWidget extends WidgetType {
 
 	toDOM(): HTMLElement {
 		const isMargin = this.plugin.isMarginNote(this.footnoteId);
+		const sideOverride = getSidenoteSideOverride(this.footnoteId);
 
 		const wrapper = createSpan();
 		wrapper.className = "sidenote-number";
@@ -343,6 +345,10 @@ class FootnoteSidenoteWidget extends WidgetType {
 		if (isMargin) {
 			margin.classList.add("margin-note");
 			wrapper.classList.add("margin-note");
+		}
+		if (sideOverride) {
+			wrapper.dataset.sidenoteSide = sideOverride;
+			margin.dataset.sidenoteSide = sideOverride;
 		}
 
 		margin.dataset.sidenoteNum = this.numberText;

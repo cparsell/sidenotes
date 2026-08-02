@@ -284,6 +284,48 @@
 	padding-left: 0 !important;
 }
 
+/* === Page offset — mirrored margin for per-sidenote overrides ===
+   When a -r/-l (or right/left class) override actually places a sidenote
+   in the non-default margin, reserve page-offset space there too. Without
+   it that side has no room at all, so edge-anchored overrides collapse
+   against — or past — the pane's real edge instead of respecting
+   sidenoteGap / sidenoteGap2 / sidenoteGapDrift like normal sidenotes do. */
+.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-mode="compact"]
+	.cm-scroller,
+.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-mode="normal"]
+	.cm-scroller,
+.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-mode="full"]
+	.cm-scroller {
+	padding-right: var(--page-offset) !important;
+}
+
+.markdown-reading-view[data-sidenote-position="left"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-mode="compact"]
+	.markdown-preview-sizer,
+.markdown-reading-view[data-sidenote-position="left"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-mode="normal"]
+	.markdown-preview-sizer,
+.markdown-reading-view[data-sidenote-position="left"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-mode="full"]
+	.markdown-preview-sizer {
+	padding-right: var(--page-offset) !important;
+}
+
+.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-mode="compact"]
+	.cm-scroller,
+.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-mode="normal"]
+	.cm-scroller,
+.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-mode="full"]
+	.cm-scroller {
+	padding-left: var(--page-offset) !important;
+}
+
+.markdown-reading-view[data-sidenote-position="right"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-mode="compact"]
+	.markdown-preview-sizer,
+.markdown-reading-view[data-sidenote-position="right"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-mode="normal"]
+	.markdown-preview-sizer,
+.markdown-reading-view[data-sidenote-position="right"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-mode="full"]
+	.markdown-preview-sizer {
+	padding-left: var(--page-offset) !important;
+}
+
 /* === Sidenote positioning (uses --sidenote-offset set by JS) === */
 
 /* LEFT */
@@ -322,6 +364,45 @@
 	);
 	left: auto;
 	text-align: var(--sn-text-align, left) !important;
+}
+
+/* === Per-sidenote margin override (data-sidenote-side, set by JS) ===
+   Lets an individual sidenote sit in the margin opposite the document-wide
+   "Sidenote position" setting. Selectors are shaped to match the specificity
+   of the base LEFT/RIGHT rules above (including the .cm-line variant) so
+   this reliably wins regardless of source order. */
+.markdown-source-view.mod-cm6 .sidenote-margin[data-sidenote-side="left"],
+.markdown-reading-view .sidenote-margin[data-sidenote-side="left"],
+.markdown-source-view.mod-cm6
+	.cm-line
+	.sidenote-number[data-footnote-id]
+	.sidenote-margin[data-sidenote-side="left"] {
+	left: calc(
+		var(
+				--sidenote-offset-left,
+				calc(-1 * (var(--sidenote-width) + var(--sidenote-gap)))
+			) -
+			var(--sidenote-indent-adjust, 0px)
+	);
+	right: auto;
+	text-align: var(--sn-text-align-opposite, right) !important;
+}
+
+.markdown-source-view.mod-cm6 .sidenote-margin[data-sidenote-side="right"],
+.markdown-reading-view .sidenote-margin[data-sidenote-side="right"],
+.markdown-source-view.mod-cm6
+	.cm-line
+	.sidenote-number[data-footnote-id]
+	.sidenote-margin[data-sidenote-side="right"] {
+	right: calc(
+		var(
+				--sidenote-offset-right,
+				calc(-1 * (var(--sidenote-width) + var(--sidenote-gap)))
+			) +
+			var(--sidenote-indent-adjust, 0px)
+	);
+	left: auto;
+	text-align: var(--sn-text-align-opposite, left) !important;
 }
 
 /* === Prevent clipping by CM layers === */

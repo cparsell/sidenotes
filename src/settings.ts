@@ -156,6 +156,37 @@ function renderFormattingHelp(container: HTMLElement): void {
 	container.createEl("p", {
 		text: "Use the command palette to insert sidenotes quickly.",
 	});
+
+	container.createEl("p", {
+		text: "Pin an individual sidenote to the opposite margin from the 'Sidenote position' setting:",
+	});
+
+	const sideList = container.createEl("ul");
+	const sideItem = (build: (li: HTMLLIElement) => void) => {
+		build(sideList.createEl("li"));
+	};
+
+	sideItem((li) => {
+		li.appendText("HTML format: add a ");
+		li.createEl("code", { text: "right" });
+		li.appendText(" or ");
+		li.createEl("code", { text: "left" });
+		li.appendText(" class, e.g. ");
+		li.createEl("code", {
+			text: '<span class="sidenote right">text</span>',
+		});
+	});
+	sideItem((li) => {
+		li.appendText("Footnote format: append ");
+		li.createEl("code", { text: "-r" });
+		li.appendText(" or ");
+		li.createEl("code", { text: "-l" });
+		li.appendText(" to the footnote ID, e.g. ");
+		li.createEl("code", { text: "[^3-r]" });
+		li.appendText(" (composes with margin notes: ");
+		li.createEl("code", { text: "[^mn-2-l]" });
+		li.appendText(")");
+	});
 }
 
 export class SidenoteSettingTab extends PluginSettingTab {

@@ -216,6 +216,39 @@ export function isMarginNote(elOrId: HTMLElement | string): boolean {
 	return elOrId.classList.contains("margin-note");
 }
 
+export type SidenoteSide = "left" | "right";
+
+/**
+ * Explicit per-sidenote margin override, letting an individual sidenote sit
+ * in the opposite margin from the global "Sidenote position" setting.
+ * - HTML format: <span class="sidenote right"> / <span class="sidenote left">
+ * - Footnote format: a trailing -r / -l suffix on the ID, composable with the
+ *   mn- prefix, e.g. [^3-r] or [^mn-2-l]
+ * Returns null when there's no override, so callers fall back to the global
+ * setting.
+ */
+export function getSidenoteSideOverride(
+	elOrId: HTMLElement | string,
+): SidenoteSide | null {
+	if (typeof elOrId === "string") {
+		if (/-r$/i.test(elOrId)) return "right";
+		if (/-l$/i.test(elOrId)) return "left";
+		return null;
+	}
+	if (elOrId.classList.contains("right")) return "right";
+	if (elOrId.classList.contains("left")) return "left";
+	return null;
+}
+
+/**
+ * Strip a trailing side-override suffix (-r/-l) from a footnote ID for
+ * display purposes, e.g. "3-r" -> "3", "mn-2-l" -> "mn-2". IDs without a
+ * suffix are returned unchanged.
+ */
+export function stripSideSuffix(id: string): string {
+	return id.replace(/-[rl]$/i, "");
+}
+
 export function parseFootnoteDefinitions(content: string): Map<string, string> {
 	const definitions = new Map<string, string>();
 

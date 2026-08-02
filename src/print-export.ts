@@ -9,6 +9,7 @@ import {
 	parseFootnoteIdString,
 	renderLinksToFragment,
 	resolveFootnoteBaseId,
+	stripSideSuffix,
 } from "./content";
 
 /**
@@ -172,8 +173,9 @@ export function injectPrintSidenotes(
 
 		const isMargin = isMarginNote(id);
 		// Reading mode labels a footnote with its own source ID, so the
-		// export matches what the note looks like on screen.
-		const numStr = isMargin ? "" : id;
+		// export matches what the note looks like on screen. Strip any
+		// margin-override suffix (-r/-l) — it's not part of the visible number.
+		const numStr = isMargin ? "" : stripSideSuffix(id);
 
 		if (ctx.settings.hideFootnoteNumbers) {
 			const link = ref.tagName === "A" ? ref : refTarget.querySelector("a");

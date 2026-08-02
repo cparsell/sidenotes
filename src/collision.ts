@@ -1,4 +1,5 @@
 import { setCssProps } from "./dom-utils";
+import type { SidenoteSide } from "./content";
 
 /**
  * Core collision avoidance algorithm.
@@ -95,4 +96,30 @@ export function resolveCollisions(margins: HTMLElement[], spacing: number) {
 			item.el.style.setProperty("--sidenote-shift", `${0}px`);
 		}
 	}
+}
+
+/**
+ * Split margins into their left/right margin column (a per-item
+ * data-sidenote-side override, falling back to the document-wide setting)
+ * and resolve collisions within each column independently. A sidenote
+ * pinned to the opposite margin lives in a different visual column, so it
+ * must not push against — or be pushed by — sidenotes in the default column.
+ */
+export function resolveCollisionsBySide(
+	margins: HTMLElement[],
+	spacing: number,
+	defaultSide: SidenoteSide,
+) {
+	const left: HTMLElement[] = [];
+	const right: HTMLElement[] = [];
+
+	for (const m of margins) {
+		const side = m.dataset.sidenoteSide;
+		const resolved: SidenoteSide =
+			side === "left" || side === "right" ? side : defaultSide;
+		(resolved === "left" ? left : right).push(m);
+	}
+
+	resolveCollisions(left, spacing);
+	resolveCollisions(right, spacing);
 }

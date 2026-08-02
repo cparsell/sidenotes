@@ -19,13 +19,16 @@ import { setCssProps } from "./dom-utils";
 import {
 	buildSourceRefOrder,
 	formatNumber,
+	getSidenoteSideOverride,
 	isMarginNote,
 	normalizeText,
 	parseFootnoteDefinitions,
 	renderLinksToFragment,
 	resolveFootnoteBaseId,
+	type SidenoteSide,
+	stripSideSuffix,
 } from "./content";
-import { resolveCollisions } from "./collision";
+import { resolveCollisionsBySide } from "./collision";
 import {
 	injectPrintSidenotes,
 	type PrintExportContext,
@@ -199,9 +202,10 @@ export default class SidenotePlugin extends Plugin {
 				} else {
 					// Footnote format - need to find next available footnote number
 					const content = editor.getValue();
-					const existingRefs = content.match(/\[\^(\d+)\]/g) ?? [];
+					const existingRefs =
+						content.match(/\[\^(\d+)(?:-[rl])?\]/g) ?? [];
 					const usedNumbers = existingRefs.map((fn) => {
-						const match = fn.match(/\[\^(\d+)\]/);
+						const match = fn.match(/\[\^(\d+)(?:-[rl])?\]/);
 						return match && match[1] ? parseInt(match[1], 10) : 0;
 					});
 					const nextNum =
@@ -284,6 +288,8 @@ export default class SidenotePlugin extends Plugin {
 			},
 		});
 
+		// Command for inserting a Sidenote - will default to whichever
+		// margin is set in the settings
 		this.addCommand({
 			id: "insert-sidenote",
 			name: "Insert sidenote",
@@ -308,9 +314,10 @@ export default class SidenotePlugin extends Plugin {
 				} else {
 					// Footnote format - need to find next available footnote number
 					const content = editor.getValue();
-					const existingRefs = content.match(/\[\^(\d+)\]/g) ?? [];
+					const existingRefs =
+						content.match(/\[\^(\d+)(?:-[rl])?\]/g) ?? [];
 					const usedNumbers = existingRefs.map((fn) => {
-						const match = fn.match(/\[\^(\d+)\]/);
+						const match = fn.match(/\[\^(\d+)(?:-[rl])?\]/);
 						return match && match[1] ? parseInt(match[1], 10) : 0;
 					});
 					const nextNum =
@@ -384,7 +391,105 @@ export default class SidenotePlugin extends Plugin {
 			},
 		});
 
-		// Add command to insert margin note (unnumbered)
+		// Command to insert a Sidenote pinned to the margin opposite the
+		// document-wide "Sidenote position" setting (see getSidenoteSideOverride).
+		this.addCommand({
+			id: "insert-sidenote-opposite-margin",
+			name: "Insert sidenote (opposite margin)",
+			editorCallback: (editor) => {
+				const cursor = editor.getCursor();
+				const selectedText = editor.getSelection();
+				const oppositeSide: SidenoteSide =
+					this.settings.sidenotePosition === "left" ? "right" : "left";
+
+				if (this.settings.sidenoteFormat === "html") {
+					const openTag = `<span class="sidenote ${oppositeSide}">`;
+					if (selectedText) {
+						editor.replaceSelection(`${openTag}${selectedText}</span>`);
+					} else {
+						editor.replaceRange(`${openTag}</span>`, cursor);
+						const newCursor = {
+							line: cursor.line,
+							ch: cursor.ch + openTag.length,
+						};
+						editor.setCursor(newCursor);
+					}
+				} else {
+					// Footnote format — same numbering logic as "Insert sidenote",
+					// plus the -r/-l suffix that pins it to the opposite margin.
+					const suffix = oppositeSide === "right" ? "-r" : "-l";
+					const content = editor.getValue();
+					const existingRefs =
+						content.match(/\[\^(\d+)(?:-[rl])?\]/g) ?? [];
+					const usedNumbers = existingRefs.map((fn) => {
+						const match = fn.match(/\[\^(\d+)(?:-[rl])?\]/);
+						return match && match[1] ? parseInt(match[1], 10) : 0;
+					});
+					const nextNum =
+						usedNumbers.length > 0 ? Math.max(...usedNumbers) + 1 : 1;
+
+					const footnoteContent = selectedText
+						? selectedText
+						: "New sidenote";
+
+					const lines = content.split("\n");
+					let lastFootnoteLine = -1;
+
+					for (let i = 0; i < lines.length; i++) {
+						const line = lines[i];
+						if (line && line.match(/^\[\^[^\]]+\]:/)) {
+							lastFootnoteLine = i;
+						}
+					}
+
+					const newId = `${nextNum}${suffix}`;
+					const definition = `[^${newId}]: ${footnoteContent}`;
+
+					editor.replaceRange(`[^${newId}]`, cursor);
+
+					const updatedContent = editor.getValue();
+					const updatedLines = updatedContent.split("\n");
+
+					if (lastFootnoteLine === -1) {
+						const lastLine = editor.lastLine();
+						const lastLineContent = editor.getLine(lastLine);
+						const prefix = lastLineContent.trim() ? "\n\n" : "\n";
+						editor.replaceRange(prefix + definition, {
+							line: lastLine,
+							ch: lastLineContent.length,
+						});
+					} else {
+						let newLastFootnoteLine = -1;
+						for (let i = 0; i < updatedLines.length; i++) {
+							const line = updatedLines[i];
+							if (line && line.match(/^\[\^[^\]]+\]:/)) {
+								newLastFootnoteLine = i;
+							}
+						}
+
+						if (newLastFootnoteLine !== -1) {
+							const insertLineContent = editor.getLine(
+								newLastFootnoteLine,
+							);
+							editor.replaceRange("\n" + definition, {
+								line: newLastFootnoteLine,
+								ch: insertLineContent.length,
+							});
+						}
+					}
+
+					// Set flag to auto-edit this footnote when the widget appears
+					this.pendingFootnoteEdit = newId;
+
+					// Schedule the auto-edit after widgets are rendered
+					window.setTimeout(() => {
+						this.triggerPendingFootnoteEdit();
+					}, SidenotePlugin.INSERT_SIDENOTE_DELAY);
+				}
+			},
+		});
+
+		// Command to insert margin note (unnumbered)
 		this.addCommand({
 			id: "insert-margin-note",
 			name: "Insert margin note",
@@ -411,9 +516,10 @@ export default class SidenotePlugin extends Plugin {
 					// Footnote format — use mn- prefix
 					const content = editor.getValue();
 					// Find next available mn- number
-					const existingMnRefs = content.match(/\[\^mn-(\d+)\]/g) ?? [];
+					const existingMnRefs =
+						content.match(/\[\^mn-(\d+)(?:-[rl])?\]/g) ?? [];
 					const usedNumbers = existingMnRefs.map((fn) => {
-						const match = fn.match(/\[\^mn-(\d+)\]/);
+						const match = fn.match(/\[\^mn-(\d+)(?:-[rl])?\]/);
 						return match && match[1] ? parseInt(match[1], 10) : 0;
 					});
 					const nextNum =
@@ -469,6 +575,102 @@ export default class SidenotePlugin extends Plugin {
 					}
 
 					this.pendingFootnoteEdit = `mn-${nextNum}`;
+
+					window.setTimeout(() => {
+						this.triggerPendingFootnoteEdit();
+					}, SidenotePlugin.INSERT_SIDENOTE_DELAY);
+				}
+			},
+		});
+
+		// Command to insert a margin note pinned to the margin opposite
+		// the document-wide "Sidenote position" setting.
+		this.addCommand({
+			id: "insert-margin-note-opposite-margin",
+			name: "Insert margin note (opposite margin)",
+			editorCallback: (editor) => {
+				const cursor = editor.getCursor();
+				const selectedText = editor.getSelection();
+				const oppositeSide: SidenoteSide =
+					this.settings.sidenotePosition === "left" ? "right" : "left";
+
+				if (this.settings.sidenoteFormat === "html") {
+					const openTag = `<span class="sidenote margin-note ${oppositeSide}">`;
+					if (selectedText) {
+						editor.replaceSelection(`${openTag}${selectedText}</span>`);
+					} else {
+						editor.replaceRange(`${openTag}</span>`, cursor);
+						const newCursor = {
+							line: cursor.line,
+							ch: cursor.ch + openTag.length,
+						};
+						editor.setCursor(newCursor);
+					}
+				} else {
+					// Footnote format — mn- prefix plus the -r/-l suffix that
+					// pins it to the opposite margin.
+					const suffix = oppositeSide === "right" ? "-r" : "-l";
+					const content = editor.getValue();
+					const existingMnRefs =
+						content.match(/\[\^mn-(\d+)(?:-[rl])?\]/g) ?? [];
+					const usedNumbers = existingMnRefs.map((fn) => {
+						const match = fn.match(/\[\^mn-(\d+)(?:-[rl])?\]/);
+						return match && match[1] ? parseInt(match[1], 10) : 0;
+					});
+					const nextNum =
+						usedNumbers.length > 0 ? Math.max(...usedNumbers) + 1 : 1;
+
+					const footnoteContent = selectedText
+						? selectedText
+						: "New margin note";
+
+					const lines = content.split("\n");
+					let lastFootnoteLine = -1;
+
+					for (let i = 0; i < lines.length; i++) {
+						const line = lines[i];
+						if (line && line.match(/^\[\^[^\]]+\]:/)) {
+							lastFootnoteLine = i;
+						}
+					}
+
+					const newId = `mn-${nextNum}${suffix}`;
+					const definition = `[^${newId}]: ${footnoteContent}`;
+
+					editor.replaceRange(`[^${newId}]`, cursor);
+
+					const updatedContent = editor.getValue();
+					const updatedLines = updatedContent.split("\n");
+
+					if (lastFootnoteLine === -1) {
+						const lastLine = editor.lastLine();
+						const lastLineContent = editor.getLine(lastLine);
+						const prefix = lastLineContent.trim() ? "\n\n" : "\n";
+						editor.replaceRange(prefix + definition, {
+							line: lastLine,
+							ch: lastLineContent.length,
+						});
+					} else {
+						let newLastFootnoteLine = -1;
+						for (let i = 0; i < updatedLines.length; i++) {
+							const line = updatedLines[i];
+							if (line && line.match(/^\[\^[^\]]+\]:/)) {
+								newLastFootnoteLine = i;
+							}
+						}
+
+						if (newLastFootnoteLine !== -1) {
+							const insertLineContent = editor.getLine(
+								newLastFootnoteLine,
+							);
+							editor.replaceRange("\n" + definition, {
+								line: newLastFootnoteLine,
+								ch: insertLineContent.length,
+							});
+						}
+					}
+
+					this.pendingFootnoteEdit = newId;
 
 					window.setTimeout(() => {
 						this.triggerPendingFootnoteEdit();
@@ -756,6 +958,17 @@ export default class SidenotePlugin extends Plugin {
 		return isMarginNote(elOrId);
 	}
 
+	/**
+	 * Which margin a sidenote actually renders in: its own override if it has
+	 * one (HTML "right"/"left" class, or a footnote -r/-l ID suffix), else
+	 * the document-wide "Sidenote position" setting.
+	 */
+	public getSidenoteSide(elOrId: HTMLElement | string): SidenoteSide {
+		return (
+			getSidenoteSideOverride(elOrId) ?? this.settings.sidenotePosition
+		);
+	}
+
 	public setupMarginNotePopupPublic(
 		wrapper: HTMLElement,
 		margin: HTMLElement,
@@ -800,6 +1013,7 @@ export default class SidenotePlugin extends Plugin {
 			cmRoot.dataset.sidenoteMode = "";
 			cmRoot.dataset.hasSidenotes = "";
 			cmRoot.dataset.sidenotePosition = "";
+			cmRoot.dataset.sidenoteHasOpposite = "";
 		}
 
 		const readingRoot = view.containerEl.querySelector<HTMLElement>(
@@ -817,6 +1031,7 @@ export default class SidenotePlugin extends Plugin {
 			readingRoot.dataset.sidenoteMode = "";
 			readingRoot.dataset.hasSidenotes = "";
 			readingRoot.dataset.sidenotePosition = "";
+			readingRoot.dataset.sidenoteHasOpposite = "";
 
 			// Clear processed flags
 			readingRoot
@@ -1383,13 +1598,23 @@ export default class SidenotePlugin extends Plugin {
 		// Text alignment
 		const defaultAlignment =
 			s.sidenotePosition === "left" ? "right" : "left";
-		const textAlign =
+		// Mirrored alignment for sidenotes overridden onto the opposite margin —
+		// same explicit choice (justify/left/right) if the user set one, else
+		// the alignment that faces the body text from the *other* side.
+		const oppositeAlignment =
+			s.sidenotePosition === "left" ? "left" : "right";
+		const resolveAlignment = (auto: string) =>
 			s.textAlignment === "justify"
 				? "justify"
 				: s.textAlignment === "left" || s.textAlignment === "right"
 					? s.textAlignment
-					: defaultAlignment;
+					: auto;
+		const textAlign = resolveAlignment(defaultAlignment);
 		root.style.setProperty("--sn-text-align", textAlign);
+		root.style.setProperty(
+			"--sn-text-align-opposite",
+			resolveAlignment(oppositeAlignment),
+		);
 
 		// Number color
 		if (s.numberColor) {
@@ -1450,6 +1675,22 @@ export default class SidenotePlugin extends Plugin {
 		const s = this.settings;
 		const position = s.sidenotePosition;
 		const anchorMode = s.sidenoteAnchor;
+
+		// Whenever a per-sidenote override actually places a note on the
+		// non-default margin, reserve page-offset space there too (see the
+		// matching CSS rules gated on [data-sidenote-has-opposite]) — without
+		// it, the override side has no room at all and edge-anchored notes
+		// collapse against (or past) the pane's real edge instead of
+		// respecting sidenoteGap/sidenoteGap2.
+		const oppositeSide: SidenoteSide =
+			position === "left" ? "right" : "left";
+		const hasOppositeOverride =
+			root.querySelector(
+				`.sidenote-margin[data-sidenote-side="${oppositeSide}"]`,
+			) !== null;
+		root.dataset.sidenoteHasOpposite = hasOppositeOverride
+			? "true"
+			: "false";
 
 		// Get root element rect
 		const rootRect = root.getBoundingClientRect();
@@ -1520,71 +1761,73 @@ export default class SidenotePlugin extends Plugin {
 		// Get sidenote width from an existing margin element, or fall back to calculation
 		const sidenoteWidth = this.getSidenoteWidthPx(root);
 
-		if (position === "left") {
-			// Available space between editor left edge and the text (refLine left edge)
-			const textLeft = isReadingMode
-				? (this.getReadingTextLeft(root) ?? refRect.left)
-				: (this.getEditorTextEdges(root)?.left ?? refRect.left);
+		// Compute both sides unconditionally so a per-sidenote override can
+		// place an individual note in the margin opposite the document-wide
+		// "Sidenote position" setting.
 
-			// Calculate the CSS left value (negative = to the left of refLine)
-			let cssLeft: number;
+		// --- LEFT ---
+		// Available space between editor left edge and the text (refLine left edge)
+		const textLeft = isReadingMode
+			? (this.getReadingTextLeft(root) ?? refRect.left)
+			: (this.getEditorTextEdges(root)?.left ?? refRect.left);
 
-			if (anchorMode === "text") {
-				// TEXT ANCHOR MODE:
-				// Position sidenote so its right edge is exactly gap1 from text (if in left margin)
-
-				cssLeft = -(gap1 + sidenoteWidth);
-			} else {
-				// EDGE ANCHOR MODE (LEFT):
-				// Use the real editor edge (scroller/view), not rootRect.left (which may already be padded).
-				const editorEdgeLeft = (() => {
-					if (isReadingMode) return root.getBoundingClientRect().left;
-					const scroller = root.querySelector<HTMLElement>(".cm-scroller");
-					return (scroller ?? root).getBoundingClientRect().left;
-				})();
-
-				// Place sidenote so its LEFT edge is gap2 from the editor edge
-				// cssLeft is relative to the text column edge (textLeft)
-				cssLeft = editorEdgeLeft + gap2 - textLeft;
-
-				// Keep it from intruding into the text column (best-effort safety).
-				// If cssLeft is too large (not negative enough), the sidenote overlaps text.
-				const maxCssLeft = -(gap1 + sidenoteWidth);
-				if (cssLeft > maxCssLeft) cssLeft = maxCssLeft;
-			}
-
-			root.style.setProperty("--sidenote-offset", `${cssLeft}px`);
+		let cssLeft: number;
+		if (anchorMode === "text") {
+			// TEXT ANCHOR MODE:
+			// Position sidenote so its right edge is exactly gap1 from text (if in left margin)
+			cssLeft = -(gap1 + sidenoteWidth);
 		} else {
-			// RIGHT POSITION
-			// Available space between text (refLine right edge) and editor right edge
-			const textEdges = !isReadingMode
-				? this.getEditorTextEdges(root)
-				: null;
-			const textRight = textEdges ? textEdges.right : refRect.right;
+			// EDGE ANCHOR MODE (LEFT):
+			// Use the real editor edge (scroller/view), not rootRect.left (which may already be padded).
+			const editorEdgeLeft = (() => {
+				if (isReadingMode) return root.getBoundingClientRect().left;
+				const scroller = root.querySelector<HTMLElement>(".cm-scroller");
+				return (scroller ?? root).getBoundingClientRect().left;
+			})();
 
-			let cssRight: number;
+			// Place sidenote so its LEFT edge is gap2 from the editor edge
+			// cssLeft is relative to the text column edge (textLeft)
+			cssLeft = editorEdgeLeft + gap2 - textLeft;
 
-			if (anchorMode === "text") {
-				// TEXT ANCHOR MODE:
-				// Position sidenote so its left edge is exactly gap1 from text
-				// cssRight works inversely: negative moves element to the right
-				cssRight = -(gap1 + sidenoteWidth);
-			} else {
-				const editorEdgeRight = (() => {
-					if (isReadingMode) return root.getBoundingClientRect().right;
-
-					const scroller = root.querySelector<HTMLElement>(".cm-scroller");
-					return (scroller ?? root).getBoundingClientRect().right;
-				})();
-
-				cssRight = editorEdgeRight - gap2 - textRight;
-
-				const maxCssRight = -(gap1 + sidenoteWidth);
-				if (cssRight > maxCssRight) cssRight = maxCssRight;
-			}
-
-			root.style.setProperty("--sidenote-offset", `${cssRight}px`);
+			// Keep it from intruding into the text column (best-effort safety).
+			// If cssLeft is too large (not negative enough), the sidenote overlaps text.
+			const maxCssLeft = -(gap1 + sidenoteWidth);
+			if (cssLeft > maxCssLeft) cssLeft = maxCssLeft;
 		}
+
+		// --- RIGHT ---
+		// Available space between text (refLine right edge) and editor right edge
+		const textEdges = !isReadingMode
+			? this.getEditorTextEdges(root)
+			: null;
+		const textRight = textEdges ? textEdges.right : refRect.right;
+
+		let cssRight: number;
+		if (anchorMode === "text") {
+			// TEXT ANCHOR MODE:
+			// Position sidenote so its left edge is exactly gap1 from text
+			// cssRight works inversely: negative moves element to the right
+			cssRight = -(gap1 + sidenoteWidth);
+		} else {
+			const editorEdgeRight = (() => {
+				if (isReadingMode) return root.getBoundingClientRect().right;
+
+				const scroller = root.querySelector<HTMLElement>(".cm-scroller");
+				return (scroller ?? root).getBoundingClientRect().right;
+			})();
+
+			cssRight = editorEdgeRight - gap2 - textRight;
+
+			const maxCssRight = -(gap1 + sidenoteWidth);
+			if (cssRight > maxCssRight) cssRight = maxCssRight;
+		}
+
+		root.style.setProperty("--sidenote-offset-left", `${cssLeft}px`);
+		root.style.setProperty("--sidenote-offset-right", `${cssRight}px`);
+		root.style.setProperty(
+			"--sidenote-offset",
+			`${position === "left" ? cssLeft : cssRight}px`,
+		);
 	}
 
 	private measureCssLengthPx(
@@ -1695,9 +1938,15 @@ export default class SidenotePlugin extends Plugin {
 	private correctIndentedSidenotePositions(root: HTMLElement) {
 		const position = this.settings.sidenotePosition;
 
-		// Read the global offset that updateSidenotePositioning just set
+		// Read the global offsets that updateSidenotePositioning just set
 		const globalOffset =
 			parseFloat(root.style.getPropertyValue("--sidenote-offset")) || 0;
+		const globalOffsetLeft =
+			parseFloat(root.style.getPropertyValue("--sidenote-offset-left")) ||
+			0;
+		const globalOffsetRight =
+			parseFloat(root.style.getPropertyValue("--sidenote-offset-right")) ||
+			0;
 
 		// Find the SAME reference element updateSidenotePositioning used
 		const sizer = root.querySelector<HTMLElement>(
@@ -1731,31 +1980,35 @@ export default class SidenotePlugin extends Plugin {
 			);
 
 			if (!indentedParent) {
-				// Not indented — inherit the global offset
+				// Not indented — inherit the global offsets
 				wrapper.style.removeProperty("--sidenote-offset");
+				wrapper.style.removeProperty("--sidenote-offset-left");
+				wrapper.style.removeProperty("--sidenote-offset-right");
 				continue;
 			}
 
 			const parentRect = indentedParent.getBoundingClientRect();
 
-			if (position === "left") {
-				// Global offset is relative to refEl's left edge.
-				// This wrapper resolves position:absolute against indentedParent.
-				// Shift = how much further right the parent is vs refEl.
-				const shift = parentRect.left - refRect.left;
-				wrapper.style.setProperty(
-					"--sidenote-offset",
-					`${globalOffset - shift}px`,
-				);
-			} else {
-				// Global offset is relative to refEl's right edge.
-				// Shift = how much further left the parent's right edge is vs refEl.
-				const shift = refRect.right - parentRect.right;
-				wrapper.style.setProperty(
-					"--sidenote-offset",
-					`${globalOffset - shift}px`,
-				);
-			}
+			// Left-margin offset is relative to refEl's left edge; this wrapper
+			// resolves position:absolute against indentedParent, so shift by how
+			// much further right the parent is vs refEl.
+			const shiftLeft = parentRect.left - refRect.left;
+			// Right-margin offset is relative to refEl's right edge; shift by how
+			// much further left the parent's right edge is vs refEl.
+			const shiftRight = refRect.right - parentRect.right;
+
+			wrapper.style.setProperty(
+				"--sidenote-offset-left",
+				`${globalOffsetLeft - shiftLeft}px`,
+			);
+			wrapper.style.setProperty(
+				"--sidenote-offset-right",
+				`${globalOffsetRight - shiftRight}px`,
+			);
+			wrapper.style.setProperty(
+				"--sidenote-offset",
+				`${globalOffset - (position === "left" ? shiftLeft : shiftRight)}px`,
+			);
 		}
 	}
 
@@ -1873,7 +2126,11 @@ export default class SidenotePlugin extends Plugin {
 						),
 					).filter((m) => m.isConnected);
 
-					resolveCollisions(allMargins, this.settings.collisionSpacing);
+					resolveCollisionsBySide(
+						allMargins,
+						this.settings.collisionSpacing,
+						this.settings.sidenotePosition,
+					);
 				});
 			}
 			return;
@@ -2111,6 +2368,14 @@ export default class SidenotePlugin extends Plugin {
 						? this.isMarginNote(item.footnoteId)
 						: false;
 
+			// Per-sidenote margin override (opposite side from the document-wide setting)
+			const sideOverride =
+				item.type === "sidenote"
+					? getSidenoteSideOverride(item.el)
+					: item.footnoteId
+						? getSidenoteSideOverride(item.footnoteId)
+						: null;
+
 			// For footnotes, use the footnote's own ID as the number
 			// (so [^3] always displays as "3" regardless of which refs are visible).
 			// For HTML sidenotes, use the sequential counter.
@@ -2119,7 +2384,7 @@ export default class SidenotePlugin extends Plugin {
 			if (isMargin) {
 				numStr = "";
 			} else if (item.footnoteId) {
-				numStr = item.footnoteId;
+				numStr = stripSideSuffix(item.footnoteId);
 			} else {
 				numStr = this.formatNumber(num++);
 			}
@@ -2132,6 +2397,10 @@ export default class SidenotePlugin extends Plugin {
 			if (isMargin) {
 				wrapper.classList.add("margin-note");
 				margin.classList.add("margin-note");
+			}
+			if (sideOverride) {
+				wrapper.dataset.sidenoteSide = sideOverride;
+				margin.dataset.sidenoteSide = sideOverride;
 			}
 			wrapper.dataset.sidenoteNum = numStr;
 			margin.dataset.sidenoteNum = numStr;
@@ -2251,7 +2520,11 @@ export default class SidenotePlugin extends Plugin {
 					),
 				).filter((m) => m.isConnected);
 
-				resolveCollisions(allMargins, this.settings.collisionSpacing);
+				resolveCollisionsBySide(
+					allMargins,
+					this.settings.collisionSpacing,
+					this.settings.sidenotePosition,
+				);
 			});
 		});
 	}
@@ -2349,10 +2622,9 @@ export default class SidenotePlugin extends Plugin {
 		} else {
 			// Reading mode: anchor to the nearest positioning context that *you* define in CSS
 			const positionedParent =
-				(wrapper.closest(
+				wrapper.closest(
 					"p, li, h1, h2, h3, h4, h5, h6, blockquote, .callout",
-				)) ??
-				(wrapper.parentElement);
+				) ?? wrapper.parentElement;
 
 			if (!positionedParent) return;
 
@@ -2581,11 +2853,16 @@ export default class SidenotePlugin extends Plugin {
 		let marginCounter = 1;
 
 		for (const oldId of seenIds) {
+			// Preserve a trailing -r/-l margin override through renumbering,
+			// e.g. "mn-3-r" -> "mn-1-r", "5-l" -> "2-l".
+			const sideSuffixMatch = oldId.match(/-[rl]$/i);
+			const sideSuffix = sideSuffixMatch ? sideSuffixMatch[0] : "";
+
 			if (oldId.startsWith("mn-")) {
-				renumberMap.set(oldId, `mn-${marginCounter}`);
+				renumberMap.set(oldId, `mn-${marginCounter}${sideSuffix}`);
 				marginCounter++;
 			} else {
-				renumberMap.set(oldId, String(regularCounter));
+				renumberMap.set(oldId, `${regularCounter}${sideSuffix}`);
 				regularCounter++;
 			}
 		}
@@ -3017,7 +3294,11 @@ export default class SidenotePlugin extends Plugin {
 				readingRoot.querySelectorAll<HTMLElement>("small.sidenote-margin"),
 			).filter((m) => m.isConnected);
 
-			resolveCollisions(allMargins, this.settings.collisionSpacing);
+			resolveCollisionsBySide(
+				allMargins,
+				this.settings.collisionSpacing,
+				this.settings.sidenotePosition,
+			);
 		});
 
 		resizeObs.observe(cm.dom);
@@ -3139,7 +3420,11 @@ export default class SidenotePlugin extends Plugin {
 				readingRoot.querySelectorAll<HTMLElement>("small.sidenote-margin"),
 			).filter((m) => m.isConnected);
 
-			resolveCollisions(allMargins, this.settings.collisionSpacing);
+			resolveCollisionsBySide(
+				allMargins,
+				this.settings.collisionSpacing,
+				this.settings.sidenotePosition,
+			);
 		});
 	}
 
@@ -3853,6 +4138,7 @@ export default class SidenotePlugin extends Plugin {
 			try {
 				for (const item of itemsWithSourceIndex) {
 					const isMargin = this.isMarginNote(item.el);
+					const sideOverride = getSidenoteSideOverride(item.el);
 					const numStr = isMargin ? "" : this.formatNumber(item.index);
 					const wrapper = createSpan();
 					wrapper.className = "sidenote-number";
@@ -3862,6 +4148,10 @@ export default class SidenotePlugin extends Plugin {
 					if (isMargin) {
 						wrapper.classList.add("margin-note");
 						margin.classList.add("margin-note");
+					}
+					if (sideOverride) {
+						wrapper.dataset.sidenoteSide = sideOverride;
+						margin.dataset.sidenoteSide = sideOverride;
 					}
 
 					wrapper.dataset.sidenoteNum = numStr;
@@ -4458,7 +4748,11 @@ export default class SidenotePlugin extends Plugin {
 		);
 		if (margins.length === 0) return;
 
-		resolveCollisions(margins, this.settings.collisionSpacing);
+		resolveCollisionsBySide(
+			margins,
+			this.settings.collisionSpacing,
+			this.settings.sidenotePosition,
+		);
 	}
 
 	/**
@@ -4478,7 +4772,11 @@ export default class SidenotePlugin extends Plugin {
 		);
 		if (margins.length === 0) return;
 
-		resolveCollisions(margins, this.settings.collisionSpacing);
+		resolveCollisionsBySide(
+			margins,
+			this.settings.collisionSpacing,
+			this.settings.sidenotePosition,
+		);
 	}
 
 	/**
@@ -4493,7 +4791,11 @@ export default class SidenotePlugin extends Plugin {
 			readingRoot.querySelectorAll<HTMLElement>("small.sidenote-margin"),
 		);
 
-		resolveCollisions(margins, this.settings.collisionSpacing);
+		resolveCollisionsBySide(
+			margins,
+			this.settings.collisionSpacing,
+			this.settings.sidenotePosition,
+		);
 	}
 
 	// ==================== Markdown Formatting ====================
