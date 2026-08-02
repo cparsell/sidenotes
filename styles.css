@@ -39,9 +39,13 @@
 	width: 70% !important;
 }
 
+/* --sn-print-gutter (defined on .sidenote-print-page) is the gap between the
+   body text and the sidenote column, always on the cell's body-facing side.
+   The fallback keeps the gutter intact if this cell ever renders outside a
+   .sidenote-print-page container. */
 .sidenote-print-sidenote-cell {
 	border: none !important;
-	padding: 2.5em 0 0 2em !important;
+	padding: 2.5em 0 0 var(--sn-print-gutter, 3em) !important;
 	vertical-align: top !important;
 	width: 30% !important;
 	font-size: 0.75em !important;
@@ -50,7 +54,7 @@
 }
 
 .sidenote-print-sidenote-cell.is-left {
-	padding: 2.5em 2em 0 0 !important;
+	padding: 2.5em var(--sn-print-gutter, 3em) 0 0 !important;
 	text-align: right !important;
 }
 
@@ -80,6 +84,37 @@
 	font-size: 0.75em !important;
 	font-weight: bold !important;
 	color: #11111b !important;
+}
+
+/* Outer gap tuning for the export container.
+
+   The @page margin below is the gap beside the SIDENOTE column, kept small
+   so the notes sit properly out in the margin. The body needs a wider gap
+   on its own outer side, so add the difference back here as padding — on
+   the side away from the notes, flipped by the --left modifier.
+
+   Body outer gap  = @page side margin + --sn-print-body-inset
+   Notes outer gap = @page side margin
+
+   Zeroing the notes-side padding matters: any theme padding left there
+   would pull the column back in off the margin. */
+.sidenote-print-page {
+	--sn-print-body-inset: 0.9cm;
+
+	/* Gap between the body text and the sidenote column. Defined here so both
+	   print layout knobs live together, but it is consumed on
+	   .sidenote-print-sidenote-cell — and an em in a custom property resolves
+	   against the element that USES it, so this is 3 x that cell's 0.75em
+	   note text, not 3 x the body text. */
+	--sn-print-gutter: 3em;
+
+	padding-left: var(--sn-print-body-inset) !important;
+	padding-right: 0 !important;
+}
+
+.sidenote-print-page--left {
+	padding-left: 0 !important;
+	padding-right: var(--sn-print-body-inset) !important;
 }
 
 /* Width constraint for the export container — the anchor paragraphs need
@@ -178,18 +213,20 @@
 	} */
 }
 
-/* Horizontal page margins are deliberately symmetric.
-   They used to be mirrored per sidenote position via var(--sn-print-margin-*),
-   but custom properties do not resolve inside @page in Chromium (Obsidian's
-   renderer), so every export silently fell back to the right-sidenote values
-   (1.5cm / 0.1cm). Left-margin exports therefore got a right-margin page box
-   under a left-margin content layout: the body ran to within 0.1cm of the
-   right paper edge while space sat unused outside the sidenote column.
-   Equal side margins let the 30/70 split above mirror cleanly for either
-   position — and keep the sidenote column clear of the non-printable edge
-   most printers have. */
+/* Horizontal page margins are deliberately symmetric, and set to the
+   SMALLER of the two outer gaps — the one beside the sidenote column, which
+   sits well into the margin. The body's larger outer gap is added back as
+   padding on the export container (see --sn-print-body-inset), because that
+   is a normal element and can therefore be flipped per sidenote position.
+
+   The margins can't be mirrored here directly: they used to be, via
+   var(--sn-print-margin-*), but custom properties do not resolve inside
+   @page in Chromium (Obsidian's renderer), so every export silently fell
+   back to the right-sidenote values and left-margin exports ran the body to
+   within 0.1cm of the right paper edge. Keeping @page symmetric and doing
+   the asymmetry on an element avoids that trap entirely. */
 @page {
-	margin: 1.5cm 1.27cm;
+	margin: 1.5cm 0.6cm;
 }
 
 /* LAYOUT */
