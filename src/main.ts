@@ -1637,9 +1637,6 @@ export default class SidenotePlugin extends Plugin {
 				: "none",
 		);
 
-		// Print margin changes
-		this.injectPrintPageStyle();
-
 		// Data attributes for CSS selectors
 		root.dataset.snBadgeStyle = s.numberBadgeStyle;
 		root.dataset.snShowNumbers = s.showSidenoteNumbers ? "true" : "false";
@@ -2543,16 +2540,6 @@ export default class SidenotePlugin extends Plugin {
 					this.settings.sidenotePosition,
 				);
 			});
-		});
-	}
-
-	private injectPrintPageStyle() {
-		// @page (in styles.css) reads these as CSS variables on :root, since
-		// Obsidian doesn't allow plugins to inject <style> elements.
-		const isRight = this.settings.sidenotePosition !== "left";
-		setCssProps(document.documentElement, {
-			"--sn-print-margin-left": isRight ? "1.5cm" : "0.1cm",
-			"--sn-print-margin-right": isRight ? "0.1cm" : "1.5cm",
 		});
 	}
 

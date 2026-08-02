@@ -178,13 +178,18 @@
 	} */
 }
 
-/* Margins swap sides with the sidenote position, set by the plugin as
-   --sn-print-margin-* custom properties on :root */
+/* Horizontal page margins are deliberately symmetric.
+   They used to be mirrored per sidenote position via var(--sn-print-margin-*),
+   but custom properties do not resolve inside @page in Chromium (Obsidian's
+   renderer), so every export silently fell back to the right-sidenote values
+   (1.5cm / 0.1cm). Left-margin exports therefore got a right-margin page box
+   under a left-margin content layout: the body ran to within 0.1cm of the
+   right paper edge while space sat unused outside the sidenote column.
+   Equal side margins let the 30/70 split above mirror cleanly for either
+   position — and keep the sidenote column clear of the non-printable edge
+   most printers have. */
 @page {
-	margin-left: var(--sn-print-margin-left, 1.5cm);
-	margin-right: var(--sn-print-margin-right, 0.1cm);
-	margin-top: 1.5cm;
-	margin-bottom: 1.5cm;
+	margin: 1.5cm 1.27cm;
 }
 
 /* LAYOUT */
