@@ -68,24 +68,12 @@ Works with both HTML sidenotes and footnotes (experimental). Notes are laid out 
 
 ## Maybe Features
 
+Suggestions that have not been implemented and are not yet being actively developed.
+
 - [ ] Badge style for margin notes
-- [ ] Option for Sidenotes on both left and right margins simultaneously, without per-note commands (per-note override already works for both HTML and Markdown footnotes — see Sidenotes and Margin notes above)
 - [ ] Option for style templates for multiple sidenotes types - e.g. one type has a background color, another does not. This seems more easily implemented if using HTML sidenotes.
 - [ ] Highlight the referencing _sentence_ in the main note text when hovering over a sidenote
 - [ ] Command: Switch between Footnotes visible <-> Sidenotes visible
-
-## Alternatives and inspirations
-
-- [FelixHT's Obsidian Sidenotes Plugin](https://github.com/FelixHT/obsidian_side_notes) - hasn't been updated in a while - one user reported it doesn't fully function any longer but I haven't tested it. I did build some of the functionality in my plugin based on this.
-- [SideNote Plugin](https://github.com/mofukuru/SideNote) allows you to add comments to a piece of text, and this is viewable in the side panel.
-- [Cornell Notes Learning Vault](https://github.com/TfTHacker/cornell-notes-learning-vault) from TfTHacker
-- [crnkv/obsidian-sidenote-auto-adjust-module](https://github.com/crnkv/obsidian-sidenote-auto-adjust-module) ([forum post](https://forum.obsidian.md/t/css-snippet-sidenote-auto-adjust-module-four-styles-available/94495))
-- [Collapsible Sidenotes using a CSS trick](https://forum.obsidian.md/t/meta-post-common-css-hacks/1978/341)
-- [Sidenotes Using CSS also](https://scripter.co/sidenotes-using-only-css/)
-- [A sidenote solution similar to Tufte CSS](https://www.kooslooijesteijn.net/blog/sidenotes-without-js)
-- [Obsidian-sidenote-callout](https://github.com/xhuajin/obsidian-sidenote-callout/blob/main/README.md) - I did not use a custom callout like this because I wanted the sidenotes to also be publishable.
-- [Tufte style sidenotes](https://medium.com/obsidian-observer/tufte-style-sidenotes-in-obsidian-89b0a785bc54)
-- [Collapsible inline notes and sidenotes](https://forum.obsidian.md/t/collapsible-inline-notes-and-sidenotes/31909)
 
 ## Setup
 
@@ -132,16 +120,29 @@ By default, every sidenote and margin note lands in whichever margin the **Siden
 - **HTML**: a `right` or `left` class is added, e.g. `<span class="sidenote right">{cursor}</span>`
 - **Footnotes**: a `-r` or `-l` suffix is added to the footnote ID, e.g. `[^3-r]` (composes with margin notes: `[^mn-2-l]`)
 
-## Web Publishing
+### Web Publishing
 
 I use [Digital Garden](https://github.com/oleeskild/Obsidian-Digital-Garden) to publish a subset of my notes to a website. In the framework Digital Garden has set up, a CSS file called `custom-styles.css` is where one adds any CSS to modify the default styles.
 
 The snippet of CSS I've been using for web publishing is located in `/digital-garden/custom-styles.css`.
 
-### Known issues
+## Known issues
 
 - [ ] HTML sidenotes, in Reading Mode? - When pressing enter to update the last sidenote, it jumps up about 1 page
 - [ ] Changing style settings causes Editing mode sidenotes to disappear until restart
+
+## Alternatives and inspirations
+
+- [FelixHT's Obsidian Sidenotes Plugin](https://github.com/FelixHT/obsidian_side_notes) - hasn't been updated in a while - one user reported it doesn't fully function any longer but I haven't tested it. I did build some of the functionality in my plugin based on this.
+- [SideNote Plugin](https://github.com/mofukuru/SideNote) allows you to add comments to a piece of text, and this is viewable in the side panel.
+- [Cornell Notes Learning Vault](https://github.com/TfTHacker/cornell-notes-learning-vault) from TfTHacker
+- [crnkv/obsidian-sidenote-auto-adjust-module](https://github.com/crnkv/obsidian-sidenote-auto-adjust-module) ([forum post](https://forum.obsidian.md/t/css-snippet-sidenote-auto-adjust-module-four-styles-available/94495))
+- [Collapsible Sidenotes using a CSS trick](https://forum.obsidian.md/t/meta-post-common-css-hacks/1978/341)
+- [Sidenotes Using CSS also](https://scripter.co/sidenotes-using-only-css/)
+- [A sidenote solution similar to Tufte CSS](https://www.kooslooijesteijn.net/blog/sidenotes-without-js)
+- [Obsidian-sidenote-callout](https://github.com/xhuajin/obsidian-sidenote-callout/blob/main/README.md) - I did not use a custom callout like this because I wanted the sidenotes to also be publishable.
+- [Tufte style sidenotes](https://medium.com/obsidian-observer/tufte-style-sidenotes-in-obsidian-89b0a785bc54)
+- [Collapsible inline notes and sidenotes](https://forum.obsidian.md/t/collapsible-inline-notes-and-sidenotes/31909)
 
 ## Support
 
