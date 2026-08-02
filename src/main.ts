@@ -78,7 +78,6 @@ export default class SidenotePlugin extends Plugin {
 
 	// Map from sidenote text content (or position) to assigned number
 	private sidenoteRegistry: Map<string, number> = new Map();
-	private nextSidenoteNumber = 1;
 	private headingSidenoteNumbers: Map<string, number> = new Map();
 
 	// Incremented on every settings save to signal the CM6 ViewPlugin to rebuild
@@ -86,7 +85,6 @@ export default class SidenotePlugin extends Plugin {
 
 	// Track whether current document has any sidenotes
 	private documentHasSidenotes = false;
-	private needsFullRenumber = true;
 
 	// Performance: Debounce/throttle timers
 	private scrollDebounceTimer: number | null = null;
@@ -94,20 +92,16 @@ export default class SidenotePlugin extends Plugin {
 	private resizeThrottleTime: number = 0;
 
 	// Performance: Layout caching
-	private lastLayoutWidth: number = 0;
 	private lastSidenoteCount: number = 0;
-	private lastMode: string = "";
 
 	// Performance: Visible sidenotes tracking
 	private visibilityObserver: IntersectionObserver | null = null;
 	private visibleSidenotes: Set<HTMLElement> = new Set();
 
-	private totalSidenotesInDocument = 0;
 	private isEditingMargin = false;
 	private readingModeScrollTimer: number | null = null;
 
 	private footnoteProcessingTimer: number | null = null;
-	private footnoteProcessingRetries = 0;
 	public needsReadingModeRefresh = true;
 
 	private pendingFootnoteEdit: string | null = null;
@@ -127,8 +121,6 @@ export default class SidenotePlugin extends Plugin {
 	private static readonly MAX_FOOTNOTE_EDIT_RETRIES = 10;
 	private readingModeResizeThrottleTime: number = 0;
 	private readingModeResizeTrailingTimer: number | null = null;
-
-	private activeEditingMargin: HTMLElement | null = null;
 
 	private spanCmView: EditorView | null = null;
 	private spanOutsidePointerDown?: (ev: PointerEvent) => void;
@@ -736,7 +728,6 @@ export default class SidenotePlugin extends Plugin {
 			this.app.workspace.on("file-open", (_file: TFile | null) => {
 				this.resetRegistry();
 				this.invalidateLayoutCache();
-				this.footnoteProcessingRetries = 0;
 				this.needsReadingModeRefresh = true;
 				this.scanDocumentForSidenotes();
 				this.rebindAndSchedule();
@@ -749,7 +740,6 @@ export default class SidenotePlugin extends Plugin {
 				if (this.isEditingMargin) return;
 				this.needsReadingModeRefresh = true;
 				this.scanDocumentForSidenotes();
-				this.needsFullRenumber = true;
 				this.invalidateLayoutCache();
 				this.scheduleLayoutDebounced(SidenotePlugin.MUTATION_DEBOUNCE);
 				void this.preCacheFileContent();
@@ -1386,9 +1376,7 @@ export default class SidenotePlugin extends Plugin {
 	}
 
 	private invalidateLayoutCache() {
-		this.lastLayoutWidth = 0;
 		this.lastSidenoteCount = 0;
-		this.lastMode = "";
 		// this.lastCollisionHash = "";
 	}
 
@@ -3067,7 +3055,6 @@ export default class SidenotePlugin extends Plugin {
 			if (opts.commit && newText !== this.spanOriginalText) {
 				this.refreshCachedSourceContent();
 				this.needsReadingModeRefresh = true;
-				this.needsFullRenumber = true;
 				this.invalidateLayoutCache();
 			}
 		};
@@ -3623,11 +3610,6 @@ export default class SidenotePlugin extends Plugin {
 			this.documentHasSidenotes = /\[\^[^\]]+\](?!:)/.test(content);
 		}
 
-		// Count total sidenotes in document for validation
-		if (this.needsFullRenumber) {
-			this.totalSidenotesInDocument = this.countSidenotesInSource(content);
-		}
-
 		// Check if we're in Source mode
 		const cmRoot = this.cmRoot;
 		const isSourceMode =
@@ -3673,19 +3655,6 @@ export default class SidenotePlugin extends Plugin {
 		if (content) {
 			this.cachedSourceContent = content;
 		}
-	}
-
-	/**
-	 * Count the total number of sidenotes in the source document.
-	 * For editing mode, only counts sidenotes (not footnotes).
-	 */
-	private countSidenotesInSource(content: string): number {
-		const sidenoteRegex = SIDENOTE_SPAN_REGEX();
-		let count = 0;
-		while (sidenoteRegex.exec(content) !== null) {
-			count++;
-		}
-		return count;
 	}
 
 	/**
@@ -3991,10 +3960,7 @@ export default class SidenotePlugin extends Plugin {
 
 	private resetRegistry() {
 		this.sidenoteRegistry.clear();
-		this.nextSidenoteNumber = 1;
 		this.headingSidenoteNumbers.clear();
-		this.needsFullRenumber = true;
-		this.totalSidenotesInDocument = 0;
 	}
 
 	// ==================== Main Layout ====================
