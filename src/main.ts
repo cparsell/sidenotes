@@ -17,6 +17,7 @@ import { markdown } from "@codemirror/lang-markdown";
 import { syntaxHighlighting } from "@codemirror/language";
 import { setCssProps } from "./dom-utils";
 import { applyCssVariables, clearCssVariables } from "./css-vars";
+import type { SidenoteWidgetHost } from "./widget-host";
 import { insertMarkdownLink, insertMarkdownWrapper } from "./markdown-format";
 import {
 	buildSourceRefOrder,
@@ -90,7 +91,10 @@ const SIDENOTE_CLASS_CAPTURE_REGEX = () =>
 // ======================================================
 // ================= Main Plugin Class ==================
 // ======================================================
-export default class SidenotePlugin extends Plugin {
+export default class SidenotePlugin
+	extends Plugin
+	implements SidenoteWidgetHost
+{
 	settings: SidenoteSettings;
 
 	private rafId: number | null = null;
@@ -759,52 +763,12 @@ export default class SidenotePlugin extends Plugin {
 		clearCssVariables();
 	}
 
-	// Add public methods that the widget can call
-	public renderLinksToFragmentPublic(text: string): DocumentFragment {
-		return this.renderLinksToFragment(text);
-	}
-
-	public normalizeTextPublic(s: string): string {
-		return this.normalizeText(s);
-	}
-
-	public parseFootnoteDefinitionsPublic(
-		content: string,
-	): Map<string, string> {
-		return this.parseFootnoteDefinitions(content);
-	}
-
-	public formatNumberPublic(num: number): string {
-		return this.formatNumber(num);
-	}
-
-	public scheduleEditingModeCollisionUpdate() {
-		this.scheduleCollisionUpdate();
-	}
-
-	/**
-	 * Register a widget-created margin with the visibility/resize observers.
-	 * Margins built by the CM6 widget bypass the layout() path that normally
-	 * does this, so without it their height changes go unnoticed.
-	 */
-	public observeSidenoteMarginPublic(margin: HTMLElement) {
-		this.observeSidenoteVisibility(margin);
-	}
-
-	public unobserveSidenoteMarginPublic(margin: HTMLElement) {
-		this.unobserveSidenoteVisibility(margin);
-	}
-
 	public setActiveFootnoteEdit(footnoteId: string | null) {
 		this.activeFootnoteEdit = footnoteId;
 	}
 
 	public isFootnoteBeingEdited(): boolean {
 		return this.activeFootnoteEdit !== null;
-	}
-
-	public refreshCachedSourceContentPublic() {
-		this.refreshCachedSourceContent();
 	}
 
 	public get settingsVersion(): number {
@@ -823,32 +787,6 @@ export default class SidenotePlugin extends Plugin {
 			cachedSourceContent: this.cachedSourceContent,
 			getMarkdownView: () => this.getMarkdownView(),
 		};
-	}
-
-	/**
-	 * Determine whether an element or footnote ID represents a margin note
-	 * (unnumbered sidenote).
-	 * - HTML format: <span class="sidenote margin-note">
-	 * - Footnote format: [^mn-...]
-	 */
-	public isMarginNote(elOrId: HTMLElement | string): boolean {
-		return isMarginNote(elOrId);
-	}
-
-	public setupMarginNotePopupPublic(
-		wrapper: HTMLElement,
-		margin: HTMLElement,
-		contentText: string,
-		editable: boolean = false,
-		footnoteId?: string,
-	) {
-		this.setupMarginNotePopup(
-			wrapper,
-			margin,
-			contentText,
-			editable,
-			footnoteId,
-		);
 	}
 
 	/**
@@ -1164,12 +1102,7 @@ export default class SidenotePlugin extends Plugin {
 				if (!rawText) return;
 
 				// Find this exact text in the source to confirm it exists
-				const view2 = this.app.workspace.getActiveViewOfType(MarkdownView);
-				const content =
-					view2?.editor?.getValue() ||
-					(view2 as { data?: string })?.data ||
-					this.cachedSourceContent ||
-					"";
+				const content = this.getSourceText();
 				if (!content) return;
 
 				// Search for a span containing this exact raw text
@@ -1381,7 +1314,7 @@ export default class SidenotePlugin extends Plugin {
 		});
 	}
 
-	private observeSidenoteVisibility(margin: HTMLElement) {
+	public observeSidenoteVisibility(margin: HTMLElement) {
 		if (this.visibilityObserver) {
 			this.visibilityObserver.observe(margin);
 		}
@@ -1390,7 +1323,7 @@ export default class SidenotePlugin extends Plugin {
 		}
 	}
 
-	private unobserveSidenoteVisibility(margin: HTMLElement) {
+	public unobserveSidenoteVisibility(margin: HTMLElement) {
 		if (this.visibilityObserver) {
 			this.visibilityObserver.unobserve(margin);
 			this.visibleSidenotes.delete(margin);
@@ -1769,12 +1702,7 @@ export default class SidenotePlugin extends Plugin {
 		index: number;
 		openingTag: string;
 	} | null {
-		const view = this.getMarkdownView();
-		const content =
-			view?.editor?.getValue() ||
-			(view as { data?: string })?.data ||
-			this.cachedSourceContent ||
-			"";
+		const content = this.getSourceText();
 		if (!content) return null;
 
 		const regex = SIDENOTE_SPAN_REGEX();
@@ -1927,6 +1855,8 @@ export default class SidenotePlugin extends Plugin {
 			type: "sidenote" | "footnote";
 			text: string;
 			rawText?: string;
+			/** Position among all sidenote spans in the document (HTML format). */
+			docIndex?: number;
 			footnoteId?: string;
 			footnoteHtml?: HTMLElement;
 		}[] = [];
@@ -1940,12 +1870,7 @@ export default class SidenotePlugin extends Plugin {
 		// Build list of raw source texts for HTML sidenotes
 		const htmlSidenoteRawTexts: string[] = [];
 		if (useHtmlSidenotes) {
-			const view2 = this.app.workspace.getActiveViewOfType(MarkdownView);
-			const sourceContent =
-				view2?.editor?.getValue() ||
-				(view2 as { data?: string })?.data ||
-				this.cachedSourceContent ||
-				"";
+			const sourceContent = this.getSourceText();
 			if (sourceContent) {
 				const regex = SIDENOTE_SPAN_REGEX();
 				let m: RegExpExecArray | null;
@@ -1955,25 +1880,45 @@ export default class SidenotePlugin extends Plugin {
 			}
 		}
 
+		// Sidenote number for each position in `allSpans`, 0 for margin notes
+		// (which render unnumbered). Indexed by document position rather than
+		// by position within this pass's work list — see below.
+		const htmlNumberByIndex: number[] = [];
+
 		if (useHtmlSidenotes) {
-			const spans = Array.from(
+			// EVERY sidenote span in the reading root, wrapped or not, in
+			// document order.
+			//
+			// An incremental pass only *processes* the unwrapped ones, but it
+			// still has to know each span's position among all of them. Keying
+			// off the filtered list instead was a single bug with two faces:
+			// editing the 3rd sidenote left it alone in the work list, so it was
+			// renumbered 1 and paired with htmlSidenoteRawTexts[0] — the first
+			// sidenote's source text, which then showed up in its editor.
+			const allSpans = Array.from(
 				readingRoot.querySelectorAll<HTMLElement>("span.sidenote"),
-			).filter(
-				(span) =>
-					!span.parentElement?.classList.contains("sidenote-number"),
 			);
 
-			let rawIdx = 0;
-			for (const el of spans) {
+			let seq = 0;
+			allSpans.forEach((el, docIndex) => {
+				htmlNumberByIndex[docIndex] = isMarginNote(el) ? 0 : ++seq;
+			});
+
+			allSpans.forEach((el, docIndex) => {
+				// Already wrapped by an earlier pass — nothing to do.
+				if (el.parentElement?.classList.contains("sidenote-number")) {
+					return;
+				}
 				allItems.push({
 					el,
 					rect: el.getBoundingClientRect(),
 					type: "sidenote",
 					text: el.textContent ?? "",
-					rawText: htmlSidenoteRawTexts[rawIdx] ?? el.textContent ?? "",
+					rawText:
+						htmlSidenoteRawTexts[docIndex] ?? el.textContent ?? "",
+					docIndex,
 				});
-				rawIdx++;
-			}
+			});
 		}
 
 		const sourceRefOrder: string[] = [];
@@ -1983,20 +1928,13 @@ export default class SidenotePlugin extends Plugin {
 			// Obsidian uses virtualized rendering — the <section class="footnotes">
 			// may not exist in the DOM for long documents where it's off-screen.
 
-			// Try multiple methods to get source content (in order of reliability):
-			// 1. view.editor.getValue() — works in editing mode, sometimes in reading mode
-			// 2. (view as any).data — Obsidian's cached file content (always available)
-			// 3. this.cachedSourceContent — cached from scanDocumentForSidenotes()
-			const view2 = this.app.workspace.getActiveViewOfType(MarkdownView);
-			let sourceContent =
-				view2?.editor?.getValue() ||
-				(view2 as { data?: string })?.data ||
-				this.cachedSourceContent ||
-				"";
+			let sourceContent = this.getSourceText();
 
 			// If still empty, try async cachedRead as last resort
 			if (!sourceContent) {
-				const file = view2?.file ?? this.app.workspace.getActiveFile();
+				const file =
+					this.getMarkdownView()?.file ??
+					this.app.workspace.getActiveFile();
 				if (file) {
 					void this.app.vault.cachedRead(file).then((text) => {
 						const current =
@@ -2103,7 +2041,6 @@ export default class SidenotePlugin extends Plugin {
 		// which querySelectorAll already preserves.
 		allItems.sort((a, b) => a.rect.top - b.rect.top);
 
-		// Start numbering from 1
 		let num = 1;
 
 		const marginNotes: HTMLElement[] = [];
@@ -2112,15 +2049,20 @@ export default class SidenotePlugin extends Plugin {
 			// Determine if this is a margin note (unnumbered)
 			const isMargin =
 				item.type === "sidenote"
-					? this.isMarginNote(item.el)
+					? isMarginNote(item.el)
 					: item.footnoteId
-						? this.isMarginNote(item.footnoteId)
+						? isMarginNote(item.footnoteId)
 						: false;
+
+			// HTML sidenotes are numbered by their position in the document,
+			// not by their position in this pass's work list — an incremental
+			// pass may only be handling one span in the middle of the note.
+			if (item.type === "sidenote" && item.docIndex !== undefined) {
+				num = htmlNumberByIndex[item.docIndex] ?? num;
+			}
 
 			// Margin notes render without a number, so they must not consume
 			// one — otherwise they punch gaps in the sequence (…62, 63, 65…).
-			// The non-heading path below already skips them by only advancing
-			// `num` in the numbered branch; this keeps the two consistent.
 			if (this.settings.resetNumberingPerHeading && !isMargin) {
 				const heading = this.findPrecedingHeading(item.el);
 				if (heading) {
@@ -2143,7 +2085,8 @@ export default class SidenotePlugin extends Plugin {
 
 			// For footnotes, use the footnote's own ID as the number
 			// (so [^3] always displays as "3" regardless of which refs are visible).
-			// For HTML sidenotes, use the sequential counter.
+			// For HTML sidenotes, `num` was resolved above — from the document
+			// index, or from the per-heading counter when that setting is on.
 			// For margin notes, use empty string (no number).
 			let numStr: string;
 			if (isMargin) {
@@ -2151,7 +2094,7 @@ export default class SidenotePlugin extends Plugin {
 			} else if (item.footnoteId) {
 				numStr = stripSideSuffix(item.footnoteId);
 			} else {
-				numStr = this.formatNumber(num++);
+				numStr = this.formatNumber(num);
 			}
 
 			const wrapper = createSpan();
@@ -2234,7 +2177,7 @@ export default class SidenotePlugin extends Plugin {
 		);
 		if (footnotesSection) {
 			for (const item of allItems) {
-				if (item.footnoteId && this.isMarginNote(item.footnoteId)) {
+				if (item.footnoteId && isMarginNote(item.footnoteId)) {
 					const renderedIndex = sourceRefOrder.indexOf(item.footnoteId);
 					if (renderedIndex >= 0) {
 						const li = footnotesSection.children[
@@ -2292,6 +2235,22 @@ export default class SidenotePlugin extends Plugin {
 				);
 			});
 		});
+	}
+
+	/**
+	 * Re-run reading-mode processing for the active view.
+	 *
+	 * Unlike `scheduleFootnoteProcessing`, this does not require footnote refs
+	 * to be present, so it also covers HTML sidenotes. `processReadingModeSidenotes`
+	 * has its own guards and will no-op when there is nothing to do.
+	 */
+	private reprocessReadingMode() {
+		const readingRoot = this.getMarkdownView()?.containerEl.querySelector<
+			HTMLElement
+		>(".markdown-reading-view");
+		if (readingRoot) {
+			this.processReadingModeSidenotes(readingRoot);
+		}
 	}
 
 	private scheduleFootnoteProcessing() {
@@ -2511,12 +2470,7 @@ export default class SidenotePlugin extends Plugin {
 	 * never use stale text captured at DOM-creation time.
 	 */
 	private getFootnoteSourceText(footnoteId: string): string | null {
-		const view = this.getMarkdownView();
-		const content =
-			this.cachedSourceContent ||
-			view?.editor?.getValue() ||
-			(view as { data?: string })?.data ||
-			"";
+		const content = this.cachedSourceContent || this.getSourceText();
 		if (!content) return null;
 
 		const definitions = this.parseFootnoteDefinitions(content);
@@ -2813,7 +2767,7 @@ export default class SidenotePlugin extends Plugin {
 			this.spanCmView = null;
 			cm.destroy();
 
-			setWorkspaceActiveEditor(this, null);
+			setWorkspaceActiveEditor(this.app, null);
 
 			// Keep isEditingMargin = true through the commit so the reading-mode
 			// MutationObserver (which reacts to Obsidian's async preview
@@ -2836,6 +2790,13 @@ export default class SidenotePlugin extends Plugin {
 				this.renderLinksToFragment(this.normalizeText(renderText)),
 			);
 
+			// The delegated click handler reads the raw source text back off
+			// this attribute to decide what to put in the editor. It is written
+			// once at wrap time, so leaving it alone here meant a second click
+			// reopened the sidenote with its pre-edit contents — and looked the
+			// text up in the source by that stale value.
+			margin.dataset.sidenoteRawText = renderText;
+
 			this.activeReadingModeMargin = null;
 
 			if (changed) {
@@ -2851,6 +2812,12 @@ export default class SidenotePlugin extends Plugin {
 				this.postEditCooldown = window.setTimeout(() => {
 					this.postEditCooldown = null;
 					this.refreshCachedSourceContent();
+					// The commit wrote the file, so Obsidian re-renders the preview
+					// asynchronously and discards our wrapper/margin markup.
+					// Processing was suppressed for the whole cooldown, so nothing
+					// has rebuilt it — that is what made the sidenote vanish while
+					// the source itself stayed correct.
+					this.reprocessReadingMode();
 				}, 500);
 			}
 		};
@@ -2908,12 +2875,12 @@ export default class SidenotePlugin extends Plugin {
 
 		cm.dom.addEventListener(
 			"focusin",
-			() => setWorkspaceActiveEditor(this, cm),
+			() => setWorkspaceActiveEditor(this.app, cm),
 			true,
 		);
 		cm.dom.addEventListener(
 			"focusout",
-			() => setWorkspaceActiveEditor(this, null),
+			() => setWorkspaceActiveEditor(this.app, null),
 			true,
 		);
 
@@ -3032,12 +2999,12 @@ export default class SidenotePlugin extends Plugin {
 		// Route Obsidian's active editor to this CM instance
 		cm.dom.addEventListener(
 			"focusin",
-			() => setWorkspaceActiveEditor(this, cm),
+			() => setWorkspaceActiveEditor(this.app, cm),
 			true,
 		);
 		cm.dom.addEventListener(
 			"focusout",
-			() => setWorkspaceActiveEditor(this, null),
+			() => setWorkspaceActiveEditor(this.app, null),
 			true,
 		);
 
@@ -3122,7 +3089,7 @@ export default class SidenotePlugin extends Plugin {
 		cm.destroy();
 
 		// Restore Obsidian active editor routing
-		setWorkspaceActiveEditor(this, null);
+		setWorkspaceActiveEditor(this.app, null);
 
 		// Keep isEditingMargin = true through the commit so that
 		// editor-change doesn't set needsReadingModeRefresh = true
@@ -3132,36 +3099,13 @@ export default class SidenotePlugin extends Plugin {
 
 		// Commit to the source file if changed
 		if (commit && newText !== this.readingCmOriginalText) {
+			// Also patches cachedSourceContent in place, so clicking the
+			// sidenote again reads the new text rather than waiting for the
+			// async file write to propagate.
 			this.commitReadingModeFootnoteText(
 				this.readingCmFootnoteId,
 				newText,
 			);
-
-			// Immediately patch the cached source content so that
-			// clicking the sidenote again reads the new text, rather
-			// than waiting for the async file write to propagate.
-			if (this.cachedSourceContent) {
-				const escapedId = this.readingCmFootnoteId.replace(
-					/[.*+?^${}()|[\]\\]/g,
-					"\\$&",
-				);
-				const regex = new RegExp(
-					`^(\\[\\^${escapedId}\\]:\\s*)(.+(?:\\n(?:[ \\t]+.+)*)?)$`,
-					"gm",
-				);
-				const match = regex.exec(this.cachedSourceContent);
-				if (match) {
-					const prefix = match[1] ?? "";
-					const before = this.cachedSourceContent.slice(
-						0,
-						match.index + prefix.length,
-					);
-					const after = this.cachedSourceContent.slice(
-						match.index + match[0].length,
-					);
-					this.cachedSourceContent = before + newText + after;
-				}
-			}
 		}
 
 		// NOW clear the editing flag
@@ -3189,6 +3133,12 @@ export default class SidenotePlugin extends Plugin {
 				// Now that Obsidian has had time to update its caches,
 				// refresh our cached content too
 				this.refreshCachedSourceContent();
+				// The commit wrote the file, so Obsidian re-renders the preview
+				// asynchronously and discards our wrapper/margin markup.
+				// Processing was suppressed for the whole cooldown, so nothing
+				// has rebuilt it — that is what made the sidenote vanish while
+				// the source itself stayed correct.
+				this.reprocessReadingMode();
 			}, 500);
 		}
 
@@ -3216,6 +3166,40 @@ export default class SidenotePlugin extends Plugin {
 	 * Works even in reading mode by using view.editor (which Obsidian
 	 * keeps synchronized) or falling back to vault.modify().
 	 */
+	/**
+	 * True when the active markdown view is showing rendered preview.
+	 *
+	 * This matters for every write-back path. In reading mode there is no live
+	 * editor backing the view: `editor.replaceRange` writes into a CodeMirror
+	 * document that Obsidian discards the moment you switch to editing mode, so
+	 * the edit renders correctly and then silently disappears. Writes made in
+	 * this mode have to go through `vault.process`, which touches the file.
+	 */
+	private isPreviewMode(): boolean {
+		return this.getMarkdownView()?.getMode() === "preview";
+	}
+
+	/**
+	 * The document's source markdown, resolved through every available
+	 * fallback. This is the single place that ordering decision is made.
+	 *
+	 * The order depends on mode, and getting it wrong is subtle:
+	 * `editor.getValue()` is authoritative while editing, but in preview the
+	 * editor's document lags the file, because reading-mode commits go through
+	 * `vault.process` and the editor never sees them. Preferring the editor
+	 * there hands back pre-edit text — which is why a freshly-edited sidenote
+	 * would reopen showing its old contents.
+	 */
+	private getSourceText(): string {
+		const view = this.getMarkdownView();
+		const editorText = view?.editor?.getValue();
+		const viewData = (view as { data?: string } | null)?.data;
+
+		return this.isPreviewMode()
+			? viewData || this.cachedSourceContent || editorText || ""
+			: editorText || viewData || this.cachedSourceContent || "";
+	}
+
 	private commitReadingModeFootnoteText(
 		footnoteId: string,
 		newText: string,
@@ -3224,7 +3208,7 @@ export default class SidenotePlugin extends Plugin {
 		const file = view?.file ?? this.app.workspace.getActiveFile();
 		if (!file) return;
 
-		void this.app.vault.process(file, (content) => {
+		const rewrite = (content: string): string | null => {
 			const escapedId = footnoteId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 			const regex = new RegExp(
 				`^(\\[\\^${escapedId}\\]:\\s*)(.+(?:\\n(?:[ \\t]+.+)*)?)$`,
@@ -3232,14 +3216,66 @@ export default class SidenotePlugin extends Plugin {
 			);
 
 			const match = regex.exec(content);
-			if (!match) return content; // no change
+			if (!match) return null; // no change
 
 			const prefix = match[1] ?? "";
 			const before = content.slice(0, match.index + prefix.length);
 			const after = content.slice(match.index + match[0].length);
 
 			return before + newText + after;
-		});
+		};
+
+		void this.app.vault.process(file, (content) => rewrite(content) ?? content);
+
+		// Patch the cache in place so re-opening the sidenote before the async
+		// file write lands reads the new text rather than the stale source.
+		if (this.cachedSourceContent) {
+			const patched = rewrite(this.cachedSourceContent);
+			if (patched) this.cachedSourceContent = patched;
+		}
+	}
+
+	/**
+	 * Reading-mode counterpart to `commitHtmlSpanSidenoteText`. Same rewrite,
+	 * but through `vault.process` — see `isPreviewMode` for why the editor
+	 * path cannot be used here.
+	 */
+	private commitReadingModeHtmlSpanText(
+		originalText: string,
+		newText: string,
+	) {
+		const view = this.getMarkdownView();
+		const file = view?.file ?? this.app.workspace.getActiveFile();
+		if (!file) return;
+
+		const rewrite = (content: string): string | null => {
+			const regex = SIDENOTE_SPAN_REGEX();
+			let match: RegExpExecArray | null;
+
+			while ((match = regex.exec(content)) !== null) {
+				if (match[1] !== originalText) continue;
+
+				// Preserve the opening tag verbatim so per-note class overrides
+				// (`sidenote right`, `sidenote margin-note left`) survive.
+				const openingTag = match[0].substring(
+					0,
+					match[0].indexOf(">") + 1,
+				);
+				return (
+					content.slice(0, match.index) +
+					`${openingTag}${newText}</span>` +
+					content.slice(match.index + match[0].length)
+				);
+			}
+			return null;
+		};
+
+		void this.app.vault.process(file, (content) => rewrite(content) ?? content);
+
+		if (this.cachedSourceContent) {
+			const patched = rewrite(this.cachedSourceContent);
+			if (patched) this.cachedSourceContent = patched;
+		}
 	}
 
 	/**
@@ -3385,19 +3421,24 @@ export default class SidenotePlugin extends Plugin {
 			return;
 		}
 
-		const editor = view.editor;
-		if (!editor) {
+		// Resolve the source text through the full fallback chain rather than
+		// trusting the editor. `editor.getValue()` returns "" on a reading-only
+		// leaf, and `view.editor` can be absent entirely — either way the old
+		// code concluded the document had no sidenotes at all. That false
+		// negative is what left reading mode blank after a mode flip:
+		// `documentHasSidenotes` gates the rebuild in scheduleReadingModeLayout,
+		// so nothing reprocessed until a scroll happened to re-fire the
+		// post-processor for a section.
+		const content = this.getSourceText();
+
+		if (content) {
+			this.cachedSourceContent = content;
+		}
+
+		if (!content) {
 			this.documentHasSidenotes = false;
 			this.documentSidenoteSides = { left: false, right: false };
 			return;
-		}
-
-		const content = editor.getValue();
-
-		// Cache source content for reading mode
-		// (view.editor.getValue() can return "" in reading mode)
-		if (content) {
-			this.cachedSourceContent = content;
 		}
 
 		if (this.settings.sidenoteFormat === "html") {
@@ -3407,12 +3448,7 @@ export default class SidenotePlugin extends Plugin {
 			this.documentHasSidenotes = /\[\^[^\]]+\](?!:)/.test(content);
 		}
 
-		// Fall back to the cache: getValue() returns "" on a reading-only leaf,
-		// and an empty result here would drop the mirrored margin's reserved
-		// space and shift the body text.
-		this.documentSidenoteSides = this.scanSidenoteSides(
-			content || this.cachedSourceContent,
-		);
+		this.documentSidenoteSides = this.scanSidenoteSides(content);
 
 		// Check if we're in Source mode
 		const cmRoot = this.cmRoot;
@@ -3495,10 +3531,19 @@ export default class SidenotePlugin extends Plugin {
 	 * Call this after any commit (editing or reading mode) so that
 	 * subsequent mode switches and undo operations see fresh data.
 	 */
-	private refreshCachedSourceContent() {
+	public refreshCachedSourceContent() {
 		const view = this.getMarkdownView();
-		const content =
-			view?.editor?.getValue() || (view as { data?: string })?.data || "";
+		const editorText = view?.editor?.getValue();
+		const viewData = (view as { data?: string })?.data;
+
+		// Source order matters. The editor is authoritative while editing, but
+		// in preview its document can lag the file — and this runs right after
+		// a reading-mode commit wrote through vault.process, so preferring the
+		// editor there would overwrite the fresh text with the pre-edit copy.
+		const content = this.isPreviewMode()
+			? viewData || editorText || ""
+			: editorText || viewData || "";
+
 		if (content) {
 			this.cachedSourceContent = content;
 		}
@@ -3948,7 +3993,7 @@ export default class SidenotePlugin extends Plugin {
 			this.isMutating = true;
 			try {
 				for (const item of itemsWithSourceIndex) {
-					const isMargin = this.isMarginNote(item.el);
+					const isMargin = isMarginNote(item.el);
 					const sideOverride = getSidenoteSideOverride(item.el);
 					const numStr = isMargin ? "" : this.formatNumber(item.index);
 					const wrapper = createSpan();
@@ -4407,7 +4452,7 @@ export default class SidenotePlugin extends Plugin {
 		cm.dom.addEventListener(
 			"focusin",
 			() => {
-				setWorkspaceActiveEditor(this, cm);
+				setWorkspaceActiveEditor(this.app, cm);
 			},
 			true,
 		);
@@ -4415,7 +4460,7 @@ export default class SidenotePlugin extends Plugin {
 		cm.dom.addEventListener(
 			"focusout",
 			() => {
-				setWorkspaceActiveEditor(this, null);
+				setWorkspaceActiveEditor(this.app, null);
 			},
 			true,
 		);
@@ -4448,6 +4493,13 @@ export default class SidenotePlugin extends Plugin {
 		originalText: string,
 		newText: string,
 	) {
+		// Reading mode (and popups opened from it) must not write via the
+		// editor — the change would render but never reach the file.
+		if (this.isPreviewMode()) {
+			this.commitReadingModeHtmlSpanText(originalText, newText);
+			return;
+		}
+
 		const view = this.getMarkdownView();
 		if (!view?.editor) return;
 
@@ -4489,6 +4541,13 @@ export default class SidenotePlugin extends Plugin {
 	}
 
 	private commitFootnoteSidenoteText(footnoteId: string, newText: string) {
+		// Same reasoning as commitHtmlSpanSidenoteText: this is reachable from
+		// a margin-note popup opened in reading mode.
+		if (this.isPreviewMode()) {
+			this.commitReadingModeFootnoteText(footnoteId, newText);
+			return;
+		}
+
 		const view = this.getMarkdownView();
 		if (!view?.editor) return;
 
@@ -4790,7 +4849,7 @@ export default class SidenotePlugin extends Plugin {
 	 * hide the margin, show an ⓘ icon inline, and display
 	 * content in a small popup on click.
 	 */
-	private setupMarginNotePopup(
+	public setupMarginNotePopup(
 		wrapper: HTMLElement,
 		margin: HTMLElement,
 		contentText: string,
@@ -4934,7 +4993,7 @@ export default class SidenotePlugin extends Plugin {
 				popupCmView.dom.addEventListener(
 					"focusin",
 					() => {
-						setWorkspaceActiveEditor(this, popupCmView);
+						setWorkspaceActiveEditor(this.app, popupCmView);
 					},
 					true,
 				);
@@ -4942,7 +5001,7 @@ export default class SidenotePlugin extends Plugin {
 				popupCmView.dom.addEventListener(
 					"focusout",
 					() => {
-						setWorkspaceActiveEditor(this, null);
+						setWorkspaceActiveEditor(this.app, null);
 					},
 					true,
 				);

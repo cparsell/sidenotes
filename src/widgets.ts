@@ -1,4 +1,5 @@
 import {
+	App,
 	MarkdownView,
 	TFile,
 	EditorPosition,
@@ -25,8 +26,15 @@ import { syntaxHighlighting, HighlightStyle } from "@codemirror/language";
 // eslint-disable-next-line import/no-extraneous-dependencies -- @lezer/highlight is a transitive dependency pulled in by @codemirror/language, used directly here for syntax tags
 import { tags } from "@lezer/highlight";
 import { setCssProps } from "./dom-utils";
-import { getSidenoteSideOverride } from "./content";
-import type SidenotePlugin from "./main";
+import {
+	formatNumber,
+	getSidenoteSideOverride,
+	isMarginNote,
+	normalizeText,
+	parseFootnoteDefinitions,
+	renderLinksToFragment,
+} from "./content";
+import type { SidenoteWidgetHost } from "./widget-host";
 
 /** Minimal subset of Obsidian's Editor interface backed by a CM6 EditorView. */
 interface MinimalEditor {
@@ -125,10 +133,10 @@ type WorkspaceWithActiveEditor = {
 };
 
 export function setWorkspaceActiveEditor(
-	plugin: SidenotePlugin,
+	app: App,
 	view: EditorView | null,
 ) {
-	const ws = plugin.app.workspace as unknown as WorkspaceWithActiveEditor;
+	const ws = app.workspace as unknown as WorkspaceWithActiveEditor;
 
 	if (!view) {
 		ws.activeEditor = null;
@@ -137,7 +145,7 @@ export function setWorkspaceActiveEditor(
 
 	ws.activeEditor = {
 		editor: cmEditorAdapter(view),
-		file: plugin.app.workspace.getActiveFile(),
+		file: app.workspace.getActiveFile(),
 	};
 }
 
@@ -325,13 +333,13 @@ class FootnoteSidenoteWidget extends WidgetType {
 		readonly content: string,
 		readonly numberText: string,
 		readonly footnoteId: string,
-		readonly plugin: SidenotePlugin,
+		readonly host: SidenoteWidgetHost,
 	) {
 		super();
 	}
 
 	toDOM(): HTMLElement {
-		const isMargin = this.plugin.isMarginNote(this.footnoteId);
+		const isMargin = isMarginNote(this.footnoteId);
 		const sideOverride = getSidenoteSideOverride(this.footnoteId);
 
 		const wrapper = createSpan();
@@ -358,14 +366,15 @@ class FootnoteSidenoteWidget extends WidgetType {
 		});
 
 		// Render the content with markdown formatting support
-		const fragment = this.plugin.renderLinksToFragmentPublic(
-			this.plugin.normalizeTextPublic(this.content),
+		const fragment = renderLinksToFragment(
+			normalizeText(this.content),
+			this.host.app,
 		);
 		margin.appendChild(fragment);
 
 		// Setup popup
-		if (isMargin && this.plugin.settings.marginNoteDisplay === "popup") {
-			this.plugin.setupMarginNotePopupPublic(
+		if (isMargin && this.host.settings.marginNoteDisplay === "popup") {
+			this.host.setupMarginNotePopup(
 				wrapper,
 				margin,
 				this.content,
@@ -423,20 +432,20 @@ class FootnoteSidenoteWidget extends WidgetType {
 					);
 				}
 
-				this.plugin.scheduleEditingModeCollisionUpdate();
+				this.host.scheduleCollisionUpdate();
 			}
 		});
 
 		// Track height changes on this margin (inline editor open/close, late
 		// image loads) so collisions get re-resolved instead of going stale.
-		this.plugin.observeSidenoteMarginPublic(margin);
+		this.host.observeSidenoteVisibility(margin);
 
 		return wrapper;
 	}
 
 	destroy(dom: HTMLElement): void {
 		const margin = dom.querySelector<HTMLElement>("small.sidenote-margin");
-		if (margin) this.plugin.unobserveSidenoteMarginPublic(margin);
+		if (margin) this.host.unobserveSidenoteVisibility(margin);
 	}
 
 	private cmView: EditorView | null = null;
@@ -444,7 +453,7 @@ class FootnoteSidenoteWidget extends WidgetType {
 	private originalText: string = "";
 
 	private setActiveEditorForMargin(cm: EditorView | null) {
-		setWorkspaceActiveEditor(this.plugin, cm);
+		setWorkspaceActiveEditor(this.host.app, cm);
 	}
 
 	private makeCommitKeymap(margin: HTMLElement) {
@@ -499,7 +508,7 @@ class FootnoteSidenoteWidget extends WidgetType {
 
 		// restore routing + state
 		this.setActiveEditorForMargin(null);
-		this.plugin.setActiveFootnoteEdit(null);
+		this.host.setActiveFootnoteEdit(null);
 		margin.dataset.editing = "false";
 
 		// If committing, write back to footnote definition in the note.
@@ -511,25 +520,26 @@ class FootnoteSidenoteWidget extends WidgetType {
 		// Re-render with the CURRENT content (updated above if committed)
 		margin.innerHTML = "";
 		margin.appendChild(
-			this.plugin.renderLinksToFragmentPublic(
-				this.plugin.normalizeTextPublic(this.content),
+			renderLinksToFragment(
+				normalizeText(this.content),
+				this.host.app,
 			),
 		);
 
 		// Signal that reading mode needs a refresh if the user switches modes
 		if (opts.commit && textToUse !== this.originalText) {
-			this.plugin.needsReadingModeRefresh = true;
-			this.plugin.refreshCachedSourceContentPublic();
+			this.host.needsReadingModeRefresh = true;
+			this.host.refreshCachedSourceContent();
 		}
 
 		// The margin just swapped a CM editor for rendered text, so its height
 		// changed and every sidenote below it is now mispositioned.
-		this.plugin.scheduleEditingModeCollisionUpdate();
+		this.host.scheduleCollisionUpdate();
 	}
 
 	private commitFootnoteText(newText: string) {
 		const view =
-			this.plugin.app.workspace.getActiveViewOfType(MarkdownView);
+			this.host.app.workspace.getActiveViewOfType(MarkdownView);
 		if (!view?.editor) return;
 
 		const editor = view.editor;
@@ -593,7 +603,7 @@ class FootnoteSidenoteWidget extends WidgetType {
 
 		this.originalText = this.content;
 
-		this.plugin.setActiveFootnoteEdit(this.footnoteId);
+		this.host.setActiveFootnoteEdit(this.footnoteId);
 		margin.dataset.editing = "true";
 		margin.innerHTML = "";
 
@@ -681,7 +691,7 @@ class FootnoteSidenoteWidget extends WidgetType {
 		window.requestAnimationFrame(() => cm.focus());
 
 		// Opening the editor grows the margin; push the ones below it down.
-		this.plugin.scheduleEditingModeCollisionUpdate();
+		this.host.scheduleCollisionUpdate();
 	}
 
 	eq(other: FootnoteSidenoteWidget): boolean {
@@ -700,7 +710,7 @@ class FootnoteSidenoteWidget extends WidgetType {
 
 class MarginNoteMarkerWidget extends WidgetType {
 	constructor(
-		readonly plugin: SidenotePlugin,
+		readonly host: SidenoteWidgetHost,
 		readonly footnoteId: string,
 	) {
 		super();
@@ -710,7 +720,7 @@ class MarginNoteMarkerWidget extends WidgetType {
 		const span = createSpan();
 		span.className = "margin-note-marker";
 
-		const iconSetting = this.plugin.settings.popupIcon || "ⓘ";
+		const iconSetting = this.host.settings.popupIcon || "ⓘ";
 
 		if (
 			iconSetting.endsWith(".png") ||
@@ -718,8 +728,8 @@ class MarginNoteMarkerWidget extends WidgetType {
 			iconSetting.endsWith(".jpg")
 		) {
 			const img = createEl("img");
-			img.src = this.plugin.app.vault.adapter.getResourcePath(
-				`${this.plugin.manifest.dir}/assets/${iconSetting}`,
+			img.src = this.host.app.vault.adapter.getResourcePath(
+				`${this.host.manifest.dir}/assets/${iconSetting}`,
 			);
 			img.className = "margin-note-marker-img";
 			span.appendChild(img);
@@ -742,7 +752,7 @@ class MarginNoteMarkerWidget extends WidgetType {
 			);
 			if (!wrapper) return;
 
-			if (this.plugin.settings.marginNoteDisplay === "popup") {
+			if (this.host.settings.marginNoteDisplay === "popup") {
 				const popupIcon = wrapper.querySelector<HTMLElement>(
 					".margin-note-icon",
 				);
@@ -777,9 +787,9 @@ class FootnoteSidenoteViewPlugin {
 
 	constructor(
 		private view: EditorView,
-		private plugin: SidenotePlugin,
+		private host: SidenoteWidgetHost,
 	) {
-		this.lastSettingsVersion = plugin.settingsVersion;
+		this.lastSettingsVersion = host.settingsVersion;
 		this.lastLivePreview = this.isLivePreview(view.state);
 		this.decorations = this.buildDecorations(view.state);
 	}
@@ -795,12 +805,12 @@ class FootnoteSidenoteViewPlugin {
 
 	update(update: ViewUpdate) {
 		// Don't rebuild decorations while a footnote is being edited
-		if (this.plugin.isFootnoteBeingEdited()) {
+		if (this.host.isFootnoteBeingEdited()) {
 			return;
 		}
 
 		const settingsChanged =
-			this.plugin.settingsVersion !== this.lastSettingsVersion;
+			this.host.settingsVersion !== this.lastSettingsVersion;
 
 		const livePreview = this.isLivePreview(update.state);
 		const modeChanged = livePreview !== this.lastLivePreview;
@@ -812,7 +822,7 @@ class FootnoteSidenoteViewPlugin {
 			settingsChanged ||
 			modeChanged
 		) {
-			this.lastSettingsVersion = this.plugin.settingsVersion;
+			this.lastSettingsVersion = this.host.settingsVersion;
 			this.lastLivePreview = livePreview;
 			this.decorations = this.buildDecorations(update.state);
 		}
@@ -821,7 +831,7 @@ class FootnoteSidenoteViewPlugin {
 	/* */
 	buildDecorations(state: EditorState): DecorationSet {
 		// Only show footnote sidenotes in editing mode when using footnote-edit format
-		if (this.plugin.settings.sidenoteFormat !== "footnote-edit") {
+		if (this.host.settings.sidenoteFormat !== "footnote-edit") {
 			return Decoration.none;
 		}
 
@@ -835,7 +845,7 @@ class FootnoteSidenoteViewPlugin {
 
 		// Parse footnote definitions first
 		const footnoteDefinitions =
-			this.plugin.parseFootnoteDefinitionsPublic(content);
+			parseFootnoteDefinitions(content);
 
 		// Find all footnote references [^id] (not definitions [^id]:)
 		const referenceRegex = /\[\^([^\]]+)\](?!:)/g;
@@ -881,13 +891,13 @@ class FootnoteSidenoteViewPlugin {
 			const itemNum = footnoteNumbers.get(id) ?? 1;
 			const numberText = isMargin
 				? ""
-				: this.plugin.formatNumberPublic(itemNum);
+				: formatNumber(itemNum, this.host.settings.numberStyle);
 
 			if (isMargin) {
 				decorations.push({
 					from: to,
 					decoration: Decoration.widget({
-						widget: new MarginNoteMarkerWidget(this.plugin, id),
+						widget: new MarginNoteMarkerWidget(this.host, id),
 						side: -1,
 					}),
 				});
@@ -900,7 +910,7 @@ class FootnoteSidenoteViewPlugin {
 						footnoteContent,
 						numberText,
 						id,
-						this.plugin,
+						this.host,
 					),
 					side: 1,
 				}),
@@ -922,13 +932,13 @@ class FootnoteSidenoteViewPlugin {
 /**
  * Create the CodeMirror 6 ViewPlugin for footnote sidenotes.
  */
-export function createFootnoteSidenotePlugin(plugin: SidenotePlugin) {
+export function createFootnoteSidenotePlugin(host: SidenoteWidgetHost) {
 	return ViewPlugin.fromClass(
 		class {
 			inner: FootnoteSidenoteViewPlugin;
 
 			constructor(view: EditorView) {
-				this.inner = new FootnoteSidenoteViewPlugin(view, plugin);
+				this.inner = new FootnoteSidenoteViewPlugin(view, host);
 			}
 
 			update(update: ViewUpdate) {
