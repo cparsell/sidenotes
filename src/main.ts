@@ -1,4 +1,4 @@
-import { MarkdownView, Plugin, TFile, Menu, Editor } from "obsidian";
+import { MarkdownView, Plugin, TFile, Editor } from "obsidian";
 import { EditorView, keymap } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
 import {
@@ -16,6 +16,8 @@ import {
 import { markdown } from "@codemirror/lang-markdown";
 import { syntaxHighlighting } from "@codemirror/language";
 import { setCssProps } from "./dom-utils";
+import { applyCssVariables, clearCssVariables } from "./css-vars";
+import { insertMarkdownLink, insertMarkdownWrapper } from "./markdown-format";
 import {
 	buildSourceRefOrder,
 	formatNumber,
@@ -46,6 +48,13 @@ type CleanupFn = () => void;
 // Near the top of the file, with your other type definitions
 interface SidenoteMarginElement extends HTMLElement {
 	_sidenoteCleanup?: () => void;
+}
+
+// Popup-mode margin notes append their popup to document.body and register a
+// document-level click listener, so removing the wrapper is not enough to
+// clean them up — the teardown has to be invoked explicitly.
+interface SidenoteWrapperElement extends HTMLElement {
+	_popupCleanup?: () => void;
 }
 
 type HasCmScrollTop = {
@@ -89,10 +98,7 @@ export default class SidenotePlugin extends Plugin {
 	private cmRoot: HTMLElement | null = null;
 	private isMutating = false;
 	private resizeObserver: ResizeObserver | null = null;
-	private styleEl: HTMLStyleElement | null = null;
 
-	// Map from sidenote text content (or position) to assigned number
-	private sidenoteRegistry: Map<string, number> = new Map();
 	private headingSidenoteNumbers: Map<string, number> = new Map();
 
 	// Incremented on every settings save to signal the CM6 ViewPlugin to rebuild
@@ -157,8 +163,6 @@ export default class SidenotePlugin extends Plugin {
 	private readingCmFootnoteId: string = "";
 	private activeReadingModeMargin: HTMLElement | null = null;
 
-	// Track the currently editing margin element for the global capture listener
-	private currentlyEditingMargin: HTMLElement | null = null;
 	// Cooldown timer after a reading-mode edit commit to prevent
 	// the MutationObserver-triggered rebuild from overwriting the
 	// freshly re-rendered margin with stale source data.
@@ -186,114 +190,12 @@ export default class SidenotePlugin extends Plugin {
 		await this.loadSettings();
 
 		this.addSettingTab(new SidenoteSettingTab(this.app, this));
-		this.injectStyles();
+		applyCssVariables(this.settings);
 		this.setupVisibilityObserver();
 		this.setupMarginResizeObserver();
 
 		// Register the CM6 extension for footnote sidenotes in editing mode
 		this.registerEditorExtension([createFootnoteSidenotePlugin(this)]);
-
-		// Add command to insert sidenote
-		this.addCommand({
-			id: "insert-sidenote",
-			name: "Insert sidenote",
-			editorCallback: (editor) => {
-				const cursor = editor.getCursor();
-				const selectedText = editor.getSelection();
-
-				if (this.settings.sidenoteFormat === "html") {
-					if (selectedText) {
-						editor.replaceSelection(
-							`<span class="sidenote">${selectedText}</span>`,
-						);
-					} else {
-						const sidenoteText = '<span class="sidenote"></span>';
-						editor.replaceRange(sidenoteText, cursor);
-						const newCursor = {
-							line: cursor.line,
-							ch: cursor.ch + '<span class="sidenote">'.length,
-						};
-						editor.setCursor(newCursor);
-					}
-				} else {
-					// Footnote format - need to find next available footnote number
-					const content = editor.getValue();
-					const existingRefs =
-						content.match(/\[\^(\d+)(?:-[rl])?\]/g) ?? [];
-					const usedNumbers = existingRefs.map((fn) => {
-						const match = fn.match(/\[\^(\d+)(?:-[rl])?\]/);
-						return match && match[1] ? parseInt(match[1], 10) : 0;
-					});
-					const nextNum =
-						usedNumbers.length > 0 ? Math.max(...usedNumbers) + 1 : 1;
-
-					// Determine the content for the footnote
-					const footnoteContent = selectedText
-						? selectedText
-						: "New sidenote";
-
-					// Find where footnote definitions are in the document
-					const lines = content.split("\n");
-					let lastFootnoteLine = -1;
-
-					for (let i = 0; i < lines.length; i++) {
-						const line = lines[i];
-						if (line && line.match(/^\[\^[^\]]+\]:/)) {
-							lastFootnoteLine = i;
-						}
-					}
-
-					// Build the definition
-					const definition = `[^${nextNum}]: ${footnoteContent}`;
-
-					// Insert the reference at cursor
-					editor.replaceRange(`[^${nextNum}]`, cursor);
-
-					// Re-read content after first insertion
-					const updatedContent = editor.getValue();
-					const updatedLines = updatedContent.split("\n");
-
-					if (lastFootnoteLine === -1) {
-						// No existing footnotes - add at the very end with blank lines
-						const lastLine = editor.lastLine();
-						const lastLineContent = editor.getLine(lastLine);
-						const prefix = lastLineContent.trim() ? "\n\n" : "\n";
-						editor.replaceRange(prefix + definition, {
-							line: lastLine,
-							ch: lastLineContent.length,
-						});
-					} else {
-						// Find the last footnote line again in the updated content
-						let newLastFootnoteLine = -1;
-						for (let i = 0; i < updatedLines.length; i++) {
-							const line = updatedLines[i];
-							if (line && line.match(/^\[\^[^\]]+\]:/)) {
-								newLastFootnoteLine = i;
-							}
-						}
-
-						if (newLastFootnoteLine !== -1) {
-							// Insert after the last footnote
-							const insertLineContent = editor.getLine(
-								newLastFootnoteLine,
-							);
-							editor.replaceRange("\n" + definition, {
-								line: newLastFootnoteLine,
-								ch: insertLineContent.length,
-							});
-						}
-					}
-
-					// Set flag to auto-edit this footnote when the widget appears
-					this.pendingFootnoteEdit = String(nextNum);
-
-					// Schedule the auto-edit after widgets are rendered
-					window.setTimeout(() => {
-						this.triggerPendingFootnoteEdit();
-					}, SidenotePlugin.INSERT_SIDENOTE_DELAY);
-				}
-			},
-		});
 
 		// Command for resequencing footnotes
 		this.addCommand({
@@ -811,7 +713,6 @@ export default class SidenotePlugin extends Plugin {
 		// Clear pending edit
 		this.pendingFootnoteEdit = null;
 		this.pendingFootnoteEditRetries = 0;
-		this.currentlyEditingMargin = null;
 		// Clear post-edit cooldown
 		if (this.postEditCooldown !== null) {
 			window.clearTimeout(this.postEditCooldown);
@@ -845,11 +746,6 @@ export default class SidenotePlugin extends Plugin {
 			this.marginResizeObserver = null;
 		}
 
-		if (this.styleEl) {
-			this.styleEl.remove();
-			this.styleEl = null;
-		}
-
 		// Clean up reading mode scroll timer
 		if (this.readingModeScrollTimer !== null) {
 			window.clearTimeout(this.readingModeScrollTimer);
@@ -860,20 +756,7 @@ export default class SidenotePlugin extends Plugin {
 		this.cleanupView(view);
 
 		// Remove CSS custom properties and data attributes
-		const root = document.documentElement;
-		const propsToRemove = Array.from(root.style).filter((p) =>
-			p.startsWith("--sn-"),
-		);
-		for (const prop of propsToRemove) {
-			root.style.removeProperty(prop);
-		}
-
-		delete root.dataset.snBadgeStyle;
-		delete root.dataset.snShowNumbers;
-		delete root.dataset.snFormat;
-		delete root.dataset.snHideFootnotes;
-		delete root.dataset.snHideFootnoteNumbers;
-		delete root.dataset.snEditInReadingMode;
+		clearCssVariables();
 	}
 
 	// Add public methods that the widget can call
@@ -912,10 +795,6 @@ export default class SidenotePlugin extends Plugin {
 		this.unobserveSidenoteVisibility(margin);
 	}
 
-	public getActiveFootnoteEdit(): string | null {
-		return this.activeFootnoteEdit;
-	}
-
 	public setActiveFootnoteEdit(footnoteId: string | null) {
 		this.activeFootnoteEdit = footnoteId;
 	}
@@ -924,24 +803,8 @@ export default class SidenotePlugin extends Plugin {
 		return this.activeFootnoteEdit !== null;
 	}
 
-	public setCurrentlyEditingMargin(margin: HTMLElement | null) {
-		this.currentlyEditingMargin = margin;
-	}
-
-	public getCurrentlyEditingMargin(): HTMLElement | null {
-		return this.currentlyEditingMargin;
-	}
-
-	public forceReadingModeRefreshPublic() {
-		this.forceReadingModeRefresh();
-	}
-
 	public refreshCachedSourceContentPublic() {
 		this.refreshCachedSourceContent();
-	}
-
-	public injectStylesPublic() {
-		this.injectStyles();
 	}
 
 	public get settingsVersion(): number {
@@ -972,17 +835,6 @@ export default class SidenotePlugin extends Plugin {
 		return isMarginNote(elOrId);
 	}
 
-	/**
-	 * Which margin a sidenote actually renders in: its own override if it has
-	 * one (HTML "right"/"left" class, or a footnote -r/-l ID suffix), else
-	 * the document-wide "Sidenote position" setting.
-	 */
-	public getSidenoteSide(elOrId: HTMLElement | string): SidenoteSide {
-		return (
-			getSidenoteSideOverride(elOrId) ?? this.settings.sidenotePosition
-		);
-	}
-
 	public setupMarginNotePopupPublic(
 		wrapper: HTMLElement,
 		margin: HTMLElement,
@@ -999,6 +851,24 @@ export default class SidenotePlugin extends Plugin {
 		);
 	}
 
+	/**
+	 * Run and clear a wrapper's popup teardown, if it has one. Popup-mode
+	 * margin notes live on document.body with a document-level click listener,
+	 * so they outlive their wrapper unless this is called.
+	 */
+	private runPopupCleanup(wrapper: Element) {
+		const snWrapper = wrapper as SidenoteWrapperElement;
+		if (!snWrapper._popupCleanup) return;
+		// cleanupView() runs from onunload, so a throw here would abort the
+		// rest of the teardown and leave observers and listeners attached.
+		try {
+			snWrapper._popupCleanup();
+		} catch (error) {
+			console.error("Sidenote plugin: popup cleanup failed", error);
+		}
+		delete snWrapper._popupCleanup;
+	}
+
 	private cleanupView(view: MarkdownView | null) {
 		if (!view) return;
 
@@ -1009,6 +879,7 @@ export default class SidenotePlugin extends Plugin {
 			cmRoot
 				.querySelectorAll("span.sidenote-number")
 				.forEach((wrapper) => {
+					this.runPopupCleanup(wrapper);
 					const parent = wrapper.parentNode;
 					if (!parent) return;
 					// Move the original span.sidenote back before the wrapper
@@ -1034,9 +905,10 @@ export default class SidenotePlugin extends Plugin {
 			".markdown-reading-view",
 		);
 		if (readingRoot) {
-			readingRoot
-				.querySelectorAll("span.sidenote-number")
-				.forEach((n) => n.remove());
+			readingRoot.querySelectorAll("span.sidenote-number").forEach((n) => {
+				this.runPopupCleanup(n);
+				n.remove();
+			});
 			readingRoot
 				.querySelectorAll("small.sidenote-margin")
 				.forEach((n) => n.remove());
@@ -1104,7 +976,7 @@ export default class SidenotePlugin extends Plugin {
 			this._settingsVersion++;
 
 			// Apply new CSS variables
-			this.injectStyles();
+			applyCssVariables(this.settings);
 
 			// Reset numbering state
 			this.resetRegistry();
@@ -1391,6 +1263,17 @@ export default class SidenotePlugin extends Plugin {
 			window.clearTimeout(this.mutationDebounceTimer);
 			this.mutationDebounceTimer = null;
 		}
+		// Trailing timers. Both fire a layout pass after their throttle window
+		// closes, so an unload mid-resize would otherwise run layout against a
+		// torn-down view.
+		if (this.layoutTrailingTimer !== null) {
+			window.clearTimeout(this.layoutTrailingTimer);
+			this.layoutTrailingTimer = null;
+		}
+		if (this.readingModeResizeTrailingTimer !== null) {
+			window.clearTimeout(this.readingModeResizeTrailingTimer);
+			this.readingModeResizeTrailingTimer = null;
+		}
 	}
 
 	private invalidateLayoutCache() {
@@ -1515,149 +1398,6 @@ export default class SidenotePlugin extends Plugin {
 		if (this.marginResizeObserver) {
 			this.marginResizeObserver.unobserve(margin);
 		}
-	}
-
-	// ==================== Style Injection ====================
-
-	private injectStyles() {
-		const s = this.settings;
-		const root = document.documentElement;
-
-		// Layout variables
-		root.style.setProperty("--sn-base-width", `${s.minSidenoteWidth}rem`);
-		root.style.setProperty(
-			"--sn-max-extra",
-			`${s.maxSidenoteWidth - s.minSidenoteWidth}rem`,
-		);
-		root.style.setProperty("--sn-gap", `${s.sidenoteGap}rem`);
-		root.style.setProperty("--sn-gap2", `${s.sidenoteGap2}rem`);
-		root.style.setProperty(
-			"--sn-page-offset-factor",
-			`${s.pageOffsetFactor}`,
-		);
-
-		// Compact mode
-		root.style.setProperty(
-			"--sn-base-width-compact",
-			`${Math.max(s.minSidenoteWidth - 2, 6)}rem`,
-		);
-		root.style.setProperty(
-			"--sn-max-extra-compact",
-			`${Math.max((s.maxSidenoteWidth - s.minSidenoteWidth) / 2, 2)}rem`,
-		);
-		root.style.setProperty(
-			"--sn-gap-compact",
-			`${Math.max(s.sidenoteGap - 1, 0.5)}rem`,
-		);
-		root.style.setProperty(
-			"--sn-gap2-compact",
-			`${Math.max(s.sidenoteGap2 - 0.5, 0.25)}rem`,
-		);
-
-		// Full mode
-		root.style.setProperty(
-			"--sn-base-width-full",
-			`${s.maxSidenoteWidth}rem`,
-		);
-		root.style.setProperty("--sn-gap-full", `${s.sidenoteGap + 1}rem`);
-		root.style.setProperty("--sn-gap2-full", `${s.sidenoteGap2 + 0.5}rem`);
-
-		// Typography.
-		//
-		// Resolve the size against Obsidian's base text size rather than
-		// emitting a bare percentage. A percentage font-size resolves against
-		// the *parent's* font size, so a sidenote anchored in an <h1> rendered
-		// at 80% of the heading — much larger than one in body text. The var()
-		// is substituted at the point of use, so it picks up --font-text-size
-		// from the note's own cascade (themes and the Appearance setting still
-		// apply); the px fallback only matters if that variable is missing.
-		const baseFontSize = "var(--font-text-size, 16px)";
-		root.style.setProperty(
-			"--sn-font-size",
-			`calc(${baseFontSize} * ${s.fontSize / 100})`,
-		);
-		root.style.setProperty(
-			"--sn-font-size-compact",
-			`calc(${baseFontSize} * ${s.fontSizeCompact / 100})`,
-		);
-
-		// Text Color
-		root.style.setProperty(
-			"--sn-text-color",
-			s.textColor || "var(--text-normal)",
-		);
-
-		// Text color on hover
-		if (s.hoverColor) {
-			root.style.setProperty("--sn-hover-color", s.hoverColor);
-		} else {
-			root.style.removeProperty("--sn-hover-color");
-		}
-
-		// Line Height
-		root.style.setProperty("--sn-line-height", `${s.lineHeight}`);
-		root.style.setProperty(
-			"--sn-line-height-compact",
-			`${Math.max(s.lineHeight - 0.1, 1.1)}`,
-		);
-
-		// Text alignment
-		const defaultAlignment =
-			s.sidenotePosition === "left" ? "right" : "left";
-		// Mirrored alignment for sidenotes overridden onto the opposite margin —
-		// same explicit choice (justify/left/right) if the user set one, else
-		// the alignment that faces the body text from the *other* side.
-		const oppositeAlignment =
-			s.sidenotePosition === "left" ? "left" : "right";
-		const resolveAlignment = (auto: string) =>
-			s.textAlignment === "justify"
-				? "justify"
-				: s.textAlignment === "left" || s.textAlignment === "right"
-					? s.textAlignment
-					: auto;
-		const textAlign = resolveAlignment(defaultAlignment);
-		root.style.setProperty("--sn-text-align", textAlign);
-		root.style.setProperty(
-			"--sn-text-align-opposite",
-			resolveAlignment(oppositeAlignment),
-		);
-
-		// Number color
-		if (s.numberColor) {
-			root.style.setProperty("--sn-number-color", s.numberColor);
-		} else {
-			root.style.removeProperty("--sn-number-color");
-		}
-
-		// Transitions
-		root.style.setProperty(
-			"--sn-transition",
-			s.enableTransitions
-				? "width 0.15s ease-out, left 0.15s ease-out, right 0.15s ease-out, opacity 0.15s ease-out"
-				: "none",
-		);
-
-		// Data attributes for CSS selectors
-		root.dataset.snBadgeStyle = s.numberBadgeStyle;
-		root.dataset.snShowNumbers = s.showSidenoteNumbers ? "true" : "false";
-		root.dataset.snFormat = s.sidenoteFormat;
-		root.dataset.snHideFootnotes = s.hideFootnotes ? "true" : "false";
-		root.dataset.snHideFootnoteNumbers = s.hideFootnoteNumbers
-			? "true"
-			: "false";
-		root.dataset.snEditInReadingMode = s.editInReadingMode
-			? "true"
-			: "false";
-
-		// Margin note specific styles
-		root.style.setProperty(
-			"--sn-mn-popup-scale",
-			`${s.popupIconScaleFactor}em`,
-		);
-		root.style.setProperty(
-			"--sn-mn-marker-scale",
-			`${s.marginNoteScaleFactor}em`,
-		);
 	}
 
 	/**
@@ -2170,6 +1910,13 @@ export default class SidenotePlugin extends Plugin {
 		// existing sidenotes and only wrap the new unwrapped refs.
 		if (isFullRefresh) {
 			this.removeAllSidenoteMarkupFromReadingMode(readingRoot);
+			// Everything is about to be renumbered from scratch, so the
+			// per-heading counters have to start over too. Without this they
+			// carry over from the previous pass and every re-render pushes the
+			// numbering higher — 1,2,3 becomes 21,22,23 becomes 61,62,63.
+			// Incremental passes deliberately keep the counters, since they
+			// only number the newly-mounted sections.
+			this.headingSidenoteNumbers.clear();
 		}
 
 		// Collect items based on the sidenoteFormat setting
@@ -2362,7 +2109,19 @@ export default class SidenotePlugin extends Plugin {
 		const marginNotes: HTMLElement[] = [];
 
 		for (const item of allItems) {
-			if (this.settings.resetNumberingPerHeading) {
+			// Determine if this is a margin note (unnumbered)
+			const isMargin =
+				item.type === "sidenote"
+					? this.isMarginNote(item.el)
+					: item.footnoteId
+						? this.isMarginNote(item.footnoteId)
+						: false;
+
+			// Margin notes render without a number, so they must not consume
+			// one — otherwise they punch gaps in the sequence (…62, 63, 65…).
+			// The non-heading path below already skips them by only advancing
+			// `num` in the numbered branch; this keeps the two consistent.
+			if (this.settings.resetNumberingPerHeading && !isMargin) {
 				const heading = this.findPrecedingHeading(item.el);
 				if (heading) {
 					const headingId = this.getHeadingId(heading);
@@ -2373,14 +2132,6 @@ export default class SidenotePlugin extends Plugin {
 					this.headingSidenoteNumbers.set(headingId, num + 1);
 				}
 			}
-
-			// Determine if this is a margin note (unnumbered)
-			const isMargin =
-				item.type === "sidenote"
-					? this.isMarginNote(item.el)
-					: item.footnoteId
-						? this.isMarginNote(item.footnoteId)
-						: false;
 
 			// Per-sidenote margin override (opposite side from the document-wide setting)
 			const sideOverride =
@@ -2657,6 +2408,8 @@ export default class SidenotePlugin extends Plugin {
 		);
 
 		for (const wrapper of Array.from(wrappers)) {
+			this.runPopupCleanup(wrapper);
+
 			// Find the original element inside
 			const sidenoteSpan =
 				wrapper.querySelector<HTMLElement>("span.sidenote");
@@ -3625,7 +3378,6 @@ export default class SidenotePlugin extends Plugin {
 	// ==================== Document Scanning ====================
 
 	private scanDocumentForSidenotes() {
-		console.warn("[Sidenotes] Scanning document for sidenotes...");
 		const view = this.getMarkdownView();
 		if (!view) {
 			this.documentHasSidenotes = false;
@@ -3701,7 +3453,9 @@ export default class SidenotePlugin extends Plugin {
 	 * the portion currently mounted in a virtualised view. Notes without an
 	 * explicit override count toward the document-wide "Sidenote position".
 	 */
-	private scanSidenoteSides(content: string): Record<SidenoteSide, boolean> {
+	private scanSidenoteSides(
+		content: string,
+	): Record<SidenoteSide, boolean> {
 		const sides: Record<SidenoteSide, boolean> = {
 			left: false,
 			right: false,
@@ -4052,7 +3806,6 @@ export default class SidenotePlugin extends Plugin {
 	// ==================== Registry Management ====================
 
 	private resetRegistry() {
-		this.sidenoteRegistry.clear();
 		this.headingSidenoteNumbers.clear();
 	}
 
@@ -4061,7 +3814,6 @@ export default class SidenotePlugin extends Plugin {
 	private layout() {
 		const cmRoot = this.cmRoot;
 		if (!cmRoot) {
-			console.warn("[Sidenotes] layout() - no cmRoot");
 			return;
 		}
 
@@ -4432,6 +4184,8 @@ export default class SidenotePlugin extends Plugin {
 		);
 
 		for (const wrapper of Array.from(wrappers)) {
+			this.runPopupCleanup(wrapper);
+
 			const sidenoteSpan =
 				wrapper.querySelector<HTMLElement>("span.sidenote");
 
@@ -4759,13 +4513,6 @@ export default class SidenotePlugin extends Plugin {
 		}
 	}
 
-	public commitFootnoteSidenoteTextPublic(
-		footnoteId: string,
-		newText: string,
-	) {
-		this.commitFootnoteSidenoteText(footnoteId, newText);
-	}
-
 	// ==================== Collision Avoidance ====================
 
 	/**
@@ -4857,330 +4604,6 @@ export default class SidenotePlugin extends Plugin {
 		);
 	}
 
-	// ==================== Markdown Formatting ====================
-
-	/**
-	 * Apply markdown formatting to the current selection or cursor position in a contenteditable element.
-	 * @param element The contenteditable element
-	 * @param prefix The prefix to add (e.g., "**" for bold, "*" for italic)
-	 * @param suffix The suffix to add (defaults to prefix)
-	 * @param linkMode If true, handle as a link with [text](url) format
-	 */
-	private applyMarkdownFormatting(
-		element: HTMLElement,
-		prefix: string,
-		suffix: string = prefix,
-		linkMode: boolean = false,
-	) {
-		// Ensure focus is on the element
-		element.focus();
-
-		const selection = window.getSelection();
-		if (!selection || selection.rangeCount === 0) return;
-
-		const range = selection.getRangeAt(0);
-
-		// Check if selection is within the element
-		if (
-			!element.contains(range.startContainer) ||
-			!element.contains(range.endContainer)
-		) {
-			// Selection is outside - just insert at end of element
-			const textContent = element.textContent || "";
-			if (linkMode) {
-				element.textContent = textContent + "[link text](url)";
-			} else {
-				element.textContent = textContent + prefix + suffix;
-			}
-			// Place cursor appropriately
-			const newRange = document.createRange();
-			const textNode = element.firstChild || element;
-			const pos = textContent.length + prefix.length;
-			try {
-				newRange.setStart(textNode, pos);
-				newRange.setEnd(textNode, pos);
-				selection.removeAllRanges();
-				selection.addRange(newRange);
-			} catch (e) {
-				console.error("Error setting cursor position:", e);
-				// Ignore
-			}
-			return;
-		}
-
-		const selectedText = range.toString();
-
-		// Get the text content and cursor positions relative to the element's text
-		const fullText = element.textContent || "";
-
-		// Calculate the start offset within the full text
-		let startOffset = 0;
-		let endOffset = 0;
-
-		// Walk through text nodes to find the actual offsets
-		const walker = document.createTreeWalker(
-			element,
-			NodeFilter.SHOW_TEXT,
-			null,
-		);
-		let currentOffset = 0;
-		let foundStart = false;
-		let foundEnd = false;
-		let node: Text | null;
-
-		while ((node = walker.nextNode() as Text | null)) {
-			const nodeLength = node.textContent?.length || 0;
-
-			if (!foundStart && node === range.startContainer) {
-				startOffset = currentOffset + range.startOffset;
-				foundStart = true;
-			}
-			if (!foundEnd && node === range.endContainer) {
-				endOffset = currentOffset + range.endOffset;
-				foundEnd = true;
-			}
-
-			if (foundStart && foundEnd) break;
-			currentOffset += nodeLength;
-		}
-
-		// Handle case where container is the element itself
-		if (!foundStart && range.startContainer === element) {
-			startOffset = 0;
-			for (
-				let i = 0;
-				i < range.startOffset && i < element.childNodes.length;
-				i++
-			) {
-				startOffset += element.childNodes[i]?.textContent?.length ?? 0;
-			}
-		}
-		if (!foundEnd && range.endContainer === element) {
-			endOffset = 0;
-			for (
-				let i = 0;
-				i < range.endOffset && i < element.childNodes.length;
-				i++
-			) {
-				endOffset += element.childNodes[i]?.textContent?.length ?? 0;
-			}
-		}
-
-		// Build the new text
-		let newText: string;
-		let newCursorStart: number;
-		let newCursorEnd: number;
-
-		if (linkMode) {
-			const linkText = selectedText || "link text";
-			const replacement = `[${linkText}](url)`;
-			newText =
-				fullText.slice(0, startOffset) +
-				replacement +
-				fullText.slice(endOffset);
-			// Select "url"
-			newCursorStart = startOffset + 1 + linkText.length + 2; // [linkText](
-			newCursorEnd = newCursorStart + 3; // url
-		} else if (selectedText) {
-			// Wrap selection
-			const replacement = `${prefix}${selectedText}${suffix}`;
-			newText =
-				fullText.slice(0, startOffset) +
-				replacement +
-				fullText.slice(endOffset);
-			// Select the wrapped text
-			newCursorStart = startOffset + prefix.length;
-			newCursorEnd = newCursorStart + selectedText.length;
-		} else {
-			// Insert at cursor
-			newText =
-				fullText.slice(0, startOffset) +
-				prefix +
-				suffix +
-				fullText.slice(endOffset);
-			// Place cursor between prefix and suffix
-			newCursorStart = startOffset + prefix.length;
-			newCursorEnd = newCursorStart;
-		}
-
-		// Update the element
-		element.textContent = newText;
-
-		// Restore cursor position
-		window.requestAnimationFrame(() => {
-			element.focus();
-			const sel = window.getSelection();
-			if (!sel) return;
-
-			const textNode = element.firstChild;
-			if (!textNode) return;
-
-			try {
-				const newRange = document.createRange();
-				newRange.setStart(
-					textNode,
-					Math.min(newCursorStart, newText.length),
-				);
-				newRange.setEnd(textNode, Math.min(newCursorEnd, newText.length));
-				sel.removeAllRanges();
-				sel.addRange(newRange);
-			} catch (e) {
-				// Fallback - place at end
-				console.error("Error setting cursor position:", e);
-				const fallbackRange = document.createRange();
-				fallbackRange.selectNodeContents(element);
-				fallbackRange.collapse(false);
-				sel.removeAllRanges();
-				sel.addRange(fallbackRange);
-			}
-		});
-	}
-
-	/**
-	 * Public version for widget to use.
-	 * @param element The contenteditable element
-	 * @param prefix The prefix to add (e.g., "**" for bold, "*" for italic)
-	 * @param suffix The suffix to add (defaults to prefix)
-	 * @param linkMode If true, handle as a link with [text](url) format
-	 */
-	public applyMarkdownFormattingPublic(
-		element: HTMLElement,
-		prefix: string,
-		suffix: string = prefix,
-		linkMode: boolean = false,
-	) {
-		this.applyMarkdownFormatting(element, prefix, suffix, linkMode);
-	}
-
-	/**
-	 * Insert markdown wrapper (like ** for bold, * for italic) around the
-	 * current selection in a contentEditable element, or at cursor if no selection.
-	 * Uses manual text manipulation to maintain plain-text editing.
-	 */
-	private insertMarkdownWrapper(element: HTMLElement, wrapper: string) {
-		const selection = window.getSelection();
-		if (!selection || selection.rangeCount === 0) return;
-
-		const range = selection.getRangeAt(0);
-		if (
-			!element.contains(range.startContainer) ||
-			!element.contains(range.endContainer)
-		)
-			return;
-
-		const fullText = element.textContent || "";
-
-		// Calculate offsets within the full text
-		const offsets = this.getSelectionOffsets(element, range);
-		if (!offsets) return;
-
-		const { start, end } = offsets;
-		const selectedText = fullText.slice(start, end);
-
-		let newText: string;
-		let cursorStart: number;
-		let cursorEnd: number;
-
-		if (selectedText) {
-			// Wrap selection
-			newText =
-				fullText.slice(0, start) +
-				wrapper +
-				selectedText +
-				wrapper +
-				fullText.slice(end);
-			cursorStart = start + wrapper.length;
-			cursorEnd = cursorStart + selectedText.length;
-		} else {
-			// Insert wrapper pair at cursor
-			newText =
-				fullText.slice(0, start) + wrapper + wrapper + fullText.slice(end);
-			cursorStart = start + wrapper.length;
-			cursorEnd = cursorStart;
-		}
-
-		element.textContent = newText;
-
-		// Restore cursor
-		window.requestAnimationFrame(() => {
-			element.focus();
-			const sel = window.getSelection();
-			if (!sel || !element.firstChild) return;
-			try {
-				const newRange = document.createRange();
-				newRange.setStart(
-					element.firstChild,
-					Math.min(cursorStart, newText.length),
-				);
-				newRange.setEnd(
-					element.firstChild,
-					Math.min(cursorEnd, newText.length),
-				);
-				sel.removeAllRanges();
-				sel.addRange(newRange);
-			} catch (e) {
-				// Fallback
-				console.error("Sidenotes - Error setting cursor position:", e);
-			}
-		});
-	}
-
-	/**
-	 * Insert a markdown link at the current cursor/selection in a contentEditable element.
-	 */
-	private insertMarkdownLink(element: HTMLElement) {
-		const selection = window.getSelection();
-		if (!selection || selection.rangeCount === 0) return;
-
-		const range = selection.getRangeAt(0);
-		if (
-			!element.contains(range.startContainer) ||
-			!element.contains(range.endContainer)
-		)
-			return;
-
-		const fullText = element.textContent || "";
-		const offsets = this.getSelectionOffsets(element, range);
-		if (!offsets) return;
-
-		const { start, end } = offsets;
-		const selectedText = fullText.slice(start, end);
-
-		const linkText = selectedText || "link text";
-		const replacement = `[${linkText}](url)`;
-
-		const newText =
-			fullText.slice(0, start) + replacement + fullText.slice(end);
-
-		// Position cursor to select "url"
-		const urlStart = start + 1 + linkText.length + 2; // [linkText](
-		const urlEnd = urlStart + 3; // url
-
-		element.textContent = newText;
-
-		window.requestAnimationFrame(() => {
-			element.focus();
-			const sel = window.getSelection();
-			if (!sel || !element.firstChild) return;
-			try {
-				const newRange = document.createRange();
-				newRange.setStart(
-					element.firstChild,
-					Math.min(urlStart, newText.length),
-				);
-				newRange.setEnd(
-					element.firstChild,
-					Math.min(urlEnd, newText.length),
-				);
-				sel.removeAllRanges();
-				sel.addRange(newRange);
-			} catch (e) {
-				console.error("Sidenotes - Error setting cursor position:", e);
-				// Fallback
-			}
-		});
-	}
-
 	//
 	/**
 	 * Render markdown-formatted text to a DocumentFragment.
@@ -5192,71 +4615,6 @@ export default class SidenotePlugin extends Plugin {
 	}
 
 	// ==================== Keyboard Handling for Margin Editing ====================
-	/**
-	 * Get the start and end character offsets of the current selection
-	 * within a contentEditable element's text content.
-	 * @param element The contentEditable element
-	 * @param range The current selection range
-	 */
-	private getSelectionOffsets(
-		element: HTMLElement,
-		range: Range,
-	): { start: number; end: number } | null {
-		const walker = document.createTreeWalker(
-			element,
-			NodeFilter.SHOW_TEXT,
-			null,
-		);
-		let currentOffset = 0;
-		let startOffset = 0;
-		let endOffset = 0;
-		let foundStart = false;
-		let foundEnd = false;
-		let node: Text | null;
-
-		while ((node = walker.nextNode() as Text | null)) {
-			const nodeLength = node.textContent?.length || 0;
-
-			if (!foundStart && node === range.startContainer) {
-				startOffset = currentOffset + range.startOffset;
-				foundStart = true;
-			}
-			if (!foundEnd && node === range.endContainer) {
-				endOffset = currentOffset + range.endOffset;
-				foundEnd = true;
-			}
-
-			if (foundStart && foundEnd) break;
-			currentOffset += nodeLength;
-		}
-
-		// Handle case where container is the element itself
-		if (!foundStart && range.startContainer === element) {
-			startOffset = 0;
-			for (
-				let i = 0;
-				i < range.startOffset && i < element.childNodes.length;
-				i++
-			) {
-				startOffset += element.childNodes[i]?.textContent?.length ?? 0;
-			}
-			foundStart = true;
-		}
-		if (!foundEnd && range.endContainer === element) {
-			endOffset = 0;
-			for (
-				let i = 0;
-				i < range.endOffset && i < element.childNodes.length;
-				i++
-			) {
-				endOffset += element.childNodes[i]?.textContent?.length ?? 0;
-			}
-			foundEnd = true;
-		}
-
-		if (!foundStart || !foundEnd) return null;
-		return { start: startOffset, end: endOffset };
-	}
 
 	/**
 	 * Set up keyboard interception that prevents CM6 from seeing ANY key events
@@ -5270,8 +4628,6 @@ export default class SidenotePlugin extends Plugin {
 	 * @param margin The margin element being edited
 	 */
 	private setupMarginKeyboardCapture(margin: HTMLElement): () => void {
-		this.setCurrentlyEditingMargin(margin);
-
 		const handler = (e: KeyboardEvent) => {
 			if (margin.contentEditable !== "true") return;
 			if (
@@ -5306,7 +4662,7 @@ export default class SidenotePlugin extends Plugin {
 				// console.warn("BOLD shortcut detected");
 				e.preventDefault();
 				e.stopImmediatePropagation();
-				this.insertMarkdownWrapper(margin, "**");
+				insertMarkdownWrapper(margin, "**");
 				return;
 			}
 
@@ -5319,7 +4675,7 @@ export default class SidenotePlugin extends Plugin {
 				// console.warn("ITALICS shortcut detected");
 				e.preventDefault();
 				e.stopImmediatePropagation();
-				this.insertMarkdownWrapper(margin, "*");
+				insertMarkdownWrapper(margin, "*");
 				return;
 			}
 
@@ -5331,7 +4687,7 @@ export default class SidenotePlugin extends Plugin {
 			) {
 				e.preventDefault();
 				e.stopImmediatePropagation();
-				this.insertMarkdownLink(margin);
+				insertMarkdownLink(margin);
 				return;
 			}
 
@@ -5426,55 +4782,7 @@ export default class SidenotePlugin extends Plugin {
 
 		return () => {
 			window.removeEventListener("keydown", handler, true);
-			this.setCurrentlyEditingMargin(null);
 		};
-	}
-
-	public setupMarginKeyboardCapturePublic(
-		margin: HTMLElement,
-	): () => void {
-		return this.setupMarginKeyboardCapture(margin);
-	}
-
-	/**
-	 * Attach a context menu to a sidenote margin element with options to edit or delete the sidenote.
-	 * This is currently unused
-	 * @param margin The margin element to attach the context menu to
-	 * @param opts Options for the context menu actions
-	 */
-	private attachSidenoteContextMenu(
-		margin: HTMLElement,
-		opts: {
-			onEdit?: () => void;
-			onDelete?: () => void;
-		},
-	) {
-		margin.addEventListener("contextmenu", (e) => {
-			e.preventDefault();
-			e.stopPropagation();
-
-			const menu = new Menu();
-
-			if (opts.onEdit) {
-				menu.addItem((item) =>
-					item
-						.setTitle("Edit sidenote")
-						.setIcon("pencil")
-						.onClick(() => opts.onEdit!()),
-				);
-			}
-
-			if (opts.onDelete) {
-				menu.addItem((item) =>
-					item
-						.setTitle("Delete sidenote")
-						.setIcon("trash")
-						.onClick(() => opts.onDelete!()),
-				);
-			}
-
-			menu.showAtMouseEvent(e);
-		});
 	}
 
 	/**
@@ -5731,9 +5039,7 @@ export default class SidenotePlugin extends Plugin {
 			};
 			document.addEventListener("click", onOutsideClick, true);
 
-			(
-				wrapper as HTMLElement & { _popupCleanup?: () => void }
-			)._popupCleanup = () => {
+			(wrapper as SidenoteWrapperElement)._popupCleanup = () => {
 				document.removeEventListener("click", onOutsideClick, true);
 				if (popupCmView) {
 					popupCmView.destroy();
