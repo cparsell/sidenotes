@@ -623,7 +623,7 @@
 	cursor: pointer;
 }
 
-/* === Editable sidenote (contenteditable mode for HTML spans) === */
+/* === Sidenote margin while an inline editor is open === */
 .sidenote-margin[data-editing="true"] {
 	background: var(--background-modifier-form-field);
 	border-radius: 4px;
@@ -635,16 +635,6 @@
 /* .sidenote-margin[data-editing="true"]::before {
 	display: none;
 } */
-
-/* Hint that clicking starts an edit, when reading-mode editing is on */
-:root[data-sn-edit-in-reading-mode="true"]
-	.sidenote-margin[data-editing="false"] {
-	cursor: pointer;
-}
-
-.sidenote-margin[contenteditable="true"] {
-	white-space: pre-wrap;
-}
 
 /* === Markdown formatting inside sidenotes === */
 .sidenote-margin strong,
@@ -1129,18 +1119,6 @@ span.sidenote-number.margin-note {
 /* Hint that clicking the popup body starts an edit */
 .margin-note-popup-content--readable {
 	cursor: text;
-}
-
-/* Margin note popup Editable content area */
-.margin-note-popup-content[contenteditable="true"] {
-	padding: 4px;
-	border-radius: 4px;
-	min-width: 10rem;
-}
-
-.margin-note-popup-content[contenteditable="true"]:focus {
-	background: var(--background-secondary);
-	box-shadow: inset 0 0 0 1px var(--background-modifier-border);
 }
 
 .margin-note-icon-img {

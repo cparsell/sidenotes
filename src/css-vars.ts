@@ -18,7 +18,6 @@ const DATA_ATTRIBUTES = [
 	"snFormat",
 	"snHideFootnotes",
 	"snHideFootnoteNumbers",
-	"snEditInReadingMode",
 ] as const;
 
 /**
@@ -142,7 +141,6 @@ export function applyCssVariables(
 	root.dataset.snFormat = s.sidenoteFormat;
 	root.dataset.snHideFootnotes = s.hideFootnotes ? "true" : "false";
 	root.dataset.snHideFootnoteNumbers = s.hideFootnoteNumbers ? "true" : "false";
-	root.dataset.snEditInReadingMode = s.editInReadingMode ? "true" : "false";
 
 	// Margin note specific styles
 	root.style.setProperty("--sn-mn-popup-scale", `${s.popupIconScaleFactor}em`);

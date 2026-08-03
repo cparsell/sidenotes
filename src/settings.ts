@@ -47,7 +47,6 @@ export interface SidenoteSettings {
 	collisionSpacing: number;
 	enableTransitions: boolean;
 	resetNumberingPerHeading: boolean;
-	editInReadingMode: boolean;
 	pdfExport: boolean;
 
 	// Margin note
@@ -97,7 +96,6 @@ export const DEFAULT_SETTINGS: SidenoteSettings = {
 	collisionSpacing: 8,
 	enableTransitions: true,
 	resetNumberingPerHeading: false,
-	editInReadingMode: false,
 	pdfExport: false,
 
 	// Margin note
@@ -610,20 +608,6 @@ export class SidenoteSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Allow sidenote edits in reading mode")
-			.setDesc(
-				"Click a sidenote in reading mode to edit the footnote text",
-			)
-			.addToggle((toggle) =>
-				toggle
-					.setValue(this.plugin.settings.editInReadingMode)
-					.onChange(async (value) => {
-						this.plugin.settings.editInReadingMode = value;
-						await this.plugin.saveSettings();
-					}),
-			);
-
-		new Setting(containerEl)
 			.setName("Include sidenotes in PDF export (experimental)")
 			.setDesc(
 				"When enabled, sidenotes will be included in PDF exports, in the margin rather than inline. Works with both the HTML and footnote formats. Note: this may cause formatting issues in some cases.",
@@ -1079,15 +1063,6 @@ export class SidenoteSettingTab extends PluginSettingTab {
 							type: "toggle",
 							key: "resetNumberingPerHeading",
 							defaultValue: s.resetNumberingPerHeading,
-						},
-					},
-					{
-						name: "Allow sidenote edits in reading mode",
-						desc: "Click a sidenote in reading mode to edit the footnote text",
-						control: {
-							type: "toggle",
-							key: "editInReadingMode",
-							defaultValue: s.editInReadingMode,
 						},
 					},
 					{

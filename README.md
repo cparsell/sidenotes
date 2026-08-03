@@ -25,7 +25,7 @@ Numbered notes displayed in the margin instead of at the bottom of the note. Run
   - **HTML spans**: `<span class="sidenote">text</span>` — I use these because it was simple to make them work in my web-published notes too.
   - **Markdown footnotes**: `This is a sentence[^1].`
 - **Visible in Editing and Reading modes.** Source mode is left alone: it shows the bare markdown.
-- **Editable in the margin.** Click a sidenote, edit it, and press `ENTER` to save; `SHIFT+ENTER` adds a new line (HTML format only — Markdown footnote definitions are single-line). Editing in Reading mode is optional and off by default.
+- **Editable in the margin.** In Editing mode, click a sidenote, edit it, and press `ENTER` to save; `SHIFT+ENTER` adds a new line (HTML format only — Markdown footnote definitions are single-line). Reading mode is read-only.
 - **Supports internal and external links**, plus basic Markdown formatting: **bold**, _italic_, and `inline code`.
 - **Per-note margin override.** Pin an individual sidenote to the margin opposite the global "Sidenote position" setting with the `Insert sidenote (opposite margin)` command, or by hand:
   - **HTML**: add a `right` or `left` class, e.g. `<span class="sidenote right">text</span>`
@@ -129,8 +129,11 @@ The snippet of CSS I've been using for web publishing is located in `/digital-ga
 ## Known issues
 
 - [ ] Feature "Restart numbering after each heading" does not work currently.
-- [ ] HTML sidenotes, in Reading Mode? - When pressing enter to update the last sidenote, it jumps up about 1 page
 - [ ] Changing style settings causes Editing mode sidenotes to disappear until restart
+
+### Removed
+
+- **Editing sidenotes in Reading mode** (the "Allow sidenote edits in reading mode" setting) has been removed. Reading mode has no editor behind it, so edits had to be written straight to the file and then raced Obsidian's re-render of the preview — which caused edits to silently not save, sidenotes to disappear after editing, and numbering to go wrong. Sidenotes are still fully rendered in Reading mode; editing now happens in Editing mode only. If you had the setting enabled, it is simply ignored.
 
 ## Alternatives and inspirations
 

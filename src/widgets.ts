@@ -395,11 +395,6 @@ class FootnoteSidenoteWidget extends WidgetType {
 				return;
 			}
 
-			// Don't trigger if margin is already being edited
-			if (margin.contentEditable === "true") {
-				return;
-			}
-
 			e.preventDefault();
 			e.stopPropagation();
 
@@ -408,12 +403,6 @@ class FootnoteSidenoteWidget extends WidgetType {
 
 		// Prevent mousedown from propagating to CM6 editor
 		wrapper.addEventListener("mousedown", (e) => {
-			if ((e.target as HTMLElement).closest(".sidenote-margin")) {
-				// If margin is being edited, allow normal behavior
-				if (margin.contentEditable === "true") {
-					return;
-				}
-			}
 			e.stopPropagation();
 		});
 
