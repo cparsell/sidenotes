@@ -420,7 +420,12 @@ export function correctIndentedSidenotePositions(
 
 	for (const wrapper of Array.from(wrappers)) {
 		const indentedParent = wrapper.closest<HTMLElement>(
-			"li, blockquote, .callout-content",
+			// Must match the elements styles.css makes `position: relative`,
+			// since the shift below compensates for the wrapper resolving
+			// against one of them. `.callout-content` was measured here
+			// previously while the CSS positions `.callout` — the two differ by
+			// the callout's padding and border.
+			"li, blockquote, .callout",
 		);
 
 		if (!indentedParent) {

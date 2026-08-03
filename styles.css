@@ -474,6 +474,19 @@
 	position: relative;
 }
 
+/* Callouts clip their content — Obsidian sets overflow:hidden so the coloured
+   background respects the rounded corners. A sidenote margin is absolutely
+   positioned far outside its anchor's box, so anchored inside a callout it was
+   clipped away completely: invisible in both reading and editing mode, and for
+   both formats.
+
+   Opt only the callouts that actually contain a sidenote out of clipping, so
+   ordinary callouts keep their corner clipping untouched. */
+.markdown-reading-view .callout:has(.sidenote-number),
+.markdown-source-view.mod-cm6 .callout:has(.sidenote-number) {
+	overflow: visible;
+}
+
 /* === Hide original span content === */
 .sidenote-number > span.sidenote {
 	display: inline-block;
