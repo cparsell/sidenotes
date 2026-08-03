@@ -39,7 +39,11 @@ import {
 	type SidenoteSide,
 	stripSideSuffix,
 } from "./content";
-import { resolveCollisionsBySide } from "./collision";
+import {
+	updateAllCollisions,
+	updateCollisionsIn,
+} from "./collision-runner";
+import { LayoutScheduler, TIMING } from "./scheduling";
 import {
 	injectPrintSidenotes,
 	type PrintExportContext,
@@ -97,9 +101,20 @@ export default class SidenotePlugin
 {
 	settings: SidenoteSettings;
 
-	private rafId: number | null = null;
 	private cleanups: CleanupFn[] = [];
 	private cmRoot: HTMLElement | null = null;
+
+	/** Owns every rAF handle, timer and margin observer. */
+	private readonly scheduler = new LayoutScheduler({
+		layout: () => this.layout(),
+		readingModeLayout: () => this.scheduleReadingModeLayout(),
+		collisions: () =>
+			updateAllCollisions(this.settings, {
+				cmRoot: this.cmRoot,
+				readingRoot: this.getReadingRoot(),
+			}),
+	});
+
 	private isMutating = false;
 	private resizeObserver: ResizeObserver | null = null;
 
@@ -122,21 +137,14 @@ export default class SidenotePlugin
 	};
 
 	// Performance: Debounce/throttle timers
-	private scrollDebounceTimer: number | null = null;
-	private mutationDebounceTimer: number | null = null;
-	private resizeThrottleTime: number = 0;
 
 	// Performance: Layout caching
 	private lastSidenoteCount: number = 0;
 
 	// Performance: Visible sidenotes tracking
-	private visibilityObserver: IntersectionObserver | null = null;
-	private visibleSidenotes: Set<HTMLElement> = new Set();
 
 	private isEditingMargin = false;
-	private readingModeScrollTimer: number | null = null;
 
-	private footnoteProcessingTimer: number | null = null;
 	public needsReadingModeRefresh = true;
 
 	private pendingFootnoteEdit: string | null = null;
@@ -144,17 +152,18 @@ export default class SidenotePlugin
 
 	// Cached source content for reading mode (editor.getValue() can be empty)
 	private cachedSourceContent: string = "";
+	/**
+	 * Which file `cachedSourceContent` was read from.
+	 *
+	 * The cache is a single string, so without this it silently serves the
+	 * previously-open note's source to whichever file is active now. That
+	 * decided `documentHasSidenotes`, and therefore whether the page offset
+	 * reserving margin space applied — so a note would or would not shift
+	 * depending on what you had open before it.
+	 */
+	private cachedSourcePath: string | null = null;
 
-	// Timing constants (in milliseconds)
-	private static readonly RESIZE_DEBOUNCE = 100;
-	private static readonly SCROLL_DEBOUNCE = 50;
-	private static readonly MUTATION_DEBOUNCE = 100;
-	private static readonly FOOTNOTE_RENDER_DELAY = 100;
-	private static readonly WIDGET_LAYOUT_DELAY = 50;
-	private static readonly INSERT_SIDENOTE_DELAY = 150;
 	private static readonly MAX_FOOTNOTE_EDIT_RETRIES = 10;
-	private readingModeResizeThrottleTime: number = 0;
-	private readingModeResizeTrailingTimer: number | null = null;
 
 	private spanCmView: EditorView | null = null;
 	private spanOutsidePointerDown?: (ev: PointerEvent) => void;
@@ -165,22 +174,17 @@ export default class SidenotePlugin
 
 	// Track which footnote is being edited (by footnote ID)
 	private activeFootnoteEdit: string | null = null;
-	private layoutTrailingTimer: number | null = null;
 
 	// Collision avoidance scheduling. Kept separate from `rafId` (used by
 	// scheduleLayout) so a pending layout never swallows a collision request.
-	private collisionRafId: number | null = null;
 	// Watches every margin for height changes (late image/embed loads, inline
 	// editor open/close, font swaps) and re-resolves collisions.
-	private marginResizeObserver: ResizeObserver | null = null;
 
 	async onload() {
 		await this.loadSettings();
 
 		this.addSettingTab(new SidenoteSettingTab(this.app, this));
 		applyCssVariables(this.settings);
-		this.setupVisibilityObserver();
-		this.setupMarginResizeObserver();
 
 		// Register the CM6 extension for footnote sidenotes in editing mode
 		this.registerEditorExtension([createFootnoteSidenotePlugin(this)]);
@@ -231,7 +235,7 @@ export default class SidenotePlugin
 				this.needsReadingModeRefresh = true;
 				this.scanDocumentForSidenotes();
 				this.rebind();
-				this.scheduleLayoutStable();
+				this.scheduler.scheduleLayoutStable();
 			}),
 		);
 
@@ -264,15 +268,15 @@ export default class SidenotePlugin
 				this.needsReadingModeRefresh = true;
 				this.scanDocumentForSidenotes();
 				this.invalidateLayoutCache();
-				this.scheduleLayoutDebounced(SidenotePlugin.MUTATION_DEBOUNCE);
+				this.scheduler.scheduleLayoutDebounced();
 				void this.preCacheFileContent();
 			}),
 		);
 
 		this.registerDomEvent(window, "resize", () => {
 			this.needsReadingModeRefresh = true;
-			this.scheduleLayoutThrottled(SidenotePlugin.RESIZE_DEBOUNCE);
-			this.scheduleReadingModeLayoutThrottled(100);
+			this.scheduler.scheduleLayoutThrottled();
+			this.scheduler.scheduleReadingLayoutThrottled(100);
 		});
 
 		// Immediate — works if plugin is enabled/reloaded after startup
@@ -303,7 +307,7 @@ export default class SidenotePlugin
 	}
 
 	onunload() {
-		this.cancelAllTimers();
+		this.scheduler.dispose();
 		this.cleanups.forEach((fn) => fn());
 		this.cleanups = [];
 
@@ -314,31 +318,9 @@ export default class SidenotePlugin
 		// Clear active footnote edit
 		this.activeFootnoteEdit = null;
 
-		// Clean up footnote processing timer
-		if (this.footnoteProcessingTimer !== null) {
-			window.clearTimeout(this.footnoteProcessingTimer);
-			this.footnoteProcessingTimer = null;
-		}
-
 		if (this.resizeObserver) {
 			this.resizeObserver.disconnect();
 			this.resizeObserver = null;
-		}
-
-		if (this.visibilityObserver) {
-			this.visibilityObserver.disconnect();
-			this.visibilityObserver = null;
-		}
-
-		if (this.marginResizeObserver) {
-			this.marginResizeObserver.disconnect();
-			this.marginResizeObserver = null;
-		}
-
-		// Clean up reading mode scroll timer
-		if (this.readingModeScrollTimer !== null) {
-			window.clearTimeout(this.readingModeScrollTimer);
-			this.readingModeScrollTimer = null;
 		}
 
 		const view = this.getMarkdownView();
@@ -577,7 +559,7 @@ export default class SidenotePlugin
 		this.pendingFootnoteEdit = footnoteId;
 		window.setTimeout(() => {
 			this.triggerPendingFootnoteEdit();
-		}, SidenotePlugin.INSERT_SIDENOTE_DELAY);
+		}, TIMING.INSERT_SIDENOTE_DELAY);
 	}
 
 	/**
@@ -626,7 +608,7 @@ export default class SidenotePlugin
 					this.processReadingModeSidenotes(readingRoot);
 				});
 			});
-		}, SidenotePlugin.FOOTNOTE_RENDER_DELAY);
+		}, TIMING.FOOTNOTE_RENDER_DELAY);
 	}
 
 	private triggerPendingFootnoteEdit() {
@@ -653,7 +635,7 @@ export default class SidenotePlugin
 				this.pendingFootnoteEditRetries++;
 				window.setTimeout(() => {
 					this.triggerPendingFootnoteEdit();
-				}, SidenotePlugin.FOOTNOTE_RENDER_DELAY);
+				}, TIMING.FOOTNOTE_RENDER_DELAY);
 			} else {
 				// Give up after max retries
 				this.pendingFootnoteEditRetries = 0;
@@ -678,158 +660,16 @@ export default class SidenotePlugin
 
 	// ==================== Performance Utilities ====================
 
-	private cancelAllTimers() {
-		if (this.rafId !== null) {
-			cancelAnimationFrame(this.rafId);
-			this.rafId = null;
-		}
-		if (this.collisionRafId !== null) {
-			cancelAnimationFrame(this.collisionRafId);
-			this.collisionRafId = null;
-		}
-		if (this.scrollDebounceTimer !== null) {
-			window.clearTimeout(this.scrollDebounceTimer);
-			this.scrollDebounceTimer = null;
-		}
-		if (this.mutationDebounceTimer !== null) {
-			window.clearTimeout(this.mutationDebounceTimer);
-			this.mutationDebounceTimer = null;
-		}
-		// Trailing timers. Both fire a layout pass after their throttle window
-		// closes, so an unload mid-resize would otherwise run layout against a
-		// torn-down view.
-		if (this.layoutTrailingTimer !== null) {
-			window.clearTimeout(this.layoutTrailingTimer);
-			this.layoutTrailingTimer = null;
-		}
-		if (this.readingModeResizeTrailingTimer !== null) {
-			window.clearTimeout(this.readingModeResizeTrailingTimer);
-			this.readingModeResizeTrailingTimer = null;
-		}
-	}
-
 	private invalidateLayoutCache() {
 		this.lastSidenoteCount = 0;
-		// this.lastCollisionHash = "";
-	}
-
-	private scheduleLayoutDebounced(
-		delay: number = SidenotePlugin.MUTATION_DEBOUNCE,
-	) {
-		if (this.mutationDebounceTimer !== null) {
-			window.clearTimeout(this.mutationDebounceTimer);
-		}
-		this.mutationDebounceTimer = window.setTimeout(() => {
-			this.mutationDebounceTimer = null;
-			this.scheduleLayout();
-		}, delay);
-	}
-
-	private scheduleLayoutThrottled(
-		minInterval: number = SidenotePlugin.RESIZE_DEBOUNCE,
-	) {
-		const now = Date.now();
-		if (now - this.resizeThrottleTime >= minInterval) {
-			this.resizeThrottleTime = now;
-			this.scheduleLayout();
-		}
-	}
-
-	private scheduleReadingModeLayoutThrottled(
-		minInterval: number = SidenotePlugin.RESIZE_DEBOUNCE,
-	) {
-		const now = Date.now();
-
-		// Clear any pending trailing call
-		if (this.readingModeResizeTrailingTimer !== null) {
-			window.clearTimeout(this.readingModeResizeTrailingTimer);
-		}
-
-		if (now - this.readingModeResizeThrottleTime >= minInterval) {
-			this.readingModeResizeThrottleTime = now;
-			this.scheduleReadingModeLayout();
-		}
-
-		// Always schedule a trailing call to catch the final state
-		this.readingModeResizeTrailingTimer = window.setTimeout(() => {
-			this.readingModeResizeTrailingTimer = null;
-			this.readingModeResizeThrottleTime = Date.now();
-			this.scheduleReadingModeLayout();
-		}, minInterval);
-	}
-
-	private setupVisibilityObserver() {
-		this.visibilityObserver = new IntersectionObserver(
-			(entries) => {
-				let needsCollisionUpdate = false;
-				for (const entry of entries) {
-					const el = entry.target as HTMLElement;
-
-					// Check if element is still in the DOM
-					if (!el.isConnected) {
-						this.visibleSidenotes.delete(el);
-						continue;
-					}
-
-					if (entry.isIntersecting) {
-						if (!this.visibleSidenotes.has(el)) {
-							this.visibleSidenotes.add(el);
-							needsCollisionUpdate = true;
-						}
-					} else {
-						if (this.visibleSidenotes.has(el)) {
-							this.visibleSidenotes.delete(el);
-							needsCollisionUpdate = true;
-						}
-					}
-				}
-				if (needsCollisionUpdate) {
-					this.scheduleCollisionUpdate();
-				}
-			},
-			{
-				rootMargin: "100px 0px",
-				threshold: 0,
-			},
-		);
-	}
-
-	/**
-	 * Watch margins for height changes.
-	 *
-	 * Collision avoidance is a one-shot measurement: once a pass has run, a
-	 * margin that *later* changes height (image or embed finishing loading, a
-	 * webfont swapping in, the inline editor opening/closing, a section
-	 * re-flowing after virtualisation) silently invalidates every shift below
-	 * it and nothing re-measures. That is what leaves sidenotes stacked on top
-	 * of each other until an unrelated event happens to trigger a layout.
-	 *
-	 * resolveCollisions only writes `transform`, which cannot change a margin's
-	 * own box size, so this cannot feed back into itself.
-	 */
-	private setupMarginResizeObserver() {
-		this.marginResizeObserver = new ResizeObserver(() => {
-			this.scheduleCollisionUpdate();
-		});
 	}
 
 	public observeSidenoteVisibility(margin: HTMLElement) {
-		if (this.visibilityObserver) {
-			this.visibilityObserver.observe(margin);
-		}
-		if (this.marginResizeObserver) {
-			this.marginResizeObserver.observe(margin);
-		}
+		this.scheduler.observeMargin(margin);
 	}
 
 	public unobserveSidenoteVisibility(margin: HTMLElement) {
-		if (this.visibilityObserver) {
-			this.visibilityObserver.unobserve(margin);
-			this.visibleSidenotes.delete(margin);
-		}
-		if (this.marginResizeObserver) {
-			this.marginResizeObserver.unobserve(margin);
-		}
+		this.scheduler.unobserveMargin(margin);
 	}
 
 	private findHtmlSidenoteInSource(sidenoteText: string): {
@@ -919,17 +759,7 @@ export default class SidenotePlugin
 					correctIndentedSidenotePositions(this.settings, readingRoot);
 
 					// Optional but usually good: re-resolve collisions
-					const allMargins = Array.from(
-						readingRoot.querySelectorAll<HTMLElement>(
-							"small.sidenote-margin",
-						),
-					).filter((m) => m.isConnected);
-
-					resolveCollisionsBySide(
-						allMargins,
-						this.settings.collisionSpacing,
-						this.settings.sidenotePosition,
-					);
+					updateCollisionsIn(this.settings, readingRoot);
 				});
 			}
 			return;
@@ -1052,7 +882,7 @@ export default class SidenotePlugin
 							this.app.workspace.getActiveViewOfType(MarkdownView);
 						if (!current || current.file?.path !== file.path) return;
 						// Cache the result so the next call succeeds synchronously
-						this.cachedSourceContent = text;
+						this.setCachedSource(text, file.path);
 						this.scheduleFootnoteProcessing();
 					});
 				}
@@ -1255,6 +1085,10 @@ export default class SidenotePlugin
 				);
 			}
 
+			// Positioned properly only in the deferred pass below; suppress
+			// the transition until then so it doesn't slide into place.
+			margin.classList.add("is-placing");
+
 			item.el.parentNode?.insertBefore(wrapper, item.el);
 			wrapper.appendChild(item.el);
 			wrapper.appendChild(margin);
@@ -1316,30 +1150,23 @@ export default class SidenotePlugin
 
 				// Use all margins in the DOM (not just newly created ones)
 				// so that collisions between old and new sidenotes are resolved.
-				const allMargins = Array.from(
-					readingRoot.querySelectorAll<HTMLElement>(
-						"small.sidenote-margin",
-					),
-				).filter((m) => m.isConnected);
+				updateCollisionsIn(this.settings, readingRoot);
 
-				resolveCollisionsBySide(
-					allMargins,
-					this.settings.collisionSpacing,
-					this.settings.sidenotePosition,
-				);
+				// Commit those positions with transitions still suppressed,
+				// then re-enable them so later changes (settings, resize) do
+				// animate as intended.
+				void readingRoot.offsetHeight;
+				readingRoot
+					.querySelectorAll<HTMLElement>(
+						"small.sidenote-margin.is-placing",
+					)
+					.forEach((m) => m.classList.remove("is-placing"));
 			});
 		});
 	}
 
 	private scheduleFootnoteProcessing() {
-		// Debounce multiple calls
-		if (this.footnoteProcessingTimer !== null) {
-			window.clearTimeout(this.footnoteProcessingTimer);
-		}
-
-		this.footnoteProcessingTimer = window.setTimeout(() => {
-			this.footnoteProcessingTimer = null;
-
+		this.scheduler.scheduleFootnoteProcessing(() => {
 			const view = this.getMarkdownView();
 			if (!view) return;
 
@@ -1371,7 +1198,7 @@ export default class SidenotePlugin
 					// the anchors of the ones that remain. Skipping the restack
 					// is what leaves sidenotes overlapping until an unrelated
 					// event happens to trigger one.
-					this.scheduleCollisionUpdate();
+					this.scheduler.scheduleCollisions();
 					return;
 				}
 
@@ -1381,7 +1208,7 @@ export default class SidenotePlugin
 					});
 				});
 			}
-		}, 100);
+		});
 	}
 
 	private removeAllSidenoteMarkupFromReadingMode(root: HTMLElement) {
@@ -1509,14 +1336,30 @@ export default class SidenotePlugin
 	 * there hands back pre-edit text — which is why a freshly-edited sidenote
 	 * would reopen showing its old contents.
 	 */
+	/** Record the source text together with the file it came from. */
+	private setCachedSource(content: string, path: string | null) {
+		this.cachedSourceContent = content;
+		this.cachedSourcePath = path;
+	}
+
+	/** Cached source, but only when it belongs to the active file. */
+	private validCachedSource(): string {
+		const path = this.getMarkdownView()?.file?.path;
+		return path && path === this.cachedSourcePath
+			? this.cachedSourceContent
+			: "";
+	}
+
 	private getSourceText(): string {
 		const view = this.getMarkdownView();
 		const editorText = view?.editor?.getValue();
 		const viewData = (view as { data?: string } | null)?.data;
 
+		const cached = this.validCachedSource();
+
 		return this.isPreviewMode()
-			? viewData || this.cachedSourceContent || editorText || ""
-			: editorText || viewData || this.cachedSourceContent || "";
+			? viewData || cached || editorText || ""
+			: editorText || viewData || cached || "";
 	}
 
 	private commitReadingModeFootnoteText(
@@ -1548,7 +1391,9 @@ export default class SidenotePlugin
 
 		// Patch the cache in place so re-opening the sidenote before the async
 		// file write lands reads the new text rather than the stale source.
-		if (this.cachedSourceContent) {
+		// Only when the cache is this file's — patching another file's cached
+		// content would corrupt it.
+		if (this.cachedSourcePath === file.path && this.cachedSourceContent) {
 			const patched = rewrite(this.cachedSourceContent);
 			if (patched) this.cachedSourceContent = patched;
 		}
@@ -1591,7 +1436,7 @@ export default class SidenotePlugin
 
 		void this.app.vault.process(file, (content) => rewrite(content) ?? content);
 
-		if (this.cachedSourceContent) {
+		if (this.cachedSourcePath === file.path && this.cachedSourceContent) {
 			const patched = rewrite(this.cachedSourceContent);
 			if (patched) this.cachedSourceContent = patched;
 		}
@@ -1680,7 +1525,10 @@ export default class SidenotePlugin
 				window.requestAnimationFrame(() => {
 					updateSidenotePositioning(this.settings, this.documentSidenoteSides, readingRoot, true);
 					correctIndentedSidenotePositions(this.settings, readingRoot);
-					this.updateReadingModeCollisions();
+					// Same root the positioning above measured — re-resolving
+					// getReadingRoot() here could return a different view's
+					// root if the active leaf changed before this frame ran.
+					updateCollisionsIn(this.settings, readingRoot);
 				});
 			}
 		});
@@ -1707,7 +1555,7 @@ export default class SidenotePlugin
 		const content = this.getSourceText();
 
 		if (content) {
-			this.cachedSourceContent = content;
+			this.setCachedSource(content, view.file?.path ?? null);
 		}
 
 		if (!content) {
@@ -1820,7 +1668,7 @@ export default class SidenotePlugin
 			: editorText || viewData || "";
 
 		if (content) {
-			this.cachedSourceContent = content;
+			this.setCachedSource(content, view?.file?.path ?? null);
 		}
 	}
 
@@ -1834,43 +1682,9 @@ export default class SidenotePlugin
 
 	// ==================== Scheduling ====================
 
-	private cancelScheduled() {
-		if (this.rafId !== null) {
-			cancelAnimationFrame(this.rafId);
-			this.rafId = null;
-		}
-	}
-
-	private scheduleLayout() {
-		this.cancelScheduled();
-		this.rafId = window.requestAnimationFrame(() => {
-			this.rafId = null;
-			this.layout();
-		});
-	}
-
-	private scheduleLayoutStable() {
-		this.cancelScheduled();
-
-		// Leading pass: ASAP
-		this.rafId = window.requestAnimationFrame(() => {
-			this.rafId = null;
-			this.layout();
-		});
-
-		// Trailing pass: catches the “one second later” reflow
-		if (this.layoutTrailingTimer !== null) {
-			window.clearTimeout(this.layoutTrailingTimer);
-		}
-		this.layoutTrailingTimer = window.setTimeout(() => {
-			this.layoutTrailingTimer = null;
-			this.layout();
-		}, 200);
-	}
-
 	private rebindAndSchedule() {
 		this.rebind();
-		this.scheduleLayout();
+		this.scheduler.scheduleLayout();
 	}
 
 	// ==================== Binding ====================
@@ -1900,7 +1714,7 @@ export default class SidenotePlugin
 		this.cleanups.forEach((fn) => fn());
 		this.cleanups = [];
 
-		this.visibleSidenotes.clear();
+		this.scheduler.clearVisible();
 
 		if (this.resizeObserver) {
 			this.resizeObserver.disconnect();
@@ -1923,7 +1737,7 @@ export default class SidenotePlugin
 			}
 			resizeTimeout = window.setTimeout(() => {
 				resizeTimeout = null;
-				this.scheduleLayout();
+				this.scheduler.scheduleLayout();
 				this.scheduleReadingModeLayout();
 			}, 50);
 		});
@@ -1958,13 +1772,10 @@ export default class SidenotePlugin
 			readingRoot.dataset.sidenoteAnchor = this.settings.sidenoteAnchor;
 
 			const onReadingScroll = () => {
-				if (this.readingModeScrollTimer !== null) {
-					window.clearTimeout(this.readingModeScrollTimer);
-				}
-				this.readingModeScrollTimer = window.setTimeout(() => {
-					this.readingModeScrollTimer = null;
-					this.avoidCollisionsInReadingMode(readingRoot);
-				}, 100);
+				this.scheduler.scheduleReadingScroll(
+					() => updateCollisionsIn(this.settings, readingRoot),
+					100,
+				);
 			};
 
 			// Listen on the reading root in the capture phase rather than on
@@ -2046,13 +1857,9 @@ export default class SidenotePlugin
 		if (!scroller) return;
 
 		const onScroll = () => {
-			if (this.scrollDebounceTimer !== null) {
-				window.clearTimeout(this.scrollDebounceTimer);
-			}
-			this.scrollDebounceTimer = window.setTimeout(() => {
-				this.scrollDebounceTimer = null;
-				this.scheduleLayout();
-			}, SidenotePlugin.SCROLL_DEBOUNCE);
+			this.scheduler.scheduleEditorScroll(() =>
+				this.scheduler.scheduleLayout(),
+			);
 		};
 		scroller.addEventListener("scroll", onScroll, { passive: true });
 		this.cleanups.push(() =>
@@ -2063,7 +1870,7 @@ export default class SidenotePlugin
 		if (content) {
 			const mo = new MutationObserver(() => {
 				if (this.isMutating) return;
-				this.scheduleLayoutDebounced(SidenotePlugin.MUTATION_DEBOUNCE);
+				this.scheduler.scheduleLayoutDebounced();
 			});
 			mo.observe(content, {
 				childList: true,
@@ -2082,7 +1889,7 @@ export default class SidenotePlugin
 				) {
 					// View mode changed, reschedule layout
 					this.invalidateLayoutCache();
-					this.scheduleLayout();
+					this.scheduler.scheduleLayout();
 					break;
 				}
 			}
@@ -2180,10 +1987,10 @@ export default class SidenotePlugin
 						window.requestAnimationFrame(() => {
 							if (!cmRoot.isConnected) return;
 							updateSidenotePositioning(this.settings, this.documentSidenoteSides, cmRoot, false);
-							this.updateEditingModeCollisions();
+							updateCollisionsIn(this.settings, this.cmRoot);
 						});
 					});
-				}, SidenotePlugin.WIDGET_LAYOUT_DELAY);
+				}, TIMING.WIDGET_LAYOUT_DELAY);
 			}
 			return;
 		}
@@ -2362,7 +2169,7 @@ export default class SidenotePlugin
 				window.requestAnimationFrame(() => {
 					if (!cmRoot.isConnected) return;
 					updateSidenotePositioning(this.settings, this.documentSidenoteSides, cmRoot, false);
-					this.updateEditingModeCollisions();
+					updateCollisionsIn(this.settings, this.cmRoot);
 				});
 			});
 		} else {
@@ -2376,7 +2183,7 @@ export default class SidenotePlugin
 					window.requestAnimationFrame(() => {
 						if (!cmRoot.isConnected) return;
 						updateSidenotePositioning(this.settings, this.documentSidenoteSides, cmRoot, false);
-						this.updateEditingModeCollisions();
+						updateCollisionsIn(this.settings, this.cmRoot);
 					});
 				});
 			}
@@ -2662,7 +2469,7 @@ export default class SidenotePlugin
 			);
 
 			// Margin height changed (editor -> rendered text); restack.
-			this.scheduleCollisionUpdate();
+			this.scheduler.scheduleCollisions();
 		};
 
 		// Keymap: ESC cancels; Enter commits; Shift-Enter inserts newline (optional)
@@ -2840,6 +2647,15 @@ export default class SidenotePlugin
 
 	// ==================== Collision Avoidance ====================
 
+	/** The reading view root for the active markdown view, if there is one. */
+	private getReadingRoot(): HTMLElement | null {
+		return (
+			this.getMarkdownView()?.containerEl.querySelector<HTMLElement>(
+				".markdown-reading-view",
+			) ?? null
+		);
+	}
+
 	/**
 	 * Schedule collision resolution for whichever root(s) currently hold margins.
 	 *
@@ -2848,85 +2664,7 @@ export default class SidenotePlugin
 	 * of deferring it, leaving sidenotes stacked on top of each other.
 	 */
 	public scheduleCollisionUpdate() {
-		if (this.collisionRafId !== null) return;
-
-		this.collisionRafId = window.requestAnimationFrame(() => {
-			this.collisionRafId = null;
-			this.updateAllCollisions();
-		});
-	}
-
-	/**
-	 * Resolve collisions in both editing and reading roots.
-	 *
-	 * Callers (the visibility observer, margin resize observer, inline editors)
-	 * don't reliably know which mode the margins they care about live in, and
-	 * running against an empty root is a cheap no-op.
-	 */
-	private updateAllCollisions() {
-		this.updateEditingModeCollisions();
-		this.updateReadingModeCollisions();
-	}
-
-	/**
-	 * Update collisions in editing mode (source view).
-	 */
-	private updateEditingModeCollisions() {
-		if (!this.cmRoot?.isConnected) return;
-
-		const margins = Array.from(
-			this.cmRoot.querySelectorAll<HTMLElement>("small.sidenote-margin"),
-		);
-		if (margins.length === 0) return;
-
-		resolveCollisionsBySide(
-			margins,
-			this.settings.collisionSpacing,
-			this.settings.sidenotePosition,
-		);
-	}
-
-	/**
-	 * Update collisions in reading mode.
-	 */
-	private updateReadingModeCollisions() {
-		const view = this.getMarkdownView();
-		if (!view) return;
-
-		const readingRoot = view.containerEl.querySelector<HTMLElement>(
-			".markdown-reading-view",
-		);
-		if (!readingRoot) return;
-
-		const margins = Array.from(
-			readingRoot.querySelectorAll<HTMLElement>("small.sidenote-margin"),
-		);
-		if (margins.length === 0) return;
-
-		resolveCollisionsBySide(
-			margins,
-			this.settings.collisionSpacing,
-			this.settings.sidenotePosition,
-		);
-	}
-
-	/**
-	 * Run collision avoidance specifically for reading mode sidenotes.
-	 * This is called after processing sidenotes in reading mode.
-	 * @param readingRoot The root element of the reading view to search for margins
-	 */
-	private avoidCollisionsInReadingMode(readingRoot: HTMLElement) {
-		if (!readingRoot?.isConnected) return;
-
-		const margins = Array.from(
-			readingRoot.querySelectorAll<HTMLElement>("small.sidenote-margin"),
-		);
-
-		resolveCollisionsBySide(
-			margins,
-			this.settings.collisionSpacing,
-			this.settings.sidenotePosition,
-		);
+		this.scheduler.scheduleCollisions();
 	}
 
 	//

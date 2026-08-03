@@ -9,8 +9,52 @@
 
 import type { SidenoteSettings } from "./settings";
 import type { SidenoteSide } from "./content";
+import { setCssProps } from "./dom-utils";
+
+/**
+ * Offsets are rewritten on every positioning pass, and `--sn-transition`
+ * animates left/right — so any sub-pixel difference between passes plays as a
+ * visible slide. The inputs jitter easily: the probe measurement in
+ * getSidenoteWidthPx, fractional element rects, a scrollbar appearing. Whole
+ * pixels are below the precision anyone can see in a margin position, and
+ * writing an identical string is what stops the transition from firing.
+ */
+function pxRounded(value: number): string {
+	return `${Math.round(value)}px`;
+}
 
 export type SidenoteMode = "hidden" | "compact" | "normal" | "full";
+
+/**
+ * A visible top-level block whose left/right edges mark the body text column.
+ *
+ * Obsidian virtualises reading mode, so the first <p> may have zero size or be
+ * nested inside a blockquote/list. Walk the sizer's direct child <div>s and
+ * pick the first containing a visible block-level element at the top level of
+ * the content flow, falling back to the sizer itself.
+ *
+ * Only `updateSidenotePositioning` uses this, and only as a last-resort
+ * fallback for the text edge (it prefers `getReadingTextLeft`). Do not reach
+ * for it as a measurement baseline — see the comment in
+ * `correctIndentedSidenotePositions` for why that goes wrong.
+ */
+function findReadingRefElement(root: HTMLElement): HTMLElement | null {
+	const sizer = root.querySelector<HTMLElement>(".markdown-preview-sizer");
+	if (!sizer) return null;
+
+	const sections = sizer.querySelectorAll<HTMLElement>(":scope > div");
+	for (const section of Array.from(sections)) {
+		if (section.offsetHeight === 0) continue;
+		const candidate = section.querySelector<HTMLElement>(
+			":scope > p, :scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > h6",
+		);
+		if (candidate && candidate.offsetHeight > 0) {
+			return candidate;
+		}
+	}
+
+	return sizer;
+}
 
 /**
  * Write the width-derived layout attributes onto a reading or editing root,
@@ -126,33 +170,9 @@ export function updateSidenotePositioning(
 	// have zero size or be nested inside a blockquote/list.  Walk the
 	// sizer's direct child <div>s and pick the first one that contains a
 	// visible block-level element at the top level of the content flow.
-	let refLine: HTMLElement | null = null;
-	if (isReadingMode) {
-		const sizer = root.querySelector<HTMLElement>(
-			".markdown-preview-sizer",
-		);
-		if (sizer) {
-			const sections =
-				sizer.querySelectorAll<HTMLElement>(":scope > div");
-			for (const section of Array.from(sections)) {
-				if (section.offsetHeight === 0) continue;
-				const candidate = section.querySelector<HTMLElement>(
-					":scope > p, :scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > h6",
-				);
-				if (candidate && candidate.offsetHeight > 0) {
-					refLine = candidate;
-					break;
-				}
-			}
-		}
-		if (!refLine) {
-			refLine = root.querySelector<HTMLElement>(
-				".markdown-preview-sizer",
-			);
-		}
-	} else {
-		refLine = findStableCmRefLine(root);
-	}
+	const refLine: HTMLElement | null = isReadingMode
+		? findReadingRefElement(root)
+		: findStableCmRefLine(root);
 
 	if (!refLine) return;
 
@@ -222,11 +242,11 @@ export function updateSidenotePositioning(
 		if (cssRight > maxCssRight) cssRight = maxCssRight;
 	}
 
-	root.style.setProperty("--sidenote-offset-left", `${cssLeft}px`);
-	root.style.setProperty("--sidenote-offset-right", `${cssRight}px`);
+	root.style.setProperty("--sidenote-offset-left", pxRounded(cssLeft));
+	root.style.setProperty("--sidenote-offset-right", pxRounded(cssRight));
 	root.style.setProperty(
 		"--sidenote-offset",
-		`${position === "left" ? cssLeft : cssRight}px`,
+		pxRounded(position === "left" ? cssLeft : cssRight),
 	);
 }
 
@@ -262,15 +282,32 @@ export function getSidenoteWidthPx(
 }
 
 
-export function getReadingTextLeft(root: HTMLElement): number | null {
+/**
+ * The body text column edges in reading mode: the preview sizer's CONTENT
+ * box, i.e. inside its page padding.
+ *
+ * This is the same column a top-level paragraph occupies, which is why it is
+ * a valid stand-in for one. The sizer's *border* box is not — it sits outside
+ * the padding, and using it as a baseline inflates every measurement by that
+ * padding.
+ */
+export function getReadingTextEdges(
+	root: HTMLElement,
+): { left: number; right: number } | null {
 	const sizer = root.querySelector<HTMLElement>(
 		".markdown-preview-sizer",
 	);
 	if (!sizer) return null;
 	const r = sizer.getBoundingClientRect();
 	const cs = getComputedStyle(sizer);
-	const pl = parseFloat(cs.paddingLeft) || 0;
-	return r.left + pl;
+	return {
+		left: r.left + (parseFloat(cs.paddingLeft) || 0),
+		right: r.right - (parseFloat(cs.paddingRight) || 0),
+	};
+}
+
+export function getReadingTextLeft(root: HTMLElement): number | null {
+	return getReadingTextEdges(root)?.left ?? null;
 }
 
 
@@ -377,28 +414,6 @@ export function correctIndentedSidenotePositions(
 		parseFloat(root.style.getPropertyValue("--sidenote-offset-right")) ||
 		0;
 
-	// Find the SAME reference element updateSidenotePositioning used
-	const sizer = root.querySelector<HTMLElement>(
-		".markdown-preview-sizer",
-	);
-	if (!sizer) return;
-
-	let refEl: HTMLElement | null = null;
-	const sections = sizer.querySelectorAll<HTMLElement>(":scope > div");
-	for (const section of Array.from(sections)) {
-		if (section.offsetHeight === 0) continue;
-		const candidate = section.querySelector<HTMLElement>(
-			":scope > p, :scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > h6",
-		);
-		if (candidate && candidate.offsetHeight > 0) {
-			refEl = candidate;
-			break;
-		}
-	}
-	if (!refEl) return;
-
-	const refRect = refEl.getBoundingClientRect();
-
 	const wrappers = root.querySelectorAll<HTMLElement>(
 		"span.sidenote-number",
 	);
@@ -416,6 +431,25 @@ export function correctIndentedSidenotePositions(
 			continue;
 		}
 
+		// Baseline: the top-level preview section this sidenote lives in.
+		//
+		// Deliberately per-wrapper rather than one document-wide reference
+		// element. A global baseline has to be *found*, and both ways of
+		// finding it are wrong somewhere: the first visible paragraph may not
+		// exist partway down a long list (leaving indented notes uncorrected,
+		// so they cut into the text), and the preview sizer is not the text
+		// column when a theme centres content within it (over-correcting, so
+		// they fly off the side).
+		//
+		// A section div is a direct child of the sizer, spans exactly the body
+		// text column for its region, and is always present — no scanning, no
+		// dependence on what happens to be scrolled into view.
+		const section = wrapper.closest<HTMLElement>(
+			".markdown-preview-sizer > div",
+		);
+		if (!section) continue;
+
+		const refRect = section.getBoundingClientRect();
 		const parentRect = indentedParent.getBoundingClientRect();
 
 		// Left-margin offset is relative to refEl's left edge; this wrapper
@@ -428,15 +462,17 @@ export function correctIndentedSidenotePositions(
 
 		wrapper.style.setProperty(
 			"--sidenote-offset-left",
-			`${globalOffsetLeft - shiftLeft}px`,
+			pxRounded(globalOffsetLeft - shiftLeft),
 		);
 		wrapper.style.setProperty(
 			"--sidenote-offset-right",
-			`${globalOffsetRight - shiftRight}px`,
+			pxRounded(globalOffsetRight - shiftRight),
 		);
 		wrapper.style.setProperty(
 			"--sidenote-offset",
-			`${globalOffset - (position === "left" ? shiftLeft : shiftRight)}px`,
+			pxRounded(
+				globalOffset - (position === "left" ? shiftLeft : shiftRight),
+			),
 		);
 	}
 }
@@ -487,6 +523,23 @@ export function applyLineOffset(
 		const wrapperRect = rects.length > 0 ? rects.item(0) : null;
 		const effectiveWrapperRect =
 			wrapperRect ?? wrapper.getBoundingClientRect();
+
+		// An inline element with no in-flow content produces no client rects,
+		// and getBoundingClientRect then returns all zeros. Subtracting the
+		// parent's top from that yields a large negative offset that throws the
+		// margin far off the top of the note. A real element essentially never
+		// sits at exactly (0, 0), so treat that as "no measurement" and anchor
+		// to the parent instead.
+		const isDegenerate =
+			effectiveWrapperRect.top === 0 &&
+			effectiveWrapperRect.left === 0 &&
+			effectiveWrapperRect.width === 0 &&
+			effectiveWrapperRect.height === 0;
+
+		if (isDegenerate) {
+			setCssProps(margin, { "--sidenote-line-offset": "0px" });
+			return;
+		}
 
 		const parentRect = positionedParent.getBoundingClientRect();
 		const lineOffset = effectiveWrapperRect.top - parentRect.top;

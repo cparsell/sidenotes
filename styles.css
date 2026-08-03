@@ -504,6 +504,19 @@
 	transition: var(--sn-transition, none);
 }
 
+/* A margin is inserted with the document-wide offset and only receives its
+   per-wrapper indent correction once the positioning pass runs, a frame or two
+   later. Since --sn-transition animates left/right, that correction is
+   otherwise visible as the sidenote sliding sideways into place every time one
+   scrolls into view. Suppressed until the first pass has settled.
+
+   Selector is deliberately specific enough to beat both .sidenote-margin rules
+   without !important fighting; the !important here is for the transition only. */
+.sidenote-margin.is-placing,
+.cm-line .sidenote-number[data-footnote-id] .sidenote-margin.is-placing {
+	transition: none !important;
+}
+
 /* Don't inherit the anchor's typography. A sidenote attached to a heading
    otherwise picks up the heading's font, weight and style along with its size.
    Markdown emphasis inside the sidenote still works — the strong/em rules
@@ -867,11 +880,22 @@
 	display: none;
 }
 
-/* Hide footnote link inside sidenote wrapper in reading mode */
+/* Hide footnote link inside sidenote wrapper in reading mode.
+
+   Collapsed to zero width rather than display:none, matching how the HTML
+   format hides its inline span above. display:none leaves the <sup> with no
+   in-flow content, so the wrapper produces no client rects and
+   getBoundingClientRect() returns all zeros — which applyLineOffset then reads
+   as a position, putting the margin far off. Keeping a zero-width box means
+   the wrapper still reports the line it sits on. */
 [data-sn-hide-footnote-numbers="true"]
 	.sidenote-number[data-footnote-id]
 	a.footnote-link {
-	display: none;
+	display: inline-block;
+	width: 0;
+	max-width: 0;
+	overflow: hidden;
+	white-space: nowrap;
 }
 
 /* Hide original [^1] reference numbers in Live Preview */
