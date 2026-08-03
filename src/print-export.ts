@@ -19,8 +19,14 @@ import {
 export interface PrintExportContext {
 	app: App;
 	settings: SidenoteSettings;
+	/** Pre-read file contents keyed by path, for files other than the active one. */
 	fileContentCache: Map<string, string>;
-	cachedSourceContent: string;
+	/**
+	 * Source text for the ACTIVE file, resolved through the plugin's own
+	 * editor → view.data → cache chain. A function rather than a snapshot
+	 * string so it is evaluated at export time, not at context-build time.
+	 */
+	getActiveSourceText(): string;
 	getMarkdownView(): MarkdownView | null;
 }
 
@@ -205,28 +211,36 @@ export function injectPrintSidenotes(
 }
 
 /**
- * Source markdown for the file being exported. Prefers the pre-cached
- * copy for that exact path so exporting a note other than the active
- * one doesn't pick up the active note's footnotes.
+ * Source markdown for the file being exported.
+ *
+ * Order matters. For the ACTIVE file the live document wins: `fileContentCache`
+ * is filled by `vault.cachedRead`, which reads from disk, and Obsidian debounces
+ * its writes — so a sidenote edited moments before an export is still the
+ * pre-edit text on disk. Reading the cache first is what made exports show
+ * stale sidenote contents.
+ *
+ * The cache still takes precedence for any OTHER path, which is why it exists:
+ * exporting a note that isn't the active one must not pick up the active
+ * note's footnotes.
  */
 function getPrintSourceContent(
 	ctx: PrintExportContext,
 	sourcePath: string,
 ): string {
+	const view = ctx.getMarkdownView();
+	const isActiveFile = !sourcePath || view?.file?.path === sourcePath;
+
+	if (isActiveFile) {
+		const live = ctx.getActiveSourceText();
+		if (live) return live;
+	}
+
 	if (sourcePath) {
 		const cached = ctx.fileContentCache.get(sourcePath);
 		if (cached) return cached;
 	}
 
-	const view = ctx.getMarkdownView();
-	if (sourcePath && view?.file?.path !== sourcePath) return "";
-
-	return (
-		view?.editor?.getValue() ||
-		(view as { data?: string })?.data ||
-		ctx.cachedSourceContent ||
-		""
-	);
+	return "";
 }
 
 /**

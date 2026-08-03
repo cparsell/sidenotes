@@ -369,7 +369,7 @@ export default class SidenotePlugin
 			app: this.app,
 			settings: this.settings,
 			fileContentCache: this.fileContentCache,
-			cachedSourceContent: this.cachedSourceContent,
+			getActiveSourceText: () => this.getSourceText(),
 			getMarkdownView: () => this.getMarkdownView(),
 		};
 	}
