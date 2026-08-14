@@ -845,8 +845,17 @@ export default class SidenotePlugin
 
 		const definitions = this.parseFootnoteDefinitions(sourceContent);
 
-		// Build a map from rendered order to source ID
-		sourceRefOrder.push(...buildSourceRefOrder(sourceContent));
+		// Build a map from rendered order to source ID.
+		//
+		// Only refs that actually have a definition: Obsidian leaves a `[^x]`
+		// with no matching `[^x]:` as literal text rather than rendering it as
+		// a footnote, so counting it here would offset this list against the
+		// rendered numbering and mis-map every note after it.
+		sourceRefOrder.push(
+			...buildSourceRefOrder(sourceContent).filter((id) =>
+				definitions.has(id),
+			),
+		);
 		if (definitions.size === 0) {
 			if (!useHtmlSidenotes) return null;
 		}
@@ -865,13 +874,27 @@ export default class SidenotePlugin
 			if (sup.closest("section.footnotes, .footnotes")) continue;
 
 			// Extract the base footnote ID from the rendered markup
-			let baseId = resolveFootnoteBaseId(sup);
+			const renderedId = resolveFootnoteBaseId(sup);
+			if (!renderedId || processedBaseIds.has(renderedId)) continue;
 
-			if (!baseId || processedBaseIds.has(baseId)) continue;
-
-			// Map Obsidian's rendered sequential number back to the source footnote ID
-			const originalBaseId = baseId;
-			const renderedNum = parseInt(baseId, 10);
+			// Map Obsidian's rendered sequential number back to the source
+			// footnote ID.
+			//
+			// Indexing by the rendered number — rather than walking
+			// sourceRefOrder with a counter as print-export.ts does — is
+			// deliberate: reading mode virtualises, so the refs present in the
+			// DOM are only the mounted ones. A counter would restart at 0
+			// partway down the note and mis-map everything.
+			//
+			// Only remap when the rendered markup gave a bare number. A
+			// renderedId like "4-r" or "mn-1" is already a source ID, and
+			// parseInt would read "4-r" as 4 and then look up whatever ref
+			// happens to sit at position 4 — attaching the wrong definition, or
+			// none at all, and shifting every note after it.
+			let baseId = renderedId;
+			const renderedNum = /^\d+$/.test(renderedId)
+				? parseInt(renderedId, 10)
+				: NaN;
 			if (
 				!isNaN(renderedNum) &&
 				renderedNum >= 1 &&
@@ -885,7 +908,7 @@ export default class SidenotePlugin
 
 			// Mark both original and remapped IDs as processed
 			if (processedBaseIds.has(baseId)) continue;
-			processedBaseIds.add(originalBaseId);
+			processedBaseIds.add(renderedId);
 			processedBaseIds.add(baseId);
 
 			// Look up definition from SOURCE markdown
