@@ -28,6 +28,15 @@ export interface SidenoteSettings {
 	sidenoteGap2: number;
 	sidenoteGapDrift: number;
 	sidenoteAnchor: "text" | "edge";
+	/**
+	 * Not user-configurable — retained only so older `data.json` files with a
+	 * stored value don't error, and pinned to 1 wherever it's read
+	 * (main.ts saveSettings/loadSettings). 1 reserves exactly the space a
+	 * sidenote needs to push the body text aside without clipping. Any other
+	 * value either clips the sidenote or narrows the text to open unwanted
+	 * space at the pane edge — see the "page offset factor" removal note in
+	 * settings.ts's UI section for the reasoning.
+	 */
 	pageOffsetFactor: number;
 
 	// Breakpoints
@@ -77,7 +86,7 @@ export const DEFAULT_SETTINGS: SidenoteSettings = {
 	sidenoteGap2: 1,
 	sidenoteGapDrift: 0.3,
 	sidenoteAnchor: "text",
-	pageOffsetFactor: 0.8,
+	pageOffsetFactor: 1,
 
 	// Breakpoints
 	hideBelow: 900,
@@ -415,20 +424,13 @@ export class SidenoteSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		new Setting(containerEl)
-			.setName("Page offset factor")
-			.setDesc(
-				"Adjusts how much body text gets nudged over when sidenotes are present (default: 0)",
-			)
-			.addSlider((slider) =>
-				slider
-					.setLimits(0, 1, 0.1)
-					.setValue(this.plugin.settings.pageOffsetFactor)
-					.onChange(async (value) => {
-						this.plugin.settings.pageOffsetFactor = value;
-						await this.plugin.saveSettings();
-					}),
-			);
+		// No "page offset factor" control here. The body text is pushed over
+		// by exactly the space a sidenote needs — a fixed 1:1 relationship,
+		// not a user-adjustable one. Any value other than "exactly enough"
+		// either clips the sidenote off the pane (less) or shifts the sidenote
+		// and text together, purely narrowing the text to open a gap at the
+		// pane edge nobody asked for (more). See pageOffsetFactor in
+		// settings.ts for the values this is pinned to.
 
 		new Setting(containerEl).setName("Breakpoints").setHeading();
 
@@ -896,18 +898,6 @@ export class SidenoteSettingTab extends PluginSettingTab {
 							key: "sidenoteGapDrift",
 							defaultValue: s.sidenoteGapDrift,
 							min: -1,
-							max: 1,
-							step: 0.1,
-						},
-					},
-					{
-						name: "Page offset factor",
-						desc: "Adjusts how much body text gets nudged over when sidenotes are present (default: 0)",
-						control: {
-							type: "slider",
-							key: "pageOffsetFactor",
-							defaultValue: s.pageOffsetFactor,
-							min: 0,
 							max: 1,
 							step: 0.1,
 						},

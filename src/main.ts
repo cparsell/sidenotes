@@ -421,6 +421,13 @@ export default class SidenotePlugin
 				| Partial<SidenoteSettings>
 				| undefined;
 			this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
+
+			// Not user-configurable — see the field's doc comment in
+			// settings.ts. Older data.json files may carry a stored value
+			// (0-1 range, or briefly 1-2 during development); pin it to the
+			// one value that neither clips the sidenote nor narrows the text
+			// for no reason, regardless of what's on disk.
+			this.settings.pageOffsetFactor = 1;
 		} catch (error) {
 			console.error("Sidenote plugin: Failed to load settings", error);
 			this.settings = Object.assign({}, DEFAULT_SETTINGS);
@@ -450,7 +457,9 @@ export default class SidenotePlugin
 			s.fontSize = Math.max(50, Math.min(150, s.fontSize));
 			s.fontSizeCompact = Math.max(50, Math.min(150, s.fontSizeCompact));
 			s.lineHeight = Math.max(1, Math.min(3, s.lineHeight));
-			s.pageOffsetFactor = Math.max(0, Math.min(1, s.pageOffsetFactor));
+			// Not user-configurable — see the field's doc comment in
+			// settings.ts.
+			s.pageOffsetFactor = 1;
 
 			await this.saveData(this.settings);
 

@@ -89,6 +89,7 @@ export function applyRootMetrics(
 export function clearRootMetrics(root: HTMLElement) {
 	root.style.removeProperty("--editor-width");
 	root.style.removeProperty("--sidenote-scale");
+	root.style.removeProperty("--sidenote-gap-effective");
 	root.dataset.sidenoteMode = "";
 	root.dataset.hasSidenotes = "";
 	root.dataset.sidenotePosition = "";
@@ -154,7 +155,7 @@ export function updateSidenotePositioning(
 	const baseGap2 = s.sidenoteGap2 * remToPx; // gap between sidenote and edge
 
 	// Scale gaps proportionally as editor grows.
-	// Use the pageOffsetFactor setting to control growth rate.
+	// Use the sidenoteGapDrift setting to control growth rate.
 	// At hideBelow width, gaps are at their minimum.
 	// As width increases, gaps grow by a fraction of the extra available space.
 	const editorWidth = rootRect.width;
@@ -164,6 +165,19 @@ export function updateSidenotePositioning(
 
 	const gap1 = baseGap1 + gapGrowth;
 	const gap2 = baseGap2 + gapGrowth;
+
+	// Publish the *grown* gap so the CSS that reserves margin space uses the
+	// same number this function positions against.
+	//
+	// `--page-offset` used to be computed from the base `--sidenote-gap`, with
+	// no knowledge of gapGrowth — so with sidenoteGapDrift above 0 it reserved
+	// less room than the sidenote actually needs, and the shortfall widened
+	// with the pane. In text-anchor mode that clipped the left edge of
+	// left-margin sidenotes.
+	//
+	// Written before the reference-line lookup below, which can bail: the
+	// reservation should stay correct even when positioning cannot run.
+	root.style.setProperty("--sidenote-gap-effective", pxRounded(gap1));
 
 	// Find a representative line/paragraph to measure the text column edge.
 	// In reading mode, Obsidian virtualises content so the first <p> may
@@ -191,28 +205,32 @@ export function updateSidenotePositioning(
 		? (getReadingTextLeft(root) ?? refRect.left)
 		: (getEditorTextEdges(root)?.left ?? refRect.left);
 
+	// The real editor edge (scroller/view), not rootRect.left, which may
+	// already carry the page-offset padding.
+	const editorEdgeLeft = (() => {
+		if (isReadingMode) return root.getBoundingClientRect().left;
+		const scroller = root.querySelector<HTMLElement>(".cm-scroller");
+		return (scroller ?? root).getBoundingClientRect().left;
+	})();
+
+	// The two candidate positions, both expressed relative to the text column
+	// edge. Each anchor mode prefers one and is bounded by the other.
+	//
+	// Text-anchored: the note's RIGHT edge sits gap1 from the text.
+	// Edge-anchored: the note's LEFT edge sits gap2 from the pane edge.
+	const textAnchoredLeft = -(gap1 + sidenoteWidth);
+	const edgeAnchoredLeft = editorEdgeLeft + gap2 - textLeft;
+
 	let cssLeft: number;
 	if (anchorMode === "text") {
-		// TEXT ANCHOR MODE:
-		// Position sidenote so its right edge is exactly gap1 from text (if in left margin)
-		cssLeft = -(gap1 + sidenoteWidth);
+		// The gap to the text is the whole point of this mode, so it is never
+		// traded away. Clamping the note to the pane edge when space runs short
+		// was tried and is worse: it slides the note over the body text, which
+		// is less usable than a note that runs off the edge.
+		cssLeft = textAnchoredLeft;
 	} else {
-		// EDGE ANCHOR MODE (LEFT):
-		// Use the real editor edge (scroller/view), not rootRect.left (which may already be padded).
-		const editorEdgeLeft = (() => {
-			if (isReadingMode) return root.getBoundingClientRect().left;
-			const scroller = root.querySelector<HTMLElement>(".cm-scroller");
-			return (scroller ?? root).getBoundingClientRect().left;
-		})();
-
-		// Place sidenote so its LEFT edge is gap2 from the editor edge
-		// cssLeft is relative to the text column edge (textLeft)
-		cssLeft = editorEdgeLeft + gap2 - textLeft;
-
-		// Keep it from intruding into the text column (best-effort safety).
-		// If cssLeft is too large (not negative enough), the sidenote overlaps text.
-		const maxCssLeft = -(gap1 + sidenoteWidth);
-		if (cssLeft > maxCssLeft) cssLeft = maxCssLeft;
+		// Prefer the pane edge, but never intrude into the text column.
+		cssLeft = Math.min(edgeAnchoredLeft, textAnchoredLeft);
 	}
 
 	// --- RIGHT ---
@@ -222,24 +240,23 @@ export function updateSidenotePositioning(
 		: null;
 	const textRight = textEdges ? textEdges.right : refRect.right;
 
+	const editorEdgeRight = (() => {
+		if (isReadingMode) return root.getBoundingClientRect().right;
+
+		const scroller = root.querySelector<HTMLElement>(".cm-scroller");
+		return (scroller ?? root).getBoundingClientRect().right;
+	})();
+
+	// Mirror of the left side. cssRight works inversely: more negative moves
+	// the element further right.
+	const textAnchoredRight = -(gap1 + sidenoteWidth);
+	const edgeAnchoredRight = editorEdgeRight - gap2 - textRight;
+
 	let cssRight: number;
 	if (anchorMode === "text") {
-		// TEXT ANCHOR MODE:
-		// Position sidenote so its left edge is exactly gap1 from text
-		// cssRight works inversely: negative moves element to the right
-		cssRight = -(gap1 + sidenoteWidth);
+		cssRight = textAnchoredRight;
 	} else {
-		const editorEdgeRight = (() => {
-			if (isReadingMode) return root.getBoundingClientRect().right;
-
-			const scroller = root.querySelector<HTMLElement>(".cm-scroller");
-			return (scroller ?? root).getBoundingClientRect().right;
-		})();
-
-		cssRight = editorEdgeRight - gap2 - textRight;
-
-		const maxCssRight = -(gap1 + sidenoteWidth);
-		if (cssRight > maxCssRight) cssRight = maxCssRight;
+		cssRight = Math.min(edgeAnchoredRight, textAnchoredRight);
 	}
 
 	root.style.setProperty("--sidenote-offset-left", pxRounded(cssLeft));

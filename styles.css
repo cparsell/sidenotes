@@ -250,9 +250,19 @@
 	);
 	--sidenote-gap: var(--sn-gap, 2rem);
 	--sidenote-gap2: var(--sn-gap2, 1rem);
+	/* Space reserved beside the text for the sidenote column.
+
+	   Uses --sidenote-gap-effective, which the positioning code publishes: it
+	   is the base gap PLUS the width-driven growth from the "gap drift"
+	   setting. Reading the base --sidenote-gap here instead under-reserved
+	   whenever drift was above 0, by a margin that widened with the pane, and
+	   clipped the outer edge of the sidenotes in text-anchor mode. Falls back
+	   to the base gap for the frame before JS has measured. */
 	--page-offset: calc(
-		(var(--sidenote-width) + var(--sidenote-gap)) *
-			var(--sn-page-offset-factor, 0)
+		(
+				var(--sidenote-width) +
+					var(--sidenote-gap-effective, var(--sidenote-gap))
+			) * var(--sn-page-offset-factor, 0)
 	);
 	--sidenote-edge-offset: var(--sidenote-gap);
 }
