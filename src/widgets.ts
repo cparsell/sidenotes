@@ -1,10 +1,4 @@
-import {
-	App,
-	MarkdownView,
-	TFile,
-	EditorPosition,
-	editorLivePreviewField,
-} from "obsidian";
+import { MarkdownView, editorLivePreviewField } from "obsidian";
 import {
 	EditorView,
 	ViewUpdate,
@@ -12,19 +6,8 @@ import {
 	Decoration,
 	DecorationSet,
 	WidgetType,
-	keymap,
-	Command,
 } from "@codemirror/view";
-import { EditorState, EditorSelection } from "@codemirror/state";
-import {
-	defaultKeymap,
-	history,
-	historyKeymap,
-} from "@codemirror/commands";
-import { markdown } from "@codemirror/lang-markdown";
-import { syntaxHighlighting, HighlightStyle } from "@codemirror/language";
-// eslint-disable-next-line import/no-extraneous-dependencies -- @lezer/highlight is a transitive dependency pulled in by @codemirror/language, used directly here for syntax tags
-import { tags } from "@lezer/highlight";
+import { EditorState } from "@codemirror/state";
 import { setCssProps } from "./dom-utils";
 import {
 	formatNumber,
@@ -35,292 +18,12 @@ import {
 	renderLinksToFragment,
 } from "./content";
 import type { SidenoteWidgetHost } from "./widget-host";
+import {
+	type InlineEditorCloseResult,
+	type InlineEditorHandle,
+	openInlineMarkdownEditor,
+} from "./inline-editor";
 
-/** Minimal subset of Obsidian's Editor interface backed by a CM6 EditorView. */
-interface MinimalEditor {
-	getValue(): string;
-	getLine(line: number): string;
-	lineCount(): number;
-	getCursor(): EditorPosition;
-	setCursor(pos: EditorPosition): void;
-	setSelection(anchor: EditorPosition, head?: EditorPosition): void;
-	getSelection(): string;
-	replaceSelection(text: string): void;
-	getRange(from: EditorPosition, to: EditorPosition): string;
-	replaceRange(
-		text: string,
-		from: EditorPosition,
-		to?: EditorPosition,
-	): void;
-}
-
-function cmToPos(view: EditorView, offset: number): EditorPosition {
-	const line = view.state.doc.lineAt(offset);
-	return { line: line.number - 1, ch: offset - line.from };
-}
-
-function posToCm(view: EditorView, pos: EditorPosition): number {
-	const line = view.state.doc.line(pos.line + 1);
-	return Math.max(line.from, Math.min(line.to, line.from + pos.ch));
-}
-
-export function cmEditorAdapter(view: EditorView): MinimalEditor {
-	return {
-		getValue() {
-			return view.state.doc.toString();
-		},
-
-		getLine(line: number) {
-			return view.state.doc.line(line + 1).text;
-		},
-
-		lineCount() {
-			return view.state.doc.lines;
-		},
-
-		getCursor() {
-			return cmToPos(view, view.state.selection.main.head);
-		},
-
-		setCursor(pos: EditorPosition) {
-			const off = posToCm(view, pos);
-			view.dispatch({ selection: { anchor: off } });
-		},
-
-		setSelection(anchor: EditorPosition, head?: EditorPosition) {
-			const a = posToCm(view, anchor);
-			const h = posToCm(view, head ?? anchor);
-			view.dispatch({ selection: { anchor: a, head: h } });
-		},
-
-		getSelection() {
-			const sel = view.state.selection.main;
-			return view.state.sliceDoc(sel.from, sel.to);
-		},
-
-		replaceSelection(text: string) {
-			const sel = view.state.selection.main;
-			view.dispatch({
-				changes: { from: sel.from, to: sel.to, insert: text },
-			});
-		},
-
-		getRange(from: EditorPosition, to: EditorPosition) {
-			const a = posToCm(view, from);
-			const b = posToCm(view, to);
-			return view.state.sliceDoc(Math.min(a, b), Math.max(a, b));
-		},
-
-		replaceRange(text: string, from: EditorPosition, to?: EditorPosition) {
-			const a = posToCm(view, from);
-			const b = posToCm(view, to ?? from);
-			view.dispatch({
-				changes: {
-					from: Math.min(a, b),
-					to: Math.max(a, b),
-					insert: text,
-				},
-			});
-		},
-	};
-}
-
-type WorkspaceWithActiveEditor = {
-	activeEditor: null | {
-		editor: MinimalEditor;
-		file: TFile | null;
-	};
-};
-
-export function setWorkspaceActiveEditor(
-	app: App,
-	view: EditorView | null,
-) {
-	const ws = app.workspace as unknown as WorkspaceWithActiveEditor;
-
-	if (!view) {
-		ws.activeEditor = null;
-		return;
-	}
-
-	ws.activeEditor = {
-		editor: cmEditorAdapter(view),
-		file: app.workspace.getActiveFile(),
-	};
-}
-
-function wrapSelection(view: EditorView, left: string, right: string) {
-	const changes: { from: number; to: number; insert: string }[] = [];
-	const ranges: { anchor: number; head: number }[] = [];
-
-	for (const range of view.state.selection.ranges) {
-		const from = Math.min(range.from, range.to);
-		const to = Math.max(range.from, range.to);
-		const selected = view.state.sliceDoc(from, to);
-
-		const insert = left + selected + right;
-		changes.push({ from, to, insert });
-
-		// place cursor inside markers when no selection; otherwise keep selection
-		if (from === to) {
-			const cursor = from + left.length;
-			ranges.push({ anchor: cursor, head: cursor });
-		} else {
-			ranges.push({
-				anchor: from + left.length,
-				head: to + left.length,
-			});
-		}
-	}
-
-	view.dispatch({
-		changes,
-		selection: EditorSelection.create(
-			ranges.map((r) => EditorSelection.range(r.anchor, r.head)),
-		),
-		userEvent: "input",
-	});
-}
-
-const mdBold: Command = (view) => {
-	wrapSelection(view, "**", "**");
-	return true;
-};
-
-const mdItalic: Command = (view) => {
-	wrapSelection(view, "*", "*");
-	return true;
-};
-
-const mdLink: Command = (view) => {
-	// If selection: [text]()
-	// If none: []() and cursor inside []
-	const changes: { from: number; to: number; insert: string }[] = [];
-	const ranges: { anchor: number; head: number }[] = [];
-
-	for (const range of view.state.selection.ranges) {
-		const from = Math.min(range.from, range.to);
-		const to = Math.max(range.from, range.to);
-		const selected = view.state.sliceDoc(from, to);
-
-		const insert = `[${selected}]()`;
-		changes.push({ from, to, insert });
-
-		if (from === to) {
-			// cursor between [ ]
-			const cursor = from + 1;
-			ranges.push({ anchor: cursor, head: cursor });
-		} else {
-			// keep selection on the text inside []
-			ranges.push({
-				anchor: from + 1,
-				head: from + 1 + selected.length,
-			});
-		}
-	}
-
-	view.dispatch({
-		changes,
-		selection: EditorSelection.create(
-			ranges.map((r) => EditorSelection.range(r.anchor, r.head)),
-		),
-		userEvent: "input",
-	});
-
-	return true;
-};
-
-export const markdownEditHotkeys = keymap.of([
-	{ key: "Mod-b", run: mdBold, preventDefault: true },
-	{ key: "Mod-i", run: mdItalic, preventDefault: true },
-	{ key: "Mod-k", run: mdLink, preventDefault: true },
-]);
-
-export const sidenoteEditorTheme = EditorView.theme({
-	"&": {
-		backgroundColor: "transparent !important",
-		color: "inherit !important",
-		padding: "0 !important",
-		margin: "0 !important",
-		border: "none !important",
-		height: "auto !important",
-		minHeight: "0 !important",
-		fontFamily: "inherit !important",
-		fontSize: "inherit !important",
-	},
-	"& .cm-scroller": {
-		padding: "0 !important",
-		paddingLeft: "0 !important",
-		paddingRight: "0 !important",
-		margin: "0 !important",
-		overflow: "visible !important",
-		height: "auto !important",
-		minHeight: "0 !important",
-		fontFamily: "inherit !important",
-	},
-	"& .cm-content": {
-		padding: "2px 0 !important",
-		paddingLeft: "0 !important",
-		margin: "0 !important",
-		minHeight: "auto !important",
-		fontFamily: "inherit !important",
-		fontSize: "inherit !important",
-		lineHeight: "inherit !important",
-		caretColor:
-			"var(--caret-color, var(--text-accent, var(--text-normal))) !important",
-	},
-	"& .cm-content[contenteditable]": {
-		padding: "2px 0 !important",
-		paddingLeft: "0 !important",
-	},
-	"& .cm-line": {
-		padding: "0 !important",
-		paddingLeft: "0 !important",
-		margin: "0 !important",
-		fontFamily: "inherit !important",
-	},
-	"& .cm-gutters": {
-		display: "none !important",
-		width: "0 !important",
-		minWidth: "0 !important",
-		border: "none !important",
-	},
-	"& .cm-cursor": {
-		borderLeftColor: "var(--caret-color, var(--text-normal)) !important",
-	},
-	"&.cm-focused": {
-		outline: "none !important",
-	},
-	"&.cm-focused .cm-cursor": {
-		borderLeftColor: "var(--caret-color, var(--text-normal)) !important",
-	},
-	"& .cm-activeLineGutter": {
-		backgroundColor: "transparent !important",
-		display: "none !important",
-	},
-	"& .cm-activeLine": {
-		backgroundColor: "transparent !important",
-	},
-});
-
-export const sidenoteHighlightStyle = HighlightStyle.define([
-	{ tag: tags.strong, fontWeight: "bold" },
-	{ tag: tags.emphasis, fontStyle: "italic" },
-	{ tag: tags.strikethrough, textDecoration: "line-through" },
-	{
-		tag: tags.monospace,
-		fontFamily: "var(--font-monospace)",
-		fontSize: "0.9em",
-	},
-	{
-		tag: tags.link,
-		color: "var(--link-color, var(--text-accent))",
-		textDecoration: "underline",
-	},
-	{ tag: tags.url, color: "var(--link-color, var(--text-accent))" },
-	// Dim the markdown syntax characters (**, *, `, [, ], etc.)
-	{ tag: tags.processingInstruction, color: "var(--text-faint)" },
-]);
 
 // ======================================================
 // ========CodeMirror 6 Footnote Sidenote Widget ========
@@ -437,76 +140,39 @@ class FootnoteSidenoteWidget extends WidgetType {
 		if (margin) this.host.unobserveSidenoteVisibility(margin);
 	}
 
-	private cmView: EditorView | null = null;
-	private outsidePointerDown?: (ev: PointerEvent) => void;
-	private originalText: string = "";
+	/**
+	 * The open margin editor, if any — also the "already editing" guard.
+	 * Replaces a view/original-text/outside-listener triple kept in sync by hand.
+	 */
+	private marginEditor: InlineEditorHandle | null = null;
 
-	private setActiveEditorForMargin(cm: EditorView | null) {
-		setWorkspaceActiveEditor(this.host.app, cm);
-	}
 
-	private makeCommitKeymap(margin: HTMLElement) {
-		return keymap.of([
-			{
-				key: "Enter",
-				run: () => {
-					this.closeMarginEditor(margin, { commit: true });
-					return true; // handled
-				},
-				preventDefault: true,
-			},
-			{
-				key: "Shift-Enter",
-				run: (view) => {
-					// Allow newline insertion
-					view.dispatch(view.state.replaceSelection("\n"));
-					return true;
-				},
-				preventDefault: true,
-			},
-		]);
-	}
 
-	private closeMarginEditor(
+	/**
+	 * Everything that has to happen once the margin editor has closed.
+	 * The editor itself handles teardown, listeners and workspace routing.
+	 */
+	private afterMarginEdit(
 		margin: HTMLElement,
-		opts: { commit: boolean },
+		result: InlineEditorCloseResult,
 	) {
-		const cm = this.cmView;
-		if (!cm) return;
+		this.marginEditor = null;
 
 		// Restore the number attribute
 		margin.dataset.sidenoteNum = this.numberText;
 		margin.dataset.editing = "false";
 
-		const newText = cm.state.doc.toString();
-		const textToUse = opts.commit ? newText : this.originalText;
-
-		// cleanup listeners
-		if (this.outsidePointerDown) {
-			document.removeEventListener(
-				"pointerdown",
-				this.outsidePointerDown,
-				true,
-			);
-			this.outsidePointerDown = undefined;
-		}
-
-		// destroy CM first
-		this.cmView = null;
-		cm.destroy();
-
-		// restore routing + state
-		this.setActiveEditorForMargin(null);
 		this.host.setActiveFootnoteEdit(null);
-		margin.dataset.editing = "false";
 
-		// If committing, write back to footnote definition in the note.
-		// If canceling, just re-render original.
-		if (opts.commit && textToUse !== this.content) {
-			this.commitFootnoteText(textToUse);
+		// If committing, write back to the footnote definition in the note.
+		if (result.committed && result.renderText !== this.content) {
+			this.commitFootnoteText(result.renderText);
 		}
 
-		// Re-render with the CURRENT content (updated above if committed)
+		// Re-render with this.content deliberately, NOT the new text: the
+		// write-back above changes the document, so CM6 rebuilds this widget
+		// with the updated content a moment later. Rendering the new text here
+		// too would briefly show it twice over.
 		margin.innerHTML = "";
 		margin.appendChild(
 			renderLinksToFragment(
@@ -516,7 +182,7 @@ class FootnoteSidenoteWidget extends WidgetType {
 		);
 
 		// Signal that reading mode needs a refresh if the user switches modes
-		if (opts.commit && textToUse !== this.originalText) {
+		if (result.changed) {
 			this.host.needsReadingModeRefresh = true;
 			this.host.refreshCachedSourceContent();
 		}
@@ -568,7 +234,7 @@ class FootnoteSidenoteWidget extends WidgetType {
 
 		const onClick = (e: MouseEvent) => {
 			// If already editing, let CM handle cursor
-			if (this.cmView) {
+			if (this.marginEditor) {
 				e.stopPropagation();
 				return;
 			}
@@ -588,96 +254,25 @@ class FootnoteSidenoteWidget extends WidgetType {
 	 * In Editing Mode
 	 */
 	private startMarginEdit(margin: HTMLElement) {
-		if (this.cmView) return;
-
-		this.originalText = this.content;
+		if (this.marginEditor) return;
 
 		this.host.setActiveFootnoteEdit(this.footnoteId);
 		margin.dataset.editing = "true";
 		margin.innerHTML = "";
 
+		// Set by the insert-sidenote command so a freshly created footnote
+		// opens with its placeholder text selected, ready to type over.
 		const selectAll = margin.dataset.selectAllOnOpen === "true";
 		delete margin.dataset.selectAllOnOpen;
 
-		const commitKeymap = this.makeCommitKeymap(margin);
-
-		const state = EditorState.create({
+		this.marginEditor = openInlineMarkdownEditor({
+			app: this.host.app,
+			parent: margin,
 			doc: this.content,
-			selection: selectAll
-				? EditorSelection.single(0, this.content.length)
-				: undefined,
-			extensions: [
-				commitKeymap,
-				sidenoteEditorTheme,
-				history(),
-				markdown(),
-				syntaxHighlighting(sidenoteHighlightStyle, { fallback: true }),
-				markdownEditHotkeys,
-				// keep Obsidian’s own hotkey routing possible
-				keymap.of(defaultKeymap),
-				keymap.of(historyKeymap),
-				EditorView.lineWrapping,
-				// ESC to close (cancel)
-				keymap.of([
-					{
-						key: "Escape",
-						run: () => {
-							this.closeMarginEditor(margin, { commit: false });
-							return true;
-						},
-					},
-				]),
-			],
+			selectAll,
+			outsideBoundary: [margin],
+			onClose: (result) => this.afterMarginEdit(margin, result),
 		});
-
-		const cm = new EditorView({ state, parent: margin });
-		// After creating the EditorView, force-remove the padding:
-		this.cmView = cm;
-		cm.dom.classList.add("sidenote-cm-editor");
-
-		// Force override the scroller padding that CM6 sets internally
-		const scroller = cm.dom.querySelector<HTMLElement>(".cm-scroller");
-		if (scroller) {
-			setCssProps(scroller, { "padding-left": "0" }, true);
-			setCssProps(scroller, { padding: "0" }, true);
-		}
-		this.cmView = cm;
-		cm.dom.classList.add("sidenote-cm-editor");
-
-		// Route Obsidian commands to margin editor while it has focus
-		cm.dom.addEventListener(
-			"focusin",
-			() => this.setActiveEditorForMargin(cm),
-			true,
-		);
-
-		cm.dom.addEventListener(
-			"focusout",
-			() => {
-				// Don’t close here — focusout is not reliable for “click outside” with CM.
-				// Just drop activeEditor routing.
-				this.setActiveEditorForMargin(null);
-			},
-			true,
-		);
-
-		// Click anywhere outside -> commit and close (reliable)
-		this.outsidePointerDown = (ev: PointerEvent) => {
-			const target = ev.target as Node | null;
-			if (!target) return;
-
-			// If click is inside the CM editor or the margin container, ignore
-			if (cm.dom.contains(target) || margin.contains(target)) return;
-
-			this.closeMarginEditor(margin, { commit: true });
-		};
-		document.addEventListener(
-			"pointerdown",
-			this.outsidePointerDown,
-			true,
-		);
-
-		window.requestAnimationFrame(() => cm.focus());
 
 		// Opening the editor grows the margin; push the ones below it down.
 		this.host.scheduleCollisionUpdate();

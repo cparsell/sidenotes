@@ -1,21 +1,11 @@
 import { MarkdownView, Plugin, TFile } from "obsidian";
-import { EditorView, keymap } from "@codemirror/view";
-import { EditorState } from "@codemirror/state";
+import type { EditorView } from "@codemirror/view";
 import {
 	DEFAULT_SETTINGS,
 	SidenoteSettings,
 	SidenoteSettingTab,
 } from "./settings";
 
-// CM6 building blocks for proper shortcuts + undo
-import {
-	defaultKeymap,
-	history,
-	historyKeymap,
-} from "@codemirror/commands";
-import { markdown } from "@codemirror/lang-markdown";
-import { syntaxHighlighting } from "@codemirror/language";
-import { setCssProps } from "./dom-utils";
 import { applyCssVariables, clearCssVariables } from "./css-vars";
 import type { SidenoteWidgetHost } from "./widget-host";
 import { registerSidenoteCommands } from "./commands";
@@ -48,13 +38,11 @@ import {
 	injectPrintSidenotes,
 	type PrintExportContext,
 } from "./print-export";
+import { createFootnoteSidenotePlugin } from "./widgets";
 import {
-	createFootnoteSidenotePlugin,
-	markdownEditHotkeys,
-	sidenoteEditorTheme,
-	sidenoteHighlightStyle,
-	setWorkspaceActiveEditor,
-} from "./widgets";
+	type InlineEditorHandle,
+	openInlineMarkdownEditor,
+} from "./inline-editor";
 
 type CleanupFn = () => void;
 
@@ -165,9 +153,12 @@ export default class SidenotePlugin
 
 	private static readonly MAX_FOOTNOTE_EDIT_RETRIES = 10;
 
-	private spanCmView: EditorView | null = null;
-	private spanOutsidePointerDown?: (ev: PointerEvent) => void;
-	private spanOriginalText: string = "";
+	/**
+	 * The open editing-mode margin editor, if any — also the "already open"
+	 * guard. Replaces a three-field triple (view, original text, outside-click
+	 * listener) that had to be kept in sync by hand.
+	 */
+	private spanEditor: InlineEditorHandle | null = null;
 
 	// Pre-cached file content for PDF export (keyed by file path)
 	private fileContentCache = new Map<string, string>();
@@ -2426,140 +2417,40 @@ export default class SidenotePlugin
 		margin: HTMLElement,
 		sourceSpan: HTMLElement,
 		_sidenoteIndex: number,
-		clickEvent?: MouseEvent,
+		_clickEvent?: MouseEvent,
 	) {
-		if (this.spanCmView) return;
+		if (this.spanEditor) return;
 
 		// Read current text from source by matching content
 		const marginText = margin.textContent ?? "";
 		const found = this.findHtmlSidenoteInSource(marginText);
-		this.spanOriginalText = found?.text ?? sourceSpan.textContent ?? "";
+		const originalText = found?.text ?? sourceSpan.textContent ?? "";
 
 		margin.dataset.editing = "true";
 		margin.innerHTML = "";
 
-		const commitAndClose = (opts: { commit: boolean }) => {
-			const cmInner = this.spanCmView;
-			if (!cmInner) return;
-
-			const newText = cmInner.state.doc.toString();
-			const renderText = opts.commit ? newText : this.spanOriginalText;
-
-			if (this.spanOutsidePointerDown) {
-				document.removeEventListener(
-					"pointerdown",
-					this.spanOutsidePointerDown,
-					true,
-				);
-				this.spanOutsidePointerDown = undefined;
-			}
-
-			this.spanCmView = null;
-			cmInner.destroy();
-
-			margin.dataset.editing = "false";
-
-			if (opts.commit && newText !== this.spanOriginalText) {
-				this.commitHtmlSpanSidenoteText(this.spanOriginalText, newText);
-			}
-
-			margin.innerHTML = "";
-			margin.appendChild(
-				this.renderLinksToFragment(this.normalizeText(renderText)),
-			);
-
-			// Margin height changed (editor -> rendered text); restack.
-			this.scheduler.scheduleCollisions();
-		};
-
-		// Keymap: ESC cancels; Enter commits; Shift-Enter inserts newline (optional)
-		const closeKeymap = keymap.of([
-			{
-				key: "Escape",
-				run: () => {
-					commitAndClose({ commit: false });
-					return true;
-				},
-				preventDefault: true,
-			},
-			{
-				key: "Enter",
-				run: () => {
-					commitAndClose({ commit: true });
-					return true;
-				},
-				preventDefault: true,
-			},
-			{
-				key: "Shift-Enter",
-				run: (view) => {
-					view.dispatch(view.state.replaceSelection("\n"));
-					return true;
-				},
-				preventDefault: true,
-			},
-		]);
-
-		const state = EditorState.create({
-			doc: this.spanOriginalText,
-			extensions: [
-				closeKeymap,
-				sidenoteEditorTheme,
-				history(),
-				markdown(),
-				syntaxHighlighting(sidenoteHighlightStyle, { fallback: true }),
-				// Your markdown formatting hotkeys (Mod-b/i/k) if you added them:
-				markdownEditHotkeys,
-				// Keep standard CM key behavior (arrow keys, delete, etc.)
-				keymap.of(historyKeymap),
-				keymap.of(defaultKeymap),
-				EditorView.lineWrapping,
-			],
-		});
-
-		const cm = new EditorView({
-			state,
+		this.spanEditor = openInlineMarkdownEditor({
+			app: this.app,
 			parent: margin,
+			doc: originalText,
+			outsideBoundary: [margin],
+			onClose: ({ text, renderText, changed }) => {
+				this.spanEditor = null;
+				margin.dataset.editing = "false";
+
+				if (changed) {
+					this.commitHtmlSpanSidenoteText(originalText, text);
+				}
+
+				margin.innerHTML = "";
+				margin.appendChild(
+					this.renderLinksToFragment(this.normalizeText(renderText)),
+				);
+
+				// Margin height changed (editor -> rendered text); restack.
+				this.scheduler.scheduleCollisions();
+			},
 		});
-
-		cm.dom.addEventListener(
-			"focusin",
-			() => {
-				setWorkspaceActiveEditor(this.app, cm);
-			},
-			true,
-		);
-
-		cm.dom.addEventListener(
-			"focusout",
-			() => {
-				setWorkspaceActiveEditor(this.app, null);
-			},
-			true,
-		);
-
-		this.spanCmView = cm;
-		cm.dom.classList.add("sidenote-cm-editor");
-		const scroller = cm.dom.querySelector<HTMLElement>(".cm-scroller");
-		if (scroller) {
-			setCssProps(scroller, { "padding-left": "0", padding: "0" }, true);
-		}
-
-		// Click anywhere outside the margin editor => commit and close
-		this.spanOutsidePointerDown = (ev: PointerEvent) => {
-			const target = ev.target as Node | null;
-			if (!target) return;
-			if (margin.contains(target) || cm.dom.contains(target)) return;
-
-			commitAndClose({ commit: true });
-		};
-		document.addEventListener(
-			"pointerdown",
-			this.spanOutsidePointerDown,
-			true,
-		);
-
-		window.requestAnimationFrame(() => cm.focus());
 	}
 
 	private commitHtmlSpanSidenoteText(
@@ -2736,7 +2627,7 @@ export default class SidenotePlugin
 		let currentRawText = contentText;
 
 		if (editable) {
-			let popupCmView: EditorView | null = null;
+			let popupEditor: InlineEditorHandle | null = null;
 			let isEditing = false;
 
 			const renderReadOnly = () => {
@@ -2749,111 +2640,46 @@ export default class SidenotePlugin
 			};
 
 			const commitAndClosePopup = (commit: boolean) => {
-				if (!popupCmView) return;
-				const newText = popupCmView.state.doc.toString();
-				if (commit && newText !== currentRawText) {
-					if (footnoteId) {
-						this.commitFootnoteSidenoteText(footnoteId, newText);
-					} else {
-						this.commitHtmlSpanSidenoteText(currentRawText, newText);
-					}
-					currentRawText = newText;
-				}
-				popupCmView.destroy();
-				popupCmView = null;
-				isEditing = false;
-				contentEl.innerHTML = "";
-				popup.classList.remove("is-visible");
+				popupEditor?.close({ commit });
 			};
 
 			const openEditor = () => {
-				if (popupCmView) {
-					popupCmView.destroy();
-					popupCmView = null;
-				}
+				// Defensive: the content click handler bails while isEditing,
+				// so there should be no editor open here.
+				popupEditor?.close({ commit: false });
+
 				contentEl.innerHTML = "";
+				popup.classList.add("is-visible");
 				isEditing = true;
 
-				const closeKeymap = keymap.of([
-					{
-						key: "Escape",
-						run: () => {
-							commitAndClosePopup(false);
-							return true;
-						},
-						preventDefault: true,
-					},
-					{
-						key: "Enter",
-						run: () => {
-							commitAndClosePopup(true);
-							return true;
-						},
-						preventDefault: true,
-					},
-					{
-						key: "Shift-Enter",
-						run: (view) => {
-							view.dispatch(view.state.replaceSelection("\n"));
-							return true;
-						},
-						preventDefault: true,
-					},
-				]);
-
-				const state = EditorState.create({
-					doc: currentRawText,
-					extensions: [
-						closeKeymap,
-						sidenoteEditorTheme,
-						history(),
-						markdown(),
-						syntaxHighlighting(sidenoteHighlightStyle, { fallback: true }),
-						markdownEditHotkeys,
-						keymap.of(historyKeymap),
-						keymap.of(defaultKeymap),
-						EditorView.lineWrapping,
-					],
-				});
-
-				popupCmView = new EditorView({
-					state,
+				popupEditor = openInlineMarkdownEditor({
+					app: this.app,
 					parent: contentEl,
-				});
+					doc: currentRawText,
+					// The popup installs its own document-level click handler
+					// further down; the editor's would double-fire.
+					outsideBoundary: null,
+					stopKeydownPropagation: true,
+					onClose: ({ text, changed }) => {
+						popupEditor = null;
 
-				popupCmView.dom.classList.add("sidenote-cm-editor");
+						if (changed) {
+							if (footnoteId) {
+								this.commitFootnoteSidenoteText(footnoteId, text);
+							} else {
+								this.commitHtmlSpanSidenoteText(
+									currentRawText,
+									text,
+								);
+							}
+							currentRawText = text;
+						}
 
-				popupCmView.dom.addEventListener(
-					"focusin",
-					() => {
-						setWorkspaceActiveEditor(this.app, popupCmView);
+						isEditing = false;
+						contentEl.innerHTML = "";
+						popup.classList.remove("is-visible");
 					},
-					true,
-				);
-
-				popupCmView.dom.addEventListener(
-					"focusout",
-					() => {
-						setWorkspaceActiveEditor(this.app, null);
-					},
-					true,
-				);
-
-				popupCmView.dom.addEventListener("keydown", (e) => {
-					e.stopPropagation();
 				});
-
-				const scroller =
-					popupCmView.dom.querySelector<HTMLElement>(".cm-scroller");
-				if (scroller) {
-					setCssProps(
-						scroller,
-						{ "padding-left": "0", padding: "0" },
-						true,
-					);
-				}
-
-				window.requestAnimationFrame(() => popupCmView?.focus());
 			};
 
 			// Click on content: if clicking a link, let it open; otherwise start editing
@@ -2905,7 +2731,7 @@ export default class SidenotePlugin
 					popup.classList.add("is-visible");
 					renderReadOnly();
 				} else {
-					if (popupCmView) {
+					if (popupEditor) {
 						commitAndClosePopup(true);
 					} else {
 						popup.classList.remove("is-visible");
@@ -2922,7 +2748,7 @@ export default class SidenotePlugin
 					!popup.contains(e.target as Node) &&
 					!icon.contains(e.target as Node)
 				) {
-					if (popupCmView) {
+					if (popupEditor) {
 						commitAndClosePopup(true);
 					} else {
 						popup.classList.remove("is-visible");
@@ -2933,10 +2759,7 @@ export default class SidenotePlugin
 
 			(wrapper as SidenoteWrapperElement)._popupCleanup = () => {
 				document.removeEventListener("click", onOutsideClick, true);
-				if (popupCmView) {
-					popupCmView.destroy();
-					popupCmView = null;
-				}
+				popupEditor?.close({ commit: false });
 				popup.remove();
 			};
 
