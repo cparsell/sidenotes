@@ -26,6 +26,13 @@ import {
 } from "./reading-mode";
 import type { SidenoteWidgetHost } from "./widget-host";
 import { registerSidenoteCommands } from "./commands";
+import { setupMarginNotePopup } from "./margin-note-popup";
+import {
+	type SidenoteMarginElement,
+	type SidenoteWrapperElement,
+	removeReadingModeMarkup,
+	runPopupCleanup,
+} from "./teardown";
 import {
 	applyRootMetrics,
 	calculateMode,
@@ -54,20 +61,6 @@ import {
 } from "./inline-editor";
 
 type CleanupFn = () => void;
-
-/** A margin element carrying the teardown for whatever was mounted inside it. */
-interface SidenoteMarginElement extends HTMLElement {
-	_sidenoteCleanup?: () => void;
-}
-
-/**
- * Popup-mode margin notes append their popup to document.body and register a
- * document-level click listener, so removing the wrapper is not enough to
- * clean them up — the teardown has to be invoked explicitly.
- */
-interface SidenoteWrapperElement extends HTMLElement {
-	_popupCleanup?: () => void;
-}
 
 // ======================================================
 // ================= Main Plugin Class ==================
@@ -337,22 +330,30 @@ export default class SidenotePlugin
 	}
 
 	/**
-	 * Run and clear a wrapper's popup teardown, if it has one. Popup-mode
-	 * margin notes live on document.body with a document-level click listener,
-	 * so they outlive their wrapper unless this is called.
+	 * Convert a margin note into an inline icon plus a click-to-open popup.
+	 *
+	 * A delegate rather than a direct import at the call sites because three
+	 * separate host interfaces require it — reading mode, editing mode and the
+	 * CM6 widget all build margin notes.
 	 */
-	private runPopupCleanup(wrapper: Element) {
-		const snWrapper = wrapper as SidenoteWrapperElement;
-		if (!snWrapper._popupCleanup) return;
-		// cleanupView() runs from onunload, so a throw here would abort the
-		// rest of the teardown and leave observers and listeners attached.
-		try {
-			snWrapper._popupCleanup();
-		} catch (error) {
-			console.error("Sidenote plugin: popup cleanup failed", error);
-		}
-		delete snWrapper._popupCleanup;
+	public setupMarginNotePopup(
+		wrapper: HTMLElement,
+		margin: HTMLElement,
+		contentText: string,
+		editable: boolean = false,
+		footnoteId?: string,
+	) {
+		const cleanup = setupMarginNotePopup(
+			this,
+			wrapper,
+			margin,
+			contentText,
+			editable,
+			footnoteId,
+		);
+		(wrapper as SidenoteWrapperElement)._popupCleanup = cleanup;
 	}
+
 
 	private cleanupView(view: MarkdownView | null) {
 		if (!view) return;
@@ -364,7 +365,7 @@ export default class SidenotePlugin
 			cmRoot
 				.querySelectorAll("span.sidenote-number")
 				.forEach((wrapper) => {
-					this.runPopupCleanup(wrapper);
+					runPopupCleanup(wrapper);
 					const parent = wrapper.parentNode;
 					if (!parent) return;
 					// Move the original span.sidenote back before the wrapper
@@ -386,7 +387,7 @@ export default class SidenotePlugin
 		);
 		if (readingRoot) {
 			readingRoot.querySelectorAll("span.sidenote-number").forEach((n) => {
-				this.runPopupCleanup(n);
+				runPopupCleanup(n);
 				n.remove();
 			});
 			readingRoot
@@ -525,7 +526,7 @@ export default class SidenotePlugin
 			".markdown-reading-view",
 		);
 		if (readingRoot) {
-			this.removeAllSidenoteMarkupFromReadingMode(readingRoot);
+			removeReadingModeMarkup(this, readingRoot);
 			readingRoot.dataset.sidenoteMode = "";
 			readingRoot.dataset.hasSidenotes = "";
 		}
@@ -742,7 +743,7 @@ export default class SidenotePlugin
 		// For incremental processing (new sections scrolled into view), keep
 		// existing sidenotes and only wrap the new unwrapped refs.
 		if (isFullRefresh) {
-			this.removeAllSidenoteMarkupFromReadingMode(readingRoot);
+			removeReadingModeMarkup(this, readingRoot);
 			// Everything is about to be renumbered from scratch, so the
 			// per-heading counters have to start over too. Without this they
 			// carry over from the previous pass and every re-render pushes the
@@ -848,59 +849,6 @@ export default class SidenotePlugin
 		});
 	}
 
-	private removeAllSidenoteMarkupFromReadingMode(root: HTMLElement) {
-		const wrappers = root.querySelectorAll<HTMLElement>(
-			"span.sidenote-number",
-		);
-
-		for (const wrapper of Array.from(wrappers)) {
-			this.runPopupCleanup(wrapper);
-
-			// Find the original element inside
-			const sidenoteSpan =
-				wrapper.querySelector<HTMLElement>("span.sidenote");
-			const footnoteSup = wrapper.querySelector<HTMLElement>(
-				"sup.footnote-ref, sup[class*='footnote'], sup[data-footnote-id]",
-			);
-
-			const originalEl = sidenoteSpan ?? footnoteSup;
-
-			// Restore footnote link visibility if needed
-			if (footnoteSup) {
-				const link = footnoteSup.querySelector<HTMLElement>("a");
-				if (link) {
-					link.classList.remove("sidenote-fn-link-hidden");
-				}
-			}
-
-			// Clean up margin
-			const margin = wrapper.querySelector<HTMLElement>(
-				"small.sidenote-margin",
-			);
-			if (margin) {
-				const snMargin = margin as SidenoteMarginElement;
-				if (snMargin._sidenoteCleanup) {
-					snMargin._sidenoteCleanup();
-					delete snMargin._sidenoteCleanup;
-				}
-				this.unobserveSidenoteVisibility(margin);
-				margin.remove();
-			}
-
-			// Unwrap original element
-			if (originalEl && wrapper.parentNode) {
-				wrapper.parentNode.insertBefore(originalEl, wrapper);
-			}
-
-			wrapper.remove();
-		}
-		// Also remove any print-only sidenote elements
-		root.querySelectorAll(".sidenote-print").forEach((el) => el.remove());
-		// …and un-hide anything print export hid
-		root
-			.querySelectorAll(".sidenote-print-hidden")
-			.forEach((el) => el.classList.remove("sidenote-print-hidden"));
-	}
 
 	/**
 	 * True when the active markdown view is showing rendered preview.
@@ -1540,42 +1488,6 @@ export default class SidenotePlugin
 		buildEditingHtmlSidenotes(this, cmRoot, mode);
 	}
 
-	/**
-	 * Remove all sidenote markup (wrappers and margins) so we can renumber from scratch.
-	 * This unwraps the original span.sidenote elements and footnote ref spans.
-	 */
-	public removeAllSidenoteMarkup(root: HTMLElement) {
-		const wrappers = root.querySelectorAll<HTMLElement>(
-			"span.sidenote-number",
-		);
-
-		for (const wrapper of Array.from(wrappers)) {
-			this.runPopupCleanup(wrapper);
-
-			const sidenoteSpan =
-				wrapper.querySelector<HTMLElement>("span.sidenote");
-
-			const margin = wrapper.querySelector<HTMLElement>(
-				"small.sidenote-margin",
-			);
-			if (margin) {
-				// Call cleanup if it exists
-				const snMargin = margin as SidenoteMarginElement;
-				if (snMargin._sidenoteCleanup) {
-					snMargin._sidenoteCleanup();
-					delete snMargin._sidenoteCleanup;
-				}
-				this.unobserveSidenoteVisibility(margin);
-				margin.remove();
-			}
-
-			if (sidenoteSpan && wrapper.parentNode) {
-				wrapper.parentNode.insertBefore(sidenoteSpan, wrapper);
-			}
-
-			wrapper.remove();
-		}
-	}
 
 	// ==================== Text Normalization ====================
 
@@ -1710,7 +1622,7 @@ export default class SidenotePlugin
 		});
 	}
 
-	private commitHtmlSpanSidenoteText(
+	public commitHtmlSpanSidenoteText(
 		originalText: string,
 		newText: string,
 	) {
@@ -1761,7 +1673,7 @@ export default class SidenotePlugin
 		this.isEditingMargin = false;
 	}
 
-	private commitFootnoteSidenoteText(footnoteId: string, newText: string) {
+	public commitFootnoteSidenoteText(footnoteId: string, newText: string) {
 		// Same reasoning as commitHtmlSpanSidenoteText: this is reachable from
 		// a margin-note popup opened in reading mode.
 		if (this.isPreviewMode()) {
@@ -1825,248 +1737,5 @@ export default class SidenotePlugin
 		return renderLinksToFragment(text, this.app);
 	}
 
-	/**
-	 * Convert a margin note wrapper to popup mode:
-	 * hide the margin, show an ⓘ icon inline, and display
-	 * content in a small popup on click.
-	 */
-	public setupMarginNotePopup(
-		wrapper: HTMLElement,
-		margin: HTMLElement,
-		contentText: string,
-		editable: boolean = false,
-		footnoteId?: string,
-	) {
-		wrapper.classList.add("popup-mode");
-		margin.classList.add("popup-mode-margin");
 
-		margin.innerHTML = "";
-		const icon = createSpan();
-		icon.className = "margin-note-icon";
-		icon.setAttribute("aria-label", "Show margin note");
-
-		const iconSetting = this.settings.popupIcon || "ⓘ";
-
-		if (
-			iconSetting.endsWith(".png") ||
-			iconSetting.endsWith(".svg") ||
-			iconSetting.endsWith(".jpg")
-		) {
-			// Image file from plugin assets folder
-			const img = createEl("img");
-			img.src = this.app.vault.adapter.getResourcePath(
-				`${this.manifest.dir}/assets/${iconSetting}`,
-			);
-			img.className = "margin-note-icon-img";
-			icon.appendChild(img);
-		} else {
-			// Unicode character
-			icon.textContent = iconSetting;
-		}
-
-		margin.appendChild(icon);
-
-		const popup = createDiv();
-		popup.className = "margin-note-popup";
-
-		const closeBtn = createSpan();
-		closeBtn.className = "margin-note-popup-close";
-		closeBtn.textContent = "✕";
-		closeBtn.addEventListener("click", (e) => {
-			e.stopPropagation();
-			popup.classList.remove("is-visible");
-		});
-		popup.appendChild(closeBtn);
-
-		const contentEl = createDiv();
-		contentEl.className = "margin-note-popup-content";
-
-		let currentRawText = contentText;
-
-		if (editable) {
-			let popupEditor: InlineEditorHandle | null = null;
-			let isEditing = false;
-
-			const renderReadOnly = () => {
-				contentEl.innerHTML = "";
-				contentEl.appendChild(
-					this.renderLinksToFragment(this.normalizeText(currentRawText)),
-				);
-				contentEl.classList.add("margin-note-popup-content--readable");
-				isEditing = false;
-			};
-
-			const commitAndClosePopup = (commit: boolean) => {
-				popupEditor?.close({ commit });
-			};
-
-			const openEditor = () => {
-				// Defensive: the content click handler bails while isEditing,
-				// so there should be no editor open here.
-				popupEditor?.close({ commit: false });
-
-				contentEl.innerHTML = "";
-				popup.classList.add("is-visible");
-				isEditing = true;
-
-				popupEditor = openInlineMarkdownEditor({
-					app: this.app,
-					parent: contentEl,
-					doc: currentRawText,
-					// The popup installs its own document-level click handler
-					// further down; the editor's would double-fire.
-					outsideBoundary: null,
-					stopKeydownPropagation: true,
-					onClose: ({ text, changed }) => {
-						popupEditor = null;
-
-						if (changed) {
-							if (footnoteId) {
-								this.commitFootnoteSidenoteText(footnoteId, text);
-							} else {
-								this.commitHtmlSpanSidenoteText(currentRawText, text);
-							}
-							currentRawText = text;
-						}
-
-						isEditing = false;
-						contentEl.innerHTML = "";
-						popup.classList.remove("is-visible");
-					},
-				});
-			};
-
-			// Click on content: if clicking a link, let it open; otherwise start editing
-			contentEl.addEventListener("click", (e) => {
-				if (isEditing) return;
-
-				const target = e.target as HTMLElement;
-				if (target.tagName === "A" || target.closest("a")) {
-					// Let the link open naturally
-					return;
-				}
-
-				e.preventDefault();
-				e.stopPropagation();
-				openEditor();
-			});
-
-			// Listen for links being clicked, close popup when that happens
-			contentEl.addEventListener(
-				"click",
-				(e) => {
-					const target = e.target as HTMLElement;
-					if (target.tagName === "A" || target.closest("a")) {
-						// Close popup when a link is clicked
-						popup.classList.remove("is-visible");
-					}
-				},
-				true,
-			);
-
-			contentEl.addEventListener("mousedown", (e) => {
-				e.stopPropagation();
-			});
-
-			icon.addEventListener("click", (e) => {
-				e.preventDefault();
-				e.stopPropagation();
-
-				const isVisible = popup.classList.contains("is-visible");
-
-				document
-					.querySelectorAll(".margin-note-popup.is-visible")
-					.forEach((el) => el.classList.remove("is-visible"));
-
-				if (!isVisible) {
-					const iconRect = icon.getBoundingClientRect();
-					popup.style.top = `${iconRect.bottom + window.scrollY + 4}px`;
-					popup.style.left = `${iconRect.left + window.scrollX}px`;
-					popup.classList.add("is-visible");
-					renderReadOnly();
-				} else {
-					if (popupEditor) {
-						commitAndClosePopup(true);
-					} else {
-						popup.classList.remove("is-visible");
-					}
-				}
-			});
-
-			icon.addEventListener("mousedown", (e) => {
-				e.stopPropagation();
-			});
-
-			const onOutsideClick = (e: MouseEvent) => {
-				if (
-					!popup.contains(e.target as Node) &&
-					!icon.contains(e.target as Node)
-				) {
-					if (popupEditor) {
-						commitAndClosePopup(true);
-					} else {
-						popup.classList.remove("is-visible");
-					}
-				}
-			};
-			document.addEventListener("click", onOutsideClick, true);
-
-			(wrapper as SidenoteWrapperElement)._popupCleanup = () => {
-				document.removeEventListener("click", onOutsideClick, true);
-				popupEditor?.close({ commit: false });
-				popup.remove();
-			};
-
-			popup.appendChild(contentEl);
-			document.body.appendChild(popup);
-			return;
-		}
-
-		// Read-only path
-		contentEl.appendChild(
-			this.renderLinksToFragment(this.normalizeText(contentText)),
-		);
-
-		popup.appendChild(contentEl);
-		document.body.appendChild(popup);
-
-		icon.addEventListener("click", (e) => {
-			e.preventDefault();
-			e.stopPropagation();
-
-			const isVisible = popup.classList.contains("is-visible");
-
-			document
-				.querySelectorAll(".margin-note-popup.is-visible")
-				.forEach((el) => el.classList.remove("is-visible"));
-
-			if (!isVisible) {
-				const iconRect = icon.getBoundingClientRect();
-				popup.style.top = `${iconRect.bottom + window.scrollY + 4}px`;
-				popup.style.left = `${iconRect.left + window.scrollX}px`;
-				popup.classList.add("is-visible");
-			}
-		});
-
-		icon.addEventListener("mousedown", (e) => {
-			e.stopPropagation();
-		});
-
-		const onOutsideClick = (e: MouseEvent) => {
-			if (
-				!popup.contains(e.target as Node) &&
-				!icon.contains(e.target as Node)
-			) {
-				popup.classList.remove("is-visible");
-			}
-		};
-		document.addEventListener("click", onOutsideClick, true);
-
-		(
-			wrapper as HTMLElement & { _popupCleanup?: () => void }
-		)._popupCleanup = () => {
-			document.removeEventListener("click", onOutsideClick, true);
-			popup.remove();
-		};
-	}
 }

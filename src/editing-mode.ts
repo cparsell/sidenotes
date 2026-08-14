@@ -23,6 +23,10 @@ import {
 	updateSidenotePositioning,
 } from "./layout-math";
 import { updateCollisionsIn } from "./collision-runner";
+import {
+	type TeardownHooks,
+	removeEditingModeMarkup,
+} from "./teardown";
 import { SIDENOTE_SPAN_REGEX } from "./patterns";
 
 /**
@@ -30,7 +34,7 @@ import { SIDENOTE_SPAN_REGEX } from "./patterns";
  * implements, not a snapshot — `isMutating` and `lastSidenoteCount` are
  * written back, and the document-state fields change between passes.
  */
-export interface EditingModeContext {
+export interface EditingModeContext extends TeardownHooks {
 	readonly app: App;
 	readonly manifest: PluginManifest;
 	readonly settings: SidenoteSettings;
@@ -44,7 +48,6 @@ export interface EditingModeContext {
 	getMarkdownView(): MarkdownView | null;
 	getDocumentPosition(el: HTMLElement): number | null;
 	observeSidenoteVisibility(margin: HTMLElement): void;
-	removeAllSidenoteMarkup(root: HTMLElement): void;
 	setupMarginEditing(
 		margin: HTMLElement,
 		sourceSpan: HTMLElement,
@@ -123,7 +126,7 @@ export function buildEditingHtmlSidenotes(
 	// If there are new sidenotes to process, we need to renumber everything
 	if (unwrappedSpans.length > 0 && mode !== "hidden") {
 		// Remove all existing sidenote wrappers and margins to renumber from scratch
-		ctx.removeAllSidenoteMarkup(cmRoot);
+		removeEditingModeMarkup(ctx, cmRoot);
 
 		// Get the source content to determine correct indices
 		const view = ctx.getMarkdownView();
