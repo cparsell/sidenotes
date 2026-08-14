@@ -28,6 +28,12 @@ import type { SidenoteWidgetHost } from "./widget-host";
 import { registerSidenoteCommands } from "./commands";
 import { setupMarginNotePopup } from "./margin-note-popup";
 import {
+	type SourceEdit,
+	applyEdit,
+	findFootnoteDefinitionEdit,
+	findHtmlSpanEdit,
+} from "./source-writeback";
+import {
 	type SidenoteMarginElement,
 	type SidenoteWrapperElement,
 	removeReadingModeMarkup,
@@ -900,91 +906,6 @@ export default class SidenotePlugin
 			: editorText || viewData || cached || "";
 	}
 
-	private commitReadingModeFootnoteText(
-		footnoteId: string,
-		newText: string,
-	) {
-		const view = this.getMarkdownView();
-		const file = view?.file ?? this.app.workspace.getActiveFile();
-		if (!file) return;
-
-		const rewrite = (content: string): string | null => {
-			const escapedId = footnoteId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-			const regex = new RegExp(
-				`^(\\[\\^${escapedId}\\]:\\s*)(.+(?:\\n(?:[ \\t]+.+)*)?)$`,
-				"gm",
-			);
-
-			const match = regex.exec(content);
-			if (!match) return null; // no change
-
-			const prefix = match[1] ?? "";
-			const before = content.slice(0, match.index + prefix.length);
-			const after = content.slice(match.index + match[0].length);
-
-			return before + newText + after;
-		};
-
-		void this.app.vault.process(
-			file,
-			(content) => rewrite(content) ?? content,
-		);
-
-		// Patch the cache in place so re-opening the sidenote before the async
-		// file write lands reads the new text rather than the stale source.
-		// Only when the cache is this file's — patching another file's cached
-		// content would corrupt it.
-		if (this.cachedSourcePath === file.path && this.cachedSourceContent) {
-			const patched = rewrite(this.cachedSourceContent);
-			if (patched) this.cachedSourceContent = patched;
-		}
-	}
-
-	/**
-	 * Reading-mode counterpart to `commitHtmlSpanSidenoteText`. Same rewrite,
-	 * but through `vault.process` — see `isPreviewMode` for why the editor
-	 * path cannot be used here.
-	 */
-	private commitReadingModeHtmlSpanText(
-		originalText: string,
-		newText: string,
-	) {
-		const view = this.getMarkdownView();
-		const file = view?.file ?? this.app.workspace.getActiveFile();
-		if (!file) return;
-
-		const rewrite = (content: string): string | null => {
-			const regex = SIDENOTE_SPAN_REGEX();
-			let match: RegExpExecArray | null;
-
-			while ((match = regex.exec(content)) !== null) {
-				if (match[1] !== originalText) continue;
-
-				// Preserve the opening tag verbatim so per-note class overrides
-				// (`sidenote right`, `sidenote margin-note left`) survive.
-				const openingTag = match[0].substring(
-					0,
-					match[0].indexOf(">") + 1,
-				);
-				return (
-					content.slice(0, match.index) +
-					`${openingTag}${newText}</span>` +
-					content.slice(match.index + match[0].length)
-				);
-			}
-			return null;
-		};
-
-		void this.app.vault.process(
-			file,
-			(content) => rewrite(content) ?? content,
-		);
-
-		if (this.cachedSourcePath === file.path && this.cachedSourceContent) {
-			const patched = rewrite(this.cachedSourceContent);
-			if (patched) this.cachedSourceContent = patched;
-		}
-	}
 
 	// ==================== Mode Calculation ====================
 
@@ -1622,87 +1543,82 @@ export default class SidenotePlugin
 		});
 	}
 
-	public commitHtmlSpanSidenoteText(
-		originalText: string,
-		newText: string,
+
+
+	/**
+	 * Write a located edit back to the note's source.
+	 *
+	 * Two mechanisms, chosen by mode. In editing mode the edit goes through the
+	 * editor so it joins the undo history; in reading mode there is no live
+	 * editor behind the view, so `editor.replaceRange` would write into a
+	 * CodeMirror document Obsidian discards on the next mode switch — the edit
+	 * would render and then silently vanish. That path writes the file.
+	 */
+	private commitSourceEdit(
+		locate: (content: string) => SourceEdit | null,
 	) {
-		// Reading mode (and popups opened from it) must not write via the
-		// editor — the change would render but never reach the file.
+		const view = this.getMarkdownView();
+
 		if (this.isPreviewMode()) {
-			this.commitReadingModeHtmlSpanText(originalText, newText);
+			const file = view?.file ?? this.app.workspace.getActiveFile();
+			if (!file) return;
+
+			void this.app.vault.process(file, (content) => {
+				const edit = locate(content);
+				return edit ? applyEdit(content, edit) : content;
+			});
+
+			// Patch the cache in place so re-opening the sidenote before the
+			// async file write lands reads the new text. Only when the cache
+			// belongs to this file — patching another file's would corrupt it.
+			if (this.cachedSourcePath === file.path && this.cachedSourceContent) {
+				const edit = locate(this.cachedSourceContent);
+				if (edit) {
+					this.cachedSourceContent = applyEdit(
+						this.cachedSourceContent,
+						edit,
+					);
+				}
+			}
 			return;
 		}
 
-		const view = this.getMarkdownView();
 		if (!view?.editor) return;
-
 		const editor = view.editor;
 
-		const scroller =
-			this.cmRoot?.querySelector<HTMLElement>(".cm-scroller");
+		const edit = locate(editor.getValue());
+		if (!edit) return;
+
+		// editor.replaceRange can scroll the view; put it back.
+		const scroller = this.cmRoot?.querySelector<HTMLElement>(".cm-scroller");
 		const scrollTop = scroller?.scrollTop ?? 0;
 
 		this.isEditingMargin = true;
-
-		const content = editor.getValue();
-		const regex = SIDENOTE_SPAN_REGEX();
-		let match: RegExpExecArray | null;
-
-		while ((match = regex.exec(content)) !== null) {
-			if (match[1] === originalText) {
-				const from = editor.offsetToPos(match.index);
-				const to = editor.offsetToPos(match.index + match[0].length);
-
-				const originalTag = match[0].substring(
-					0,
-					match[0].indexOf(">") + 1,
-				);
-				const newSpan = `${originalTag}${newText}</span>`;
-
-				this.isMutating = true;
-				try {
-					editor.replaceRange(newSpan, from, to);
-				} finally {
-					this.isMutating = false;
-				}
-				break;
-			}
+		this.isMutating = true;
+		try {
+			editor.replaceRange(
+				edit.replacement,
+				editor.offsetToPos(edit.from),
+				editor.offsetToPos(edit.to),
+			);
+		} finally {
+			this.isMutating = false;
 		}
 
 		if (scroller) scroller.scrollTop = scrollTop;
 		this.isEditingMargin = false;
 	}
 
-	public commitFootnoteSidenoteText(footnoteId: string, newText: string) {
-		// Same reasoning as commitHtmlSpanSidenoteText: this is reachable from
-		// a margin-note popup opened in reading mode.
-		if (this.isPreviewMode()) {
-			this.commitReadingModeFootnoteText(footnoteId, newText);
-			return;
-		}
-
-		const view = this.getMarkdownView();
-		if (!view?.editor) return;
-
-		const editor = view.editor;
-		const content = editor.getValue();
-
-		const defRegex = new RegExp(
-			`^(\\[\\^${footnoteId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\]:\\s*)(.*)$`,
-			"m",
+	public commitHtmlSpanSidenoteText(originalText: string, newText: string) {
+		this.commitSourceEdit((content) =>
+			findHtmlSpanEdit(content, originalText, newText),
 		);
-		const match = content.match(defRegex);
-		if (!match || match.index === undefined || !match[1]) return;
+	}
 
-		const from = editor.offsetToPos(match.index + match[1].length);
-		const to = editor.offsetToPos(match.index + match[0].length);
-
-		this.isMutating = true;
-		try {
-			editor.replaceRange(newText, from, to);
-		} finally {
-			this.isMutating = false;
-		}
+	public commitFootnoteSidenoteText(footnoteId: string, newText: string) {
+		this.commitSourceEdit((content) =>
+			findFootnoteDefinitionEdit(content, footnoteId, newText),
+		);
 	}
 
 	// ==================== Collision Avoidance ====================
@@ -1739,3 +1655,4 @@ export default class SidenotePlugin
 
 
 }
+

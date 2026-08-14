@@ -543,7 +543,18 @@
 	letter-spacing: normal;
 }
 
-.sidenote-margin:hover:not([data-editing="true"]) {
+/* Hovering the sidenote itself.
+
+   The .cm-line variant exists purely for specificity. The editing-mode
+   footnote margin rule further down
+   (.cm-line .sidenote-number[data-footnote-id] .sidenote-margin) also sets
+   `color` and ties with — or beats — the plain selector here, so on source
+   order alone it wins and the hover tint never appears for footnotes. Same
+   selector shaping the per-sidenote side overrides use above. */
+.sidenote-margin:hover:not([data-editing="true"]),
+.cm-line
+	.sidenote-number[data-footnote-id]
+	.sidenote-margin:hover:not([data-editing="true"]) {
 	color: var(--sn-hover-color, var(--text-muted));
 }
 
@@ -790,8 +801,13 @@
 	box-shadow: var(--sn-badge-shadow);
 }
 
-/* Highlight sidenote when hovering over number in the note text */
-.sidenote-number:hover .sidenote-margin:not([data-editing="true"]) {
+/* Highlight sidenote when hovering over number in the note text.
+   Second selector is the specificity-matched footnote variant — see the note
+   on .sidenote-margin:hover above. */
+.sidenote-number:hover .sidenote-margin:not([data-editing="true"]),
+.cm-line
+	.sidenote-number[data-footnote-id]:hover
+	.sidenote-margin:not([data-editing="true"]) {
 	color: var(--sn-hover-color, var(--text-muted));
 }
 
