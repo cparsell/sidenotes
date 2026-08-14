@@ -10,6 +10,7 @@ import { applyCssVariables, clearCssVariables } from "./css-vars";
 import type { SidenoteWidgetHost } from "./widget-host";
 import { registerSidenoteCommands } from "./commands";
 import {
+	type SidenoteMode,
 	applyLineOffset,
 	applyRootMetrics,
 	calculateMode,
@@ -45,6 +46,27 @@ import {
 } from "./inline-editor";
 
 type CleanupFn = () => void;
+
+/** A sidenote span or footnote reference in the reading view, ready to wrap. */
+interface ReadingItem {
+	el: HTMLElement;
+	rect: DOMRect;
+	type: "sidenote" | "footnote";
+	text: string;
+	rawText?: string;
+	/** Position among all sidenote spans in the document (HTML format). */
+	docIndex?: number;
+	footnoteId?: string;
+	footnoteHtml?: HTMLElement;
+}
+
+interface ReadingItemCollection {
+	items: ReadingItem[];
+	/** Source-order footnote IDs, for mapping rendered numbers back. */
+	sourceRefOrder: string[];
+	/** Sidenote number per document position; 0 for margin notes. */
+	htmlNumberByIndex: number[];
+}
 
 // Near the top of the file, with your other type definitions
 interface SidenoteMarginElement extends HTMLElement {
@@ -709,76 +731,17 @@ export default class SidenotePlugin
 		return formatNumber(num, this.settings.numberStyle);
 	}
 
-	// ==================== Reading Mode Processing ====================
-
-	private processReadingModeSidenotes(element: HTMLElement) {
-		const view = this.getMarkdownView();
-		if (!view) return;
-
-		const readingRoot = view.containerEl.querySelector<HTMLElement>(
-			".markdown-reading-view",
-		);
-		if (!readingRoot) return;
-
-		// Check if there are footnote refs or sidenote spans not yet wrapped
-		const unwrappedFootnotes = readingRoot.querySelectorAll(
-			"sup.footnote-ref:not(.sidenote-number sup), sup[id^='fnref-']:not(.sidenote-number sup), sup[data-footnote-id]:not(.sidenote-number sup)",
-		);
-		const unwrappedSpans = readingRoot.querySelectorAll(
-			"span.sidenote:not(.sidenote-number span.sidenote)",
-		);
-		const hasUnwrapped =
-			unwrappedFootnotes.length > 0 || unwrappedSpans.length > 0;
-
-		const hasAnyMargins =
-			readingRoot.querySelector("small.sidenote-margin") !== null;
-
-		// If nothing new to wrap and no full refresh needed, still recompute positioning.
-		// This is required when settings like sidenoteAnchor / sidenotePosition change.
-		if (!this.needsReadingModeRefresh && !hasUnwrapped) {
-			if (hasAnyMargins) {
-				window.requestAnimationFrame(() => {
-					if (!readingRoot.isConnected) return;
-
-					// Force reflow so measurements are accurate
-					void readingRoot.offsetHeight;
-
-					// Re-apply global offset based on current settings (text vs edge)
-					updateSidenotePositioning(this.settings, this.documentSidenoteSides, readingRoot, true);
-
-					// Re-apply per-wrapper corrections (li/blockquote/callout)
-					correctIndentedSidenotePositions(this.settings, readingRoot);
-
-					// Optional but usually good: re-resolve collisions
-					updateCollisionsIn(this.settings, readingRoot);
-				});
-			}
-			return;
-		}
-
-		const isFullRefresh = this.needsReadingModeRefresh;
-
-		const width = readingRoot.getBoundingClientRect().width;
-		const mode = applyRootMetrics(this.settings, readingRoot, width);
-
-		if (mode === "hidden") {
-			return;
-		}
-
-		// Only do full teardown on explicit refresh (file change, settings change).
-		// For incremental processing (new sections scrolled into view), keep
-		// existing sidenotes and only wrap the new unwrapped refs.
-		if (isFullRefresh) {
-			this.removeAllSidenoteMarkupFromReadingMode(readingRoot);
-			// Everything is about to be renumbered from scratch, so the
-			// per-heading counters have to start over too. Without this they
-			// carry over from the previous pass and every re-render pushes the
-			// numbering higher — 1,2,3 becomes 21,22,23 becomes 61,62,63.
-			// Incremental passes deliberately keep the counters, since they
-			// only number the newly-mounted sections.
-			this.headingSidenoteNumbers.clear();
-		}
-
+	/**
+	 * Find every sidenote span / footnote reference in the reading view that
+	 * still needs wrapping, in document order.
+	 *
+	 * Returns `null` when the pass cannot proceed at all — footnote format with
+	 * no resolvable source text or no definitions, where the source is fetched
+	 * asynchronously and processing is rescheduled.
+	 */
+	private collectReadingItems(
+		readingRoot: HTMLElement,
+	): ReadingItemCollection | null {
 		// Collect items based on the sidenoteFormat setting
 		// Note: footnoteHtml is optional and only used for footnotes
 		const allItems: {
@@ -818,164 +781,147 @@ export default class SidenotePlugin
 		const htmlNumberByIndex: number[] = [];
 
 		if (useHtmlSidenotes) {
-			// EVERY sidenote span in the reading root, wrapped or not, in
-			// document order.
-			//
-			// An incremental pass only *processes* the unwrapped ones, but it
-			// still has to know each span's position among all of them. Keying
-			// off the filtered list instead was a single bug with two faces:
-			// editing the 3rd sidenote left it alone in the work list, so it was
-			// renumbered 1 and paired with htmlSidenoteRawTexts[0] — the first
-			// sidenote's source text, which then showed up in its editor.
-			const allSpans = Array.from(
-				readingRoot.querySelectorAll<HTMLElement>("span.sidenote"),
-			);
+		// EVERY sidenote span in the reading root, wrapped or not, in
+		// document order.
+		//
+		// An incremental pass only *processes* the unwrapped ones, but it
+		// still has to know each span's position among all of them. Keying
+		// off the filtered list instead was a single bug with two faces:
+		// editing the 3rd sidenote left it alone in the work list, so it was
+		// renumbered 1 and paired with htmlSidenoteRawTexts[0] — the first
+		// sidenote's source text, which then showed up in its editor.
+		const allSpans = Array.from(
+			readingRoot.querySelectorAll<HTMLElement>("span.sidenote"),
+		);
 
-			let seq = 0;
-			allSpans.forEach((el, docIndex) => {
-				htmlNumberByIndex[docIndex] = isMarginNote(el) ? 0 : ++seq;
-			});
+		let seq = 0;
+		allSpans.forEach((el, docIndex) => {
+			htmlNumberByIndex[docIndex] = isMarginNote(el) ? 0 : ++seq;
+		});
 
-			allSpans.forEach((el, docIndex) => {
-				// Already wrapped by an earlier pass — nothing to do.
-				if (el.parentElement?.classList.contains("sidenote-number")) {
-					return;
-				}
-				allItems.push({
-					el,
-					rect: el.getBoundingClientRect(),
-					type: "sidenote",
-					text: el.textContent ?? "",
-					rawText:
-						htmlSidenoteRawTexts[docIndex] ?? el.textContent ?? "",
-					docIndex,
-				});
+		allSpans.forEach((el, docIndex) => {
+			// Already wrapped by an earlier pass — nothing to do.
+			if (el.parentElement?.classList.contains("sidenote-number")) {
+				return;
+			}
+			allItems.push({
+				el,
+				rect: el.getBoundingClientRect(),
+				type: "sidenote",
+				text: el.textContent ?? "",
+				rawText:
+					htmlSidenoteRawTexts[docIndex] ?? el.textContent ?? "",
+				docIndex,
 			});
+		});
 		}
 
 		const sourceRefOrder: string[] = [];
 
 		if (useFootnotes) {
-			// Get footnote definitions from SOURCE MARKDOWN, not from rendered HTML.
-			// Obsidian uses virtualized rendering — the <section class="footnotes">
-			// may not exist in the DOM for long documents where it's off-screen.
+		// Get footnote definitions from SOURCE MARKDOWN, not from rendered HTML.
+		// Obsidian uses virtualized rendering — the <section class="footnotes">
+		// may not exist in the DOM for long documents where it's off-screen.
 
-			let sourceContent = this.getSourceText();
+		let sourceContent = this.getSourceText();
 
-			// If still empty, try async cachedRead as last resort
-			if (!sourceContent) {
-				const file =
-					this.getMarkdownView()?.file ??
-					this.app.workspace.getActiveFile();
-				if (file) {
-					void this.app.vault.cachedRead(file).then((text) => {
-						const current =
-							this.app.workspace.getActiveViewOfType(MarkdownView);
-						if (!current || current.file?.path !== file.path) return;
-						// Cache the result so the next call succeeds synchronously
-						this.setCachedSource(text, file.path);
-						this.scheduleFootnoteProcessing();
-					});
-				}
-				if (!useHtmlSidenotes) return;
-			}
-
-			const definitions = this.parseFootnoteDefinitions(sourceContent);
-
-			// Build a map from rendered order to source ID
-			sourceRefOrder.push(...buildSourceRefOrder(sourceContent));
-			if (definitions.size === 0) {
-				if (!useHtmlSidenotes) return;
-			}
-
-			// Find all footnote references in the rendered HTML
-			const footnoteSups = readingRoot.querySelectorAll<HTMLElement>(
-				// Obsidian preview often uses sup#fnref-* with a.footnote-link
-				"sup.footnote-ref, sup[class*='footnote'], sup[id^='fnref-'], sup[data-footnote-id], a.footnote-link",
-			);
-
-			const processedBaseIds = new Set<string>();
-
-			for (const sup of Array.from(footnoteSups)) {
-				if (sup.closest(".sidenote-number")) continue;
-				// Skip elements inside the footnotes section (these are backrefs, not refs)
-				if (sup.closest("section.footnotes, .footnotes")) continue;
-
-				// Extract the base footnote ID from the rendered markup
-				let baseId = resolveFootnoteBaseId(sup);
-
-				if (!baseId || processedBaseIds.has(baseId)) continue;
-
-				// Map Obsidian's rendered sequential number back to the source footnote ID
-				const originalBaseId = baseId;
-				const renderedNum = parseInt(baseId, 10);
-				if (
-					!isNaN(renderedNum) &&
-					renderedNum >= 1 &&
-					renderedNum <= sourceRefOrder.length
-				) {
-					const sourceId = sourceRefOrder[renderedNum - 1];
-					if (sourceId && definitions.has(sourceId)) {
-						baseId = sourceId;
-					}
-				}
-
-				// Mark both original and remapped IDs as processed
-				if (processedBaseIds.has(baseId)) continue;
-				processedBaseIds.add(originalBaseId);
-				processedBaseIds.add(baseId);
-
-				// Look up definition from SOURCE markdown
-				const footnoteText = definitions.get(baseId);
-				if (!footnoteText) continue;
-
-				// For footnotes, hide the original [1] link
-				const anchor = sup.querySelector("a");
-				if (anchor && this.settings.hideFootnoteNumbers) {
-					anchor.classList.add("sidenote-fn-link-hidden");
-				}
-
-				allItems.push({
-					el: sup,
-					rect: sup.getBoundingClientRect(),
-					type: "footnote",
-					text: footnoteText,
-					footnoteId: baseId,
-					// No footnoteHtml — render from source text instead
+		// If still empty, try async cachedRead as last resort
+		if (!sourceContent) {
+			const file =
+				this.getMarkdownView()?.file ??
+				this.app.workspace.getActiveFile();
+			if (file) {
+				void this.app.vault.cachedRead(file).then((text) => {
+					const current =
+						this.app.workspace.getActiveViewOfType(MarkdownView);
+					if (!current || current.file?.path !== file.path) return;
+					// Cache the result so the next call succeeds synchronously
+					this.setCachedSource(text, file.path);
+					this.scheduleFootnoteProcessing();
 				});
 			}
+			if (!useHtmlSidenotes) return null;
 		}
 
-		// console.log(
-		// 	"[Sidenotes] allItems:",
-		// 	allItems.length,
-		// 	allItems.map((i) => i.footnoteId),
-		// );
+		const definitions = this.parseFootnoteDefinitions(sourceContent);
 
-		// Drive the page-offset CSS from whether the *document* has sidenotes
-		// (computed from source in scanDocumentForSidenotes), not from how many
-		// sidenote elements happen to be mounted right now. Obsidian virtualizes
-		// long reading views, so `allItems` here only reflects the currently
-		// rendered section — using its length instead flipped the offset on and
-		// off as the mounted sidenotes came in and out of the DOM while scrolling.
-		readingRoot.dataset.hasSidenotes = this.documentHasSidenotes
-			? "true"
-			: "false";
-
-		if (allItems.length === 0) {
-			return;
+		// Build a map from rendered order to source ID
+		sourceRefOrder.push(...buildSourceRefOrder(sourceContent));
+		if (definitions.size === 0) {
+			if (!useHtmlSidenotes) return null;
 		}
 
-		this.needsReadingModeRefresh = false;
+		// Find all footnote references in the rendered HTML
+		const footnoteSups = readingRoot.querySelectorAll<HTMLElement>(
+			// Obsidian preview often uses sup#fnref-* with a.footnote-link
+			"sup.footnote-ref, sup[class*='footnote'], sup[id^='fnref-'], sup[data-footnote-id], a.footnote-link",
+		);
 
-		// Sort by vertical position. Items with valid rects sort by top position;
-		// items with zero rects (not yet laid out) sort by their DOM order,
-		// which querySelectorAll already preserves.
-		allItems.sort((a, b) => a.rect.top - b.rect.top);
+		const processedBaseIds = new Set<string>();
 
+		for (const sup of Array.from(footnoteSups)) {
+			if (sup.closest(".sidenote-number")) continue;
+			// Skip elements inside the footnotes section (these are backrefs, not refs)
+			if (sup.closest("section.footnotes, .footnotes")) continue;
+
+			// Extract the base footnote ID from the rendered markup
+			let baseId = resolveFootnoteBaseId(sup);
+
+			if (!baseId || processedBaseIds.has(baseId)) continue;
+
+			// Map Obsidian's rendered sequential number back to the source footnote ID
+			const originalBaseId = baseId;
+			const renderedNum = parseInt(baseId, 10);
+			if (
+				!isNaN(renderedNum) &&
+				renderedNum >= 1 &&
+				renderedNum <= sourceRefOrder.length
+			) {
+				const sourceId = sourceRefOrder[renderedNum - 1];
+				if (sourceId && definitions.has(sourceId)) {
+					baseId = sourceId;
+				}
+			}
+
+			// Mark both original and remapped IDs as processed
+			if (processedBaseIds.has(baseId)) continue;
+			processedBaseIds.add(originalBaseId);
+			processedBaseIds.add(baseId);
+
+			// Look up definition from SOURCE markdown
+			const footnoteText = definitions.get(baseId);
+			if (!footnoteText) continue;
+
+			// For footnotes, hide the original [1] link
+			const anchor = sup.querySelector("a");
+			if (anchor && this.settings.hideFootnoteNumbers) {
+				anchor.classList.add("sidenote-fn-link-hidden");
+			}
+
+			allItems.push({
+				el: sup,
+				rect: sup.getBoundingClientRect(),
+				type: "footnote",
+				text: footnoteText,
+				footnoteId: baseId,
+				// No footnoteHtml — render from source text instead
+			});
+		}
+		}
+
+
+		return { items: allItems, sourceRefOrder, htmlNumberByIndex };
+	}
+
+	/**
+	 * Wrap each collected item and build its margin, numbering as it goes.
+	 */
+	private buildReadingMargins(
+		allItems: ReadingItem[],
+		htmlNumberByIndex: number[],
+	) {
 		let num = 1;
 
-		const marginNotes: HTMLElement[] = [];
 
 		for (const item of allItems) {
 			// Determine if this is a margin note (unnumbered)
@@ -1087,9 +1033,19 @@ export default class SidenotePlugin
 			applyLineOffset(wrapper, margin, false);
 
 			this.observeSidenoteVisibility(margin);
-			marginNotes.push(margin);
-		}
+	}
 
+	}
+
+	/**
+	 * Margin notes render in the margin, so their entries in the endnote list
+	 * at the bottom of the note would be a duplicate. Hide them.
+	 */
+	private hideMarginNoteFootnoteEntries(
+		readingRoot: HTMLElement,
+		allItems: ReadingItem[],
+		sourceRefOrder: string[],
+	) {
 		// Hide margin note entries from the footnotes section
 		const footnotesSection = readingRoot.querySelector(
 			"section.footnotes ol",
@@ -1108,51 +1064,179 @@ export default class SidenotePlugin
 					}
 				}
 			}
+	}
+
+	}
+
+	/**
+	 * Position every sidenote in the reading root: line offsets, the global
+	 * offset, the per-wrapper indent correction, then collision resolution.
+	 *
+	 * This sequence was written out three times — the early-exit reposition,
+	 * the tail of a build pass, and the reading-mode layout pass — and had
+	 * already drifted: only one of them recomputed line offsets or cleared
+	 * `is-placing`.
+	 *
+	 * `recomputeLineOffsets` is only needed when margins were just built or
+	 * moved; a settings or resize reposition can skip that measurement pass.
+	 */
+	private positionReadingSidenotes(
+		readingRoot: HTMLElement,
+		opts: { recomputeLineOffsets: boolean },
+	) {
+		if (!readingRoot.isConnected) return;
+
+		// Force reflow so measurements are accurate
+		void readingRoot.offsetHeight;
+
+		if (opts.recomputeLineOffsets) {
+			const wrappers = readingRoot.querySelectorAll<HTMLElement>(
+				"span.sidenote-number",
+			);
+			for (const wrapper of Array.from(wrappers)) {
+				const margin = wrapper.querySelector<HTMLElement>(
+					"small.sidenote-margin",
+				);
+				if (margin) {
+					applyLineOffset(wrapper, margin, false);
+				}
+			}
 		}
 
-		// Run positioning after DOM is fully settled and elements are laid out.
-		// We defer twice: once to let the browser insert elements, once to lay them out.
+		updateSidenotePositioning(
+			this.settings,
+			this.documentSidenoteSides,
+			readingRoot,
+			true,
+		);
+		correctIndentedSidenotePositions(this.settings, readingRoot);
 
-		window.requestAnimationFrame(() => {
-			window.requestAnimationFrame(() => {
-				if (!readingRoot.isConnected) return;
+		// All margins in the DOM, not just newly created ones, so collisions
+		// between old and new sidenotes are resolved. Deliberately the same
+		// root the positioning above measured — re-resolving getReadingRoot()
+		// here could return a different view's root if the active leaf changed
+		// before this frame ran.
+		updateCollisionsIn(this.settings, readingRoot);
 
-				// Force reflow
-				void readingRoot.offsetHeight;
+		// Commit those positions with transitions still suppressed, then
+		// re-enable them so later changes (settings, resize) do animate.
+		void readingRoot.offsetHeight;
+		readingRoot
+			.querySelectorAll<HTMLElement>("small.sidenote-margin.is-placing")
+			.forEach((m) => m.classList.remove("is-placing"));
+	}
 
-				// Recompute line offsets now that elements are actually laid out
-				const wrappers = readingRoot.querySelectorAll<HTMLElement>(
-					"span.sidenote-number",
+	// ==================== Reading Mode Processing ====================
+
+	private processReadingModeSidenotes(element: HTMLElement) {
+		const view = this.getMarkdownView();
+		if (!view) return;
+
+		const readingRoot = view.containerEl.querySelector<HTMLElement>(
+			".markdown-reading-view",
+		);
+		if (!readingRoot) return;
+
+		// Check if there are footnote refs or sidenote spans not yet wrapped
+		const unwrappedFootnotes = readingRoot.querySelectorAll(
+			"sup.footnote-ref:not(.sidenote-number sup), sup[id^='fnref-']:not(.sidenote-number sup), sup[data-footnote-id]:not(.sidenote-number sup)",
+		);
+		const unwrappedSpans = readingRoot.querySelectorAll(
+			"span.sidenote:not(.sidenote-number span.sidenote)",
+		);
+		const hasUnwrapped =
+			unwrappedFootnotes.length > 0 || unwrappedSpans.length > 0;
+
+		const hasAnyMargins =
+			readingRoot.querySelector("small.sidenote-margin") !== null;
+
+		// If nothing new to wrap and no full refresh needed, still recompute positioning.
+		// This is required when settings like sidenoteAnchor / sidenotePosition change.
+		if (!this.needsReadingModeRefresh && !hasUnwrapped) {
+			if (hasAnyMargins) {
+				window.requestAnimationFrame(() =>
+					this.positionReadingSidenotes(readingRoot, {
+						recomputeLineOffsets: false,
+					}),
 				);
-				for (const wrapper of Array.from(wrappers)) {
-					const margin = wrapper.querySelector<HTMLElement>(
-						"small.sidenote-margin",
-					);
-					if (margin) {
-						applyLineOffset(wrapper, margin, false);
-					}
-				}
+			}
+			return;
+		}
 
-				// Calculate and apply global sidenote positioning
-				updateSidenotePositioning(this.settings, this.documentSidenoteSides, readingRoot, true);
+		const isFullRefresh = this.needsReadingModeRefresh;
 
-				// Correct per-wrapper offset for indented parents
-				correctIndentedSidenotePositions(this.settings, readingRoot);
+		const width = readingRoot.getBoundingClientRect().width;
+		const mode = applyRootMetrics(this.settings, readingRoot, width);
 
-				// Use all margins in the DOM (not just newly created ones)
-				// so that collisions between old and new sidenotes are resolved.
-				updateCollisionsIn(this.settings, readingRoot);
+		if (mode === "hidden") {
+			return;
+		}
 
-				// Commit those positions with transitions still suppressed,
-				// then re-enable them so later changes (settings, resize) do
-				// animate as intended.
-				void readingRoot.offsetHeight;
-				readingRoot
-					.querySelectorAll<HTMLElement>(
-						"small.sidenote-margin.is-placing",
-					)
-					.forEach((m) => m.classList.remove("is-placing"));
-			});
+		// Only do full teardown on explicit refresh (file change, settings change).
+		// For incremental processing (new sections scrolled into view), keep
+		// existing sidenotes and only wrap the new unwrapped refs.
+		if (isFullRefresh) {
+			this.removeAllSidenoteMarkupFromReadingMode(readingRoot);
+			// Everything is about to be renumbered from scratch, so the
+			// per-heading counters have to start over too. Without this they
+			// carry over from the previous pass and every re-render pushes the
+			// numbering higher — 1,2,3 becomes 21,22,23 becomes 61,62,63.
+			// Incremental passes deliberately keep the counters, since they
+			// only number the newly-mounted sections.
+			this.headingSidenoteNumbers.clear();
+		}
+
+		const collected = this.collectReadingItems(readingRoot);
+		if (!collected) return;
+		const {
+			items: allItems,
+			sourceRefOrder,
+			htmlNumberByIndex,
+		} = collected;
+
+		// console.log(
+		// 	"[Sidenotes] allItems:",
+		// 	allItems.length,
+		// 	allItems.map((i) => i.footnoteId),
+		// );
+
+		// Drive the page-offset CSS from whether the *document* has sidenotes
+		// (computed from source in scanDocumentForSidenotes), not from how many
+		// sidenote elements happen to be mounted right now. Obsidian virtualizes
+		// long reading views, so `allItems` here only reflects the currently
+		// rendered section — using its length instead flipped the offset on and
+		// off as the mounted sidenotes came in and out of the DOM while scrolling.
+		readingRoot.dataset.hasSidenotes = this.documentHasSidenotes
+			? "true"
+			: "false";
+
+		if (allItems.length === 0) {
+			return;
+		}
+
+		this.needsReadingModeRefresh = false;
+
+		// Sort by vertical position. Items with valid rects sort by top position;
+		// items with zero rects (not yet laid out) sort by their DOM order,
+		// which querySelectorAll already preserves.
+		allItems.sort((a, b) => a.rect.top - b.rect.top);
+
+		this.buildReadingMargins(allItems, htmlNumberByIndex);
+		this.hideMarginNoteFootnoteEntries(
+			readingRoot,
+			allItems,
+			sourceRefOrder,
+		);
+
+		// Run positioning after DOM is fully settled and elements are laid out.
+		// We defer twice: once to let the browser insert elements, once to lay
+		// them out.
+		window.requestAnimationFrame(() => {
+			window.requestAnimationFrame(() =>
+				this.positionReadingSidenotes(readingRoot, {
+					recomputeLineOffsets: true,
+				}),
+			);
 		});
 	}
 
@@ -1513,14 +1597,11 @@ export default class SidenotePlugin
 
 			// Update positioning and run collision avoidance
 			if (mode !== "hidden" && hasMargins) {
-				window.requestAnimationFrame(() => {
-					updateSidenotePositioning(this.settings, this.documentSidenoteSides, readingRoot, true);
-					correctIndentedSidenotePositions(this.settings, readingRoot);
-					// Same root the positioning above measured — re-resolving
-					// getReadingRoot() here could return a different view's
-					// root if the active leaf changed before this frame ran.
-					updateCollisionsIn(this.settings, readingRoot);
-				});
+				window.requestAnimationFrame(() =>
+					this.positionReadingSidenotes(readingRoot, {
+						recomputeLineOffsets: false,
+					}),
+				);
 			}
 		});
 	}
@@ -1924,74 +2005,18 @@ export default class SidenotePlugin
 		this.headingSidenoteNumbers.clear();
 	}
 
-	// ==================== Main Layout ====================
-
-	private layout() {
-		const cmRoot = this.cmRoot;
-		if (!cmRoot) {
-			return;
-		}
-
-		const cmRootRect = cmRoot.getBoundingClientRect();
-		const editorWidth = cmRootRect.width;
-		const mode = calculateMode(this.settings, editorWidth);
-
-		// console.log("[Sidenotes] layout():", {
-		// 	editorWidth,
-		// 	mode,
-		// 	isConnected: cmRoot.isConnected,
-		// 	unwrappedCount: cmRoot.querySelectorAll(
-		// 		"span.sidenote:not(.sidenote-number span.sidenote)",
-		// 	).length,
-		// 	wrappedCount: cmRoot.querySelectorAll("small.sidenote-margin")
-		// 		.length,
-		// });
-
-		applyRootMetrics(this.settings, cmRoot, editorWidth);
-
-		// Check if we're in Source mode (not Live Preview)
-		const isSourceMode = !cmRoot.classList.contains("is-live-preview");
-
-		// Determine if we should process sidenotes in editing mode
-		// const processHtmlSidenotes = this.settings.sidenoteFormat === "html";
-		const processFootnoteSidenotes =
-			this.settings.sidenoteFormat === "footnote-edit" && !isSourceMode;
-
-		// Source mode shows the raw markdown — no sidenotes, and no page
-		// offset reserving margin space for them
-		if (isSourceMode) {
-			cmRoot.dataset.hasSidenotes = "false";
-			return;
-		}
-
-		// For footnote-edit mode, the CM6 widget handles the sidenotes
-		// We just need to set the data attributes and run collision avoidance
-		if (processFootnoteSidenotes) {
-			cmRoot.dataset.hasSidenotes = this.documentHasSidenotes
-				? "true"
-				: "false";
-
-			// Run positioning and collision avoidance for widget-created margins
-			if (mode !== "hidden" && this.documentHasSidenotes) {
-				window.setTimeout(() => {
-					window.requestAnimationFrame(() => {
-						window.requestAnimationFrame(() => {
-							if (!cmRoot.isConnected) return;
-							updateSidenotePositioning(this.settings, this.documentSidenoteSides, cmRoot, false);
-							updateCollisionsIn(this.settings, this.cmRoot);
-						});
-					});
-				}, TIMING.WIDGET_LAYOUT_DELAY);
-			}
-			return;
-		}
-
-		// For reading-only footnote mode, don't process anything in editing
-		if (this.settings.sidenoteFormat === "footnote") {
-			cmRoot.dataset.hasSidenotes = "false";
-			return;
-		}
-
+	/**
+	 * Editing-mode HTML sidenotes: wrap any unwrapped spans, build their
+	 * margins, and position the result.
+	 *
+	 * A pass that finds new spans renumbers everything from scratch, because
+	 * sidenote numbers are positional and inserting one shifts every number
+	 * after it.
+	 */
+	private buildEditingHtmlSidenotes(
+		cmRoot: HTMLElement,
+		mode: SidenoteMode,
+	) {
 		// HTML sidenote processing (existing logic)
 		cmRoot.dataset.hasSidenotes = this.documentHasSidenotes
 			? "true"
@@ -2156,13 +2181,7 @@ export default class SidenotePlugin
 				cmRoot.querySelectorAll(".sidenote-margin").length;
 
 			// Run positioning and collision avoidance after DOM is settled
-			window.requestAnimationFrame(() => {
-				window.requestAnimationFrame(() => {
-					if (!cmRoot.isConnected) return;
-					updateSidenotePositioning(this.settings, this.documentSidenoteSides, cmRoot, false);
-					updateCollisionsIn(this.settings, this.cmRoot);
-				});
-			});
+			this.positionEditingSidenotes(cmRoot);
 		} else {
 			// No new sidenotes to process
 			this.lastSidenoteCount =
@@ -2170,15 +2189,97 @@ export default class SidenotePlugin
 
 			if (this.lastSidenoteCount > 0 && mode !== "hidden") {
 				// Still run positioning and collision avoidance for existing sidenotes
-				window.requestAnimationFrame(() => {
-					window.requestAnimationFrame(() => {
-						if (!cmRoot.isConnected) return;
-						updateSidenotePositioning(this.settings, this.documentSidenoteSides, cmRoot, false);
-						updateCollisionsIn(this.settings, this.cmRoot);
-					});
-				});
+				this.positionEditingSidenotes(cmRoot);
 			}
+	}
+	}
+
+	/**
+	 * Position editing-mode sidenotes once the DOM has settled.
+	 *
+	 * Deferred twice: once to let the browser insert elements, once to lay them
+	 * out. Written out three times in `layout()` before this was extracted.
+	 */
+	private positionEditingSidenotes(cmRoot: HTMLElement) {
+		window.requestAnimationFrame(() => {
+			window.requestAnimationFrame(() => {
+				if (!cmRoot.isConnected) return;
+				updateSidenotePositioning(
+					this.settings,
+					this.documentSidenoteSides,
+					cmRoot,
+					false,
+				);
+				// The captured root, not this.cmRoot — the active leaf may have
+				// changed between scheduling this frame and running it.
+				updateCollisionsIn(this.settings, cmRoot);
+			});
+		});
+	}
+
+	// ==================== Main Layout ====================
+
+	private layout() {
+		const cmRoot = this.cmRoot;
+		if (!cmRoot) {
+			return;
 		}
+
+		const cmRootRect = cmRoot.getBoundingClientRect();
+		const editorWidth = cmRootRect.width;
+		const mode = calculateMode(this.settings, editorWidth);
+
+		// console.log("[Sidenotes] layout():", {
+		// 	editorWidth,
+		// 	mode,
+		// 	isConnected: cmRoot.isConnected,
+		// 	unwrappedCount: cmRoot.querySelectorAll(
+		// 		"span.sidenote:not(.sidenote-number span.sidenote)",
+		// 	).length,
+		// 	wrappedCount: cmRoot.querySelectorAll("small.sidenote-margin")
+		// 		.length,
+		// });
+
+		applyRootMetrics(this.settings, cmRoot, editorWidth);
+
+		// Check if we're in Source mode (not Live Preview)
+		const isSourceMode = !cmRoot.classList.contains("is-live-preview");
+
+		// Determine if we should process sidenotes in editing mode
+		// const processHtmlSidenotes = this.settings.sidenoteFormat === "html";
+		const processFootnoteSidenotes =
+			this.settings.sidenoteFormat === "footnote-edit" && !isSourceMode;
+
+		// Source mode shows the raw markdown — no sidenotes, and no page
+		// offset reserving margin space for them
+		if (isSourceMode) {
+			cmRoot.dataset.hasSidenotes = "false";
+			return;
+		}
+
+		// For footnote-edit mode, the CM6 widget handles the sidenotes
+		// We just need to set the data attributes and run collision avoidance
+		if (processFootnoteSidenotes) {
+			cmRoot.dataset.hasSidenotes = this.documentHasSidenotes
+				? "true"
+				: "false";
+
+			// Run positioning and collision avoidance for widget-created margins
+			if (mode !== "hidden" && this.documentHasSidenotes) {
+				window.setTimeout(() => {
+					this.positionEditingSidenotes(cmRoot);
+				}, TIMING.WIDGET_LAYOUT_DELAY);
+			}
+			return;
+		}
+
+		// For reading-only footnote mode, don't process anything in editing
+		if (this.settings.sidenoteFormat === "footnote") {
+			cmRoot.dataset.hasSidenotes = "false";
+			return;
+		}
+
+		this.buildEditingHtmlSidenotes(cmRoot, mode);
 	}
 
 	/**
