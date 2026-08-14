@@ -140,6 +140,54 @@ export function positionReadingSidenotes(
 }
 
 /**
+ * Map each mounted sidenote span onto its index in the source list.
+ *
+ * The mounted spans are a subsequence of the source spans in the same order,
+ * so a forward-only cursor resolves repeated text correctly — matching from
+ * the start each time would collapse duplicates onto the first occurrence.
+ *
+ * Matching is on *rendered* text: the source holds markdown (`**bold**`) while
+ * the DOM holds what it renders to (`bold`), so the source side is run through
+ * the same renderer before comparing.
+ *
+ * If a span cannot be matched — source and DOM briefly out of sync, or markup
+ * this renderer does not reproduce — it takes the cursor position and the walk
+ * continues, so a run of unmatched spans still gets distinct indices instead
+ * of all collapsing onto one.
+ */
+function matchSpansToSource(
+	ctx: ReadingModeContext,
+	spans: HTMLElement[],
+	sourceSpans: { text: string; isMargin: boolean }[],
+): number[] {
+	const rendered = sourceSpans.map((s) =>
+		normalizeText(
+			renderLinksToFragment(normalizeText(s.text), ctx.app).textContent ??
+				"",
+		),
+	);
+
+	const out: number[] = [];
+	let cursor = 0;
+
+	for (const span of spans) {
+		const text = normalizeText(span.textContent ?? "");
+		let found = -1;
+		for (let i = cursor; i < rendered.length; i++) {
+			if (rendered[i] === text) {
+				found = i;
+				break;
+			}
+		}
+		if (found === -1) found = cursor;
+		out.push(found);
+		cursor = found + 1;
+	}
+
+	return out;
+}
+
+/**
  * Find every sidenote span / footnote reference in the reading view that
  * still needs wrapping, in document order.
  *
@@ -171,176 +219,182 @@ export function collectReadingItems(
 		ctx.settings.sidenoteFormat === "footnote" ||
 		ctx.settings.sidenoteFormat === "footnote-edit";
 
-	// Build list of raw source texts for HTML sidenotes
-	const htmlSidenoteRawTexts: string[] = [];
+	// Every HTML sidenote in the SOURCE, in document order.
+	//
+	// numbering & source-text pairing are both derived from this, never from
+	// the mounted DOM. Reading mode virtualises: `querySelectorAll` only sees
+	// the spans Obsidian currently has rendered, so a span's position in the
+	// DOM is not its position in the document. Indexing off the DOM made the
+	// numbering restart partway down a long note (…11, 12, then 1, 2 again)
+	// and paired each sidenote with the wrong raw text.
+	//
+	// Same reasoning as documentHasSidenotes / documentSidenoteSides, which
+	// are source-derived for exactly this reason.
+	const sourceSpans: { text: string; isMargin: boolean }[] = [];
 	if (useHtmlSidenotes) {
 		const sourceContent = ctx.getSourceText();
 		if (sourceContent) {
 			const regex = SIDENOTE_SPAN_REGEX();
 			let m: RegExpExecArray | null;
 			while ((m = regex.exec(sourceContent)) !== null) {
-				htmlSidenoteRawTexts.push(m[1] ?? "");
+				sourceSpans.push({
+					text: m[1] ?? "",
+					isMargin: /margin-note/.test(m[0]),
+				});
 			}
 		}
 	}
 
-	// Sidenote number for each position in `allSpans`, 0 for margin notes
-	// (which render unnumbered). Indexed by document position rather than
-	// by position within this pass's work list — see below.
+	// Sidenote number per SOURCE index; 0 for margin notes, which render
+	// unnumbered and must not consume a number.
 	const htmlNumberByIndex: number[] = [];
 
 	if (useHtmlSidenotes) {
-	// EVERY sidenote span in the reading root, wrapped or not, in
-	// document order.
-	//
-	// An incremental pass only *processes* the unwrapped ones, but it
-	// still has to know each span's position among all of them. Keying
-	// off the filtered list instead was a single bug with two faces:
-	// editing the 3rd sidenote left it alone in the work list, so it was
-	// renumbered 1 and paired with htmlSidenoteRawTexts[0] — the first
-	// sidenote's source text, which then showed up in its editor.
-	const allSpans = Array.from(
-		readingRoot.querySelectorAll<HTMLElement>("span.sidenote"),
-	);
-
-	let seq = 0;
-	allSpans.forEach((el, docIndex) => {
-		htmlNumberByIndex[docIndex] = isMarginNote(el) ? 0 : ++seq;
-	});
-
-	allSpans.forEach((el, docIndex) => {
-		// Already wrapped by an earlier pass — nothing to do.
-		if (el.parentElement?.classList.contains("sidenote-number")) {
-			return;
+		let seq = 0;
+		for (const span of sourceSpans) {
+			htmlNumberByIndex.push(span.isMargin ? 0 : ++seq);
 		}
-		allItems.push({
-			el,
-			rect: el.getBoundingClientRect(),
-			type: "sidenote",
-			text: el.textContent ?? "",
-			rawText:
-				htmlSidenoteRawTexts[docIndex] ?? el.textContent ?? "",
-			docIndex,
+
+		// EVERY sidenote span in the reading root, wrapped or not, in DOM
+		// order. An incremental pass only *processes* the unwrapped ones, but
+		// it still has to walk all of them so the source cursor stays aligned.
+		const allSpans = Array.from(
+			readingRoot.querySelectorAll<HTMLElement>("span.sidenote"),
+		);
+
+		const sourceIndices = matchSpansToSource(ctx, allSpans, sourceSpans);
+
+		allSpans.forEach((el, i) => {
+			// Already wrapped by an earlier pass — nothing to build.
+			if (el.parentElement?.classList.contains("sidenote-number")) {
+				return;
+			}
+			const docIndex = sourceIndices[i] ?? i;
+			allItems.push({
+				el,
+				rect: el.getBoundingClientRect(),
+				type: "sidenote",
+				text: el.textContent ?? "",
+				rawText: sourceSpans[docIndex]?.text ?? el.textContent ?? "",
+				docIndex,
+			});
 		});
-	});
 	}
 
 	const sourceRefOrder: string[] = [];
 
 	if (useFootnotes) {
-	// Get footnote definitions from SOURCE MARKDOWN, not from rendered HTML.
-	// Obsidian uses virtualized rendering — the <section class="footnotes">
-	// may not exist in the DOM for long documents where it's off-screen.
+		// Get footnote definitions from SOURCE MARKDOWN, not from rendered HTML.
+		// Obsidian uses virtualized rendering — the <section class="footnotes">
+		// may not exist in the DOM for long documents where it's off-screen.
 
-	let sourceContent = ctx.getSourceText();
+		let sourceContent = ctx.getSourceText();
 
-	// If still empty, try async cachedRead as last resort
-	if (!sourceContent) {
-		const file =
-			ctx.getMarkdownView()?.file ??
-			ctx.app.workspace.getActiveFile();
-		if (file) {
-			void ctx.app.vault.cachedRead(file).then((text) => {
-				const current =
-					ctx.app.workspace.getActiveViewOfType(MarkdownView);
-				if (!current || current.file?.path !== file.path) return;
-				// Cache the result so the next call succeeds synchronously
-				ctx.setCachedSource(text, file.path);
-				ctx.scheduleFootnoteProcessing();
+		// If still empty, try async cachedRead as last resort
+		if (!sourceContent) {
+			const file =
+				ctx.getMarkdownView()?.file ?? ctx.app.workspace.getActiveFile();
+			if (file) {
+				void ctx.app.vault.cachedRead(file).then((text) => {
+					const current =
+						ctx.app.workspace.getActiveViewOfType(MarkdownView);
+					if (!current || current.file?.path !== file.path) return;
+					// Cache the result so the next call succeeds synchronously
+					ctx.setCachedSource(text, file.path);
+					ctx.scheduleFootnoteProcessing();
+				});
+			}
+			if (!useHtmlSidenotes) return null;
+		}
+
+		const definitions = parseFootnoteDefinitions(sourceContent);
+
+		// Build a map from rendered order to source ID.
+		//
+		// Only refs that actually have a definition: Obsidian leaves a `[^x]`
+		// with no matching `[^x]:` as literal text rather than rendering it as
+		// a footnote, so counting it here would offset this list against the
+		// rendered numbering and mis-map every note after it.
+		sourceRefOrder.push(
+			...buildSourceRefOrder(sourceContent).filter((id) =>
+				definitions.has(id),
+			),
+		);
+		if (definitions.size === 0) {
+			if (!useHtmlSidenotes) return null;
+		}
+
+		// Find all footnote references in the rendered HTML
+		const footnoteSups = readingRoot.querySelectorAll<HTMLElement>(
+			// Obsidian preview often uses sup#fnref-* with a.footnote-link
+			"sup.footnote-ref, sup[class*='footnote'], sup[id^='fnref-'], sup[data-footnote-id], a.footnote-link",
+		);
+
+		const processedBaseIds = new Set<string>();
+
+		for (const sup of Array.from(footnoteSups)) {
+			if (sup.closest(".sidenote-number")) continue;
+			// Skip elements inside the footnotes section (these are backrefs, not refs)
+			if (sup.closest("section.footnotes, .footnotes")) continue;
+
+			// Extract the base footnote ID from the rendered markup
+			const renderedId = resolveFootnoteBaseId(sup);
+			if (!renderedId || processedBaseIds.has(renderedId)) continue;
+
+			// Map Obsidian's rendered sequential number back to the source
+			// footnote ID.
+			//
+			// Indexing by the rendered number — rather than walking
+			// sourceRefOrder with a counter as print-export.ts does — is
+			// deliberate: reading mode virtualises, so the refs present in the
+			// DOM are only the mounted ones. A counter would restart at 0
+			// partway down the note and mis-map everything.
+			//
+			// Only remap when the rendered markup gave a bare number. A
+			// renderedId like "4-r" or "mn-1" is already a source ID, and
+			// parseInt would read "4-r" as 4 and then look up whatever ref
+			// happens to sit at position 4 — attaching the wrong definition, or
+			// none at all, and shifting every note after it.
+			let baseId = renderedId;
+			const renderedNum = /^\d+$/.test(renderedId)
+				? parseInt(renderedId, 10)
+				: NaN;
+			if (
+				!isNaN(renderedNum) &&
+				renderedNum >= 1 &&
+				renderedNum <= sourceRefOrder.length
+			) {
+				const sourceId = sourceRefOrder[renderedNum - 1];
+				if (sourceId && definitions.has(sourceId)) {
+					baseId = sourceId;
+				}
+			}
+
+			// Mark both original and remapped IDs as processed
+			if (processedBaseIds.has(baseId)) continue;
+			processedBaseIds.add(renderedId);
+			processedBaseIds.add(baseId);
+
+			// Look up definition from SOURCE markdown
+			const footnoteText = definitions.get(baseId);
+			if (!footnoteText) continue;
+
+			// For footnotes, hide the original [1] link
+			const anchor = sup.querySelector("a");
+			if (anchor && ctx.settings.hideFootnoteNumbers) {
+				anchor.classList.add("sidenote-fn-link-hidden");
+			}
+
+			allItems.push({
+				el: sup,
+				rect: sup.getBoundingClientRect(),
+				type: "footnote",
+				text: footnoteText,
+				footnoteId: baseId,
+				// No footnoteHtml — render from source text instead
 			});
 		}
-		if (!useHtmlSidenotes) return null;
 	}
-
-	const definitions = parseFootnoteDefinitions(sourceContent);
-
-	// Build a map from rendered order to source ID.
-	//
-	// Only refs that actually have a definition: Obsidian leaves a `[^x]`
-	// with no matching `[^x]:` as literal text rather than rendering it as
-	// a footnote, so counting it here would offset this list against the
-	// rendered numbering and mis-map every note after it.
-	sourceRefOrder.push(
-		...buildSourceRefOrder(sourceContent).filter((id) =>
-			definitions.has(id),
-		),
-	);
-	if (definitions.size === 0) {
-		if (!useHtmlSidenotes) return null;
-	}
-
-	// Find all footnote references in the rendered HTML
-	const footnoteSups = readingRoot.querySelectorAll<HTMLElement>(
-		// Obsidian preview often uses sup#fnref-* with a.footnote-link
-		"sup.footnote-ref, sup[class*='footnote'], sup[id^='fnref-'], sup[data-footnote-id], a.footnote-link",
-	);
-
-	const processedBaseIds = new Set<string>();
-
-	for (const sup of Array.from(footnoteSups)) {
-		if (sup.closest(".sidenote-number")) continue;
-		// Skip elements inside the footnotes section (these are backrefs, not refs)
-		if (sup.closest("section.footnotes, .footnotes")) continue;
-
-		// Extract the base footnote ID from the rendered markup
-		const renderedId = resolveFootnoteBaseId(sup);
-		if (!renderedId || processedBaseIds.has(renderedId)) continue;
-
-		// Map Obsidian's rendered sequential number back to the source
-		// footnote ID.
-		//
-		// Indexing by the rendered number — rather than walking
-		// sourceRefOrder with a counter as print-export.ts does — is
-		// deliberate: reading mode virtualises, so the refs present in the
-		// DOM are only the mounted ones. A counter would restart at 0
-		// partway down the note and mis-map everything.
-		//
-		// Only remap when the rendered markup gave a bare number. A
-		// renderedId like "4-r" or "mn-1" is already a source ID, and
-		// parseInt would read "4-r" as 4 and then look up whatever ref
-		// happens to sit at position 4 — attaching the wrong definition, or
-		// none at all, and shifting every note after it.
-		let baseId = renderedId;
-		const renderedNum = /^\d+$/.test(renderedId)
-			? parseInt(renderedId, 10)
-			: NaN;
-		if (
-			!isNaN(renderedNum) &&
-			renderedNum >= 1 &&
-			renderedNum <= sourceRefOrder.length
-		) {
-			const sourceId = sourceRefOrder[renderedNum - 1];
-			if (sourceId && definitions.has(sourceId)) {
-				baseId = sourceId;
-			}
-		}
-
-		// Mark both original and remapped IDs as processed
-		if (processedBaseIds.has(baseId)) continue;
-		processedBaseIds.add(renderedId);
-		processedBaseIds.add(baseId);
-
-		// Look up definition from SOURCE markdown
-		const footnoteText = definitions.get(baseId);
-		if (!footnoteText) continue;
-
-		// For footnotes, hide the original [1] link
-		const anchor = sup.querySelector("a");
-		if (anchor && ctx.settings.hideFootnoteNumbers) {
-			anchor.classList.add("sidenote-fn-link-hidden");
-		}
-
-		allItems.push({
-			el: sup,
-			rect: sup.getBoundingClientRect(),
-			type: "footnote",
-			text: footnoteText,
-			footnoteId: baseId,
-			// No footnoteHtml — render from source text instead
-		});
-	}
-	}
-
 
 	return { items: allItems, sourceRefOrder, htmlNumberByIndex };
 }
@@ -354,7 +408,6 @@ export function buildReadingMargins(
 	htmlNumberByIndex: number[],
 ) {
 	let num = 1;
-
 
 	for (const item of allItems) {
 		// Determine if this is a margin note (unnumbered)
@@ -466,8 +519,7 @@ export function buildReadingMargins(
 		applyLineOffset(wrapper, margin, false);
 
 		ctx.observeSidenoteVisibility(margin);
-}
-
+	}
 }
 
 /**
@@ -497,8 +549,7 @@ export function hideMarginNoteFootnoteEntries(
 				}
 			}
 		}
-}
-
+	}
 }
 
 /**
@@ -560,9 +611,7 @@ function setupLink(app: App, link: HTMLAnchorElement) {
 			e.stopPropagation();
 
 			const linkTarget =
-				link.getAttribute("data-href") ||
-				link.getAttribute("href") ||
-				"";
+				link.getAttribute("data-href") || link.getAttribute("href") || "";
 			if (linkTarget) {
 				void app.workspace.openLinkText(linkTarget, "", false);
 			}
