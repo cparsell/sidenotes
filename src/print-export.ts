@@ -9,6 +9,7 @@ import {
 	parseFootnoteIdString,
 	renderLinksToFragment,
 	resolveFootnoteBaseId,
+	resolveSidenoteTextAlign,
 	stripSideSuffix,
 } from "./content";
 
@@ -105,7 +106,7 @@ export function injectPrintSidenotes(
 			sidenotesByAnchor.set(anchor, list);
 		}
 
-		buildPrintTables(element, sidenotesByAnchor, isRight);
+		buildPrintTables(ctx, element, sidenotesByAnchor, isRight);
 		return;
 	}
 
@@ -207,7 +208,7 @@ export function injectPrintSidenotes(
 		sidenotesByAnchor.set(anchor, list);
 	}
 
-	buildPrintTables(element, sidenotesByAnchor, isRight);
+	buildPrintTables(ctx, element, sidenotesByAnchor, isRight);
 }
 
 /**
@@ -319,6 +320,7 @@ function prunePrintEndnotes(
  * inject the max-width style constraint.
  */
 function buildPrintTables(
+	ctx: PrintExportContext,
 	element: HTMLElement,
 	sidenotesByAnchor: Map<HTMLElement, HTMLElement[]>,
 	isRight: boolean,
@@ -342,6 +344,18 @@ function buildPrintTables(
 		if (!isRight) {
 			sidenoteCell.classList.add("is-left");
 		}
+		// Inline, not left to the stylesheet: Obsidian's PDF export may
+		// rasterise from a print-specific context that does not resolve this
+		// document's --sn-* custom properties, in which case the CSS rules
+		// referencing them silently fall back to their hardcoded defaults.
+		// An inline style travels with this exact DOM node however it gets
+		// printed, and "important" beats the stylesheet's own !important
+		// rule regardless of whether the variable resolved.
+		sidenoteCell.style.setProperty(
+			"text-align",
+			resolveSidenoteTextAlign(ctx.settings.textAlignment, isRight ? "right" : "left"),
+			"important",
+		);
 
 		anchor.parentNode.insertBefore(table, anchor);
 		contentCell.appendChild(anchor);

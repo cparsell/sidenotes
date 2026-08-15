@@ -219,6 +219,36 @@ export function isMarginNote(elOrId: HTMLElement | string): boolean {
 export type SidenoteSide = "left" | "right";
 
 /**
+ * Resolve the text-align value for a sidenote physically rendered on the
+ * given margin side, from the plugin's "Text alignment" setting.
+ *
+ * Shared between the on-screen CSS variables (css-vars.ts) and the PDF export
+ * inline styles (print-export.ts) so the two paths cannot drift apart — which
+ * is exactly what happened before this existed: PDF export hardcoded
+ * right-alignment for the left margin regardless of this setting.
+ *
+ * `textAlignment`'s type has no "auto" value today — every option ("left",
+ * "right", "justify") is used verbatim regardless of side. The `side`
+ * fallback is unreachable given that type, but kept for forward-compatibility
+ * if an "auto" choice is ever reintroduced: ragged-left (flush right) for a
+ * sidenote in the LEFT margin, since it then faces body text sitting to its
+ * right, and the mirror for the right margin.
+ */
+export function resolveSidenoteTextAlign(
+	textAlignment: SidenoteSettings["textAlignment"],
+	side: SidenoteSide,
+): "left" | "right" | "justify" {
+	if (
+		textAlignment === "left" ||
+		textAlignment === "right" ||
+		textAlignment === "justify"
+	) {
+		return textAlignment;
+	}
+	return side === "left" ? "right" : "left";
+}
+
+/**
  * Explicit per-sidenote margin override, letting an individual sidenote sit
  * in the opposite margin from the global "Sidenote position" setting.
  * - HTML format: <span class="sidenote right"> / <span class="sidenote left">

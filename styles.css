@@ -51,11 +51,21 @@
 	font-size: 0.75em !important;
 	line-height: 1.35 !important;
 	color: #11111b !important;
+	/* --sn-text-align-right is the same "Text alignment" setting the on-screen
+	   right-margin sidenotes use — keyed by the cell's physical side (this
+	   cell is used whenever a sidenote lands in the right margin), not by
+	   whether that's the document's default side or an override. Fallback
+	   matches this rule's old hardcoded behaviour, for the (unlikely) case
+	   export runs somewhere the variable was never set. */
+	text-align: var(--sn-text-align-right, left) !important;
 }
 
 .sidenote-print-sidenote-cell.is-left {
 	padding: 2.5em var(--sn-print-gutter, 3em) 0 0 !important;
-	text-align: right !important;
+	/* Previously hardcoded to right regardless of the "Text alignment"
+	   setting — on-screen left-margin sidenotes honoured a "left" choice,
+	   PDF export silently overrode it back to right. */
+	text-align: var(--sn-text-align-left, right) !important;
 }
 
 .sidenote-print-spacer {
@@ -118,7 +128,26 @@
 }
 
 /* Width constraint for the export container — the anchor paragraphs need
-   to make room for the sidenote table column next to them. */
+   to make room for the sidenote table column next to them.
+
+   The `:not(:is(...) *)` clause excludes any of these elements that is
+   ALREADY a descendant of another one of them — a bullet inside a list, a
+   nested list inside that list item, a paragraph inside a blockquote or
+   callout. Without it, every one of these tags matches this same selector at
+   every nesting level, so each level narrowed (and, in --left mode below,
+   shifted) on top of its parent's — a second-level nested bullet ended up
+   two thirds of the way across the page.
+
+   This must exclude the match at the SOURCE rather than apply it everywhere
+   and try to cancel it back out on nested elements: a downstream reset has
+   to force a value (e.g. margin-left: 0), and there is no way for that reset
+   to distinguish "the 30% this plugin added" from "the indent a theme's own
+   CSS uses for nested lists" once both are on the same property — a reset
+   was tried here and it flattened all list nesting to one level. Preventing
+   the match in the first place leaves nested elements completely untouched:
+   they inherit the narrowed width through the box model, and whatever
+   property the theme uses for its own nested-list indentation is never
+   touched at all. */
 .sidenote-print-page
 	:is(
 		p,
@@ -138,6 +167,27 @@
 		.MathJax,
 		pre,
 		.contains-task-list
+	):not(
+		:is(
+				p,
+				li,
+				h1,
+				h2,
+				h3,
+				h4,
+				h5,
+				h6,
+				blockquote,
+				.callout,
+				ul,
+				ol,
+				hr,
+				.math,
+				.MathJax,
+				pre,
+				.contains-task-list
+			)
+			*
 	),
 .sidenote-print-page section.footnotes {
 	max-width: 70% !important;
@@ -156,7 +206,9 @@
 	max-width: none !important;
 }
 
-/* Left-margin layout additionally needs the body nudged right. */
+/* Left-margin layout additionally needs the body nudged right. Same
+   not-already-nested exclusion as the max-width rule above, and for the same
+   reason — see that rule's comment. */
 .sidenote-print-page--left
 	:is(
 		p,
@@ -176,6 +228,27 @@
 		.MathJax,
 		pre,
 		.contains-task-list
+	):not(
+		:is(
+				p,
+				li,
+				h1,
+				h2,
+				h3,
+				h4,
+				h5,
+				h6,
+				blockquote,
+				.callout,
+				ul,
+				ol,
+				hr,
+				.math,
+				.MathJax,
+				pre,
+				.contains-task-list
+			)
+			*
 	),
 .sidenote-print-page--left section.footnotes {
 	margin-left: 30% !important;

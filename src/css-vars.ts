@@ -10,6 +10,7 @@
  */
 
 import type { SidenoteSettings } from "./settings";
+import { resolveSidenoteTextAlign } from "./content";
 
 /** The `data-sn*` attributes written by `applyCssVariables`. */
 const DATA_ATTRIBUTES = [
@@ -101,23 +102,27 @@ export function applyCssVariables(
 		`${Math.max(s.lineHeight - 0.1, 1.1)}`,
 	);
 
-	// Text alignment
-	const defaultAlignment = s.sidenotePosition === "left" ? "right" : "left";
-	// Mirrored alignment for sidenotes overridden onto the opposite margin —
-	// same explicit choice (justify/left/right) if the user set one, else
-	// the alignment that faces the body text from the *other* side.
-	const oppositeAlignment = s.sidenotePosition === "left" ? "left" : "right";
-	const resolveAlignment = (auto: string) =>
-		s.textAlignment === "justify"
-			? "justify"
-			: s.textAlignment === "left" || s.textAlignment === "right"
-				? s.textAlignment
-				: auto;
-	const textAlign = resolveAlignment(defaultAlignment);
-	root.style.setProperty("--sn-text-align", textAlign);
+	// Text alignment. resolveSidenoteTextAlign (content.ts) is the single
+	// implementation of "what alignment does a sidenote on this physical side
+	// get" — shared with print-export.ts, whose inline styles use the same
+	// function rather than a separate copy that could drift, which is exactly
+	// what happened before it existed (PDF export hardcoded right-alignment
+	// for the left margin regardless of this setting).
+	const alignLeft = resolveSidenoteTextAlign(s.textAlignment, "left");
+	const alignRight = resolveSidenoteTextAlign(s.textAlignment, "right");
+	root.style.setProperty("--sn-text-align-left", alignLeft);
+	root.style.setProperty("--sn-text-align-right", alignRight);
+
+	// --sn-text-align / --sn-text-align-opposite key off "document default
+	// margin vs override" instead of physical side — what a sidenote element
+	// already knows about itself on screen.
+	root.style.setProperty(
+		"--sn-text-align",
+		s.sidenotePosition === "left" ? alignLeft : alignRight,
+	);
 	root.style.setProperty(
 		"--sn-text-align-opposite",
-		resolveAlignment(oppositeAlignment),
+		s.sidenotePosition === "left" ? alignRight : alignLeft,
 	);
 
 	// Number color
