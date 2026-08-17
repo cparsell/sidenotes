@@ -1483,6 +1483,10 @@ export default class SidenotePlugin
 				// Don't stop propagation or prevent default - let browser handle cursor
 				return;
 			}
+			// Let clicks on links through so they can navigate normally
+			if ((e.target as HTMLElement).closest("a")) {
+				return;
+			}
 			e.stopPropagation();
 			e.preventDefault();
 		};
@@ -1491,6 +1495,11 @@ export default class SidenotePlugin
 			// When editing, allow normal click behavior
 			if (margin.dataset.editing === "true") {
 				e.stopPropagation(); // Still prevent clicks from bubbling to parent elements
+				return;
+			}
+
+			// Let clicks on links through so they can navigate normally
+			if ((e.target as HTMLElement).closest("a")) {
 				return;
 			}
 

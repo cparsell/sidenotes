@@ -227,6 +227,10 @@ class FootnoteSidenoteWidget extends WidgetType {
 		margin.dataset.editing = "false";
 
 		const onMouseDown = (e: MouseEvent) => {
+			// Let clicks on links through so they can navigate normally
+			if ((e.target as HTMLElement).closest("a")) {
+				return;
+			}
 			// Stop propagation so CM6 main editor doesn't steal focus/click
 			e.stopPropagation();
 			// Let click focus our margin editor
@@ -236,6 +240,11 @@ class FootnoteSidenoteWidget extends WidgetType {
 			// If already editing, let CM handle cursor
 			if (this.marginEditor) {
 				e.stopPropagation();
+				return;
+			}
+
+			// Let clicks on links through so they can navigate normally
+			if ((e.target as HTMLElement).closest("a")) {
 				return;
 			}
 
