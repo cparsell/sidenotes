@@ -8,60 +8,72 @@
    Print / PDF Export
    ========================================================== */
 
-/* Hidden on screen. !important throughout this block: these override the
-   theme's own table/border styling during PDF export, the same as the
-   inline styles this used to be set with did. */
-.sidenote-print-table {
-	display: none !important;
-	width: 100% !important;
-	border-collapse: collapse !important;
-	border: none !important;
+/* Wraps each footnote's anchor (p/li/heading) — NOT a `<table>`. An earlier
+   version of this file used a `<table>` here with the sidenote as a
+   `position: absolute` `<td>`: that rendered correctly on-screen but was
+   confirmed (against a real headless-Chrome print-to-PDF run, the same
+   engine Obsidian's exporter uses) to make the absolutely-positioned cell
+   either collapse the row's height or not render at all — a Chromium
+   print-pipeline quirk specific to absolutely-positioned table cells that
+   a plain `<div>` here does not have. */
+.sidenote-print-wrap {
+	display: block !important;
 	margin: 0 !important;
 	padding: 0 !important;
-	table-layout: fixed !important;
+	/* Containing block for .sidenote-print-sidenote-group below — scoped to
+	   this one anchor's own (small, single-page-height) wrapper, not the
+	   whole multi-page document, so it doesn't have the pagination problems
+	   absolute positioning has against a page-spanning ancestor. */
+	position: relative !important;
 }
 
-/* Visible in Obsidian PDF export */
-.print .sidenote-print-table {
-	top: 10px !important;
-	display: table !important;
+/* Added (in print-export.ts) only to an anchor that was a direct `<li>`
+   child of a `<ul>`/`<ol>` before being wrapped here — being moved into
+   this `<div>` costs it the one indent level Obsidian's own
+   `ul > li { margin-inline-start: var(--list-indent) }` rule would
+   otherwise still be giving it, since that rule only matches a direct list
+   child. Restoring it here, rather than moving the wrapper itself, leaves
+   .sidenote-print-sidenote-group's position (independent of the anchor's
+   own width) untouched either way. */
+.sidenote-print-wrap--lost-indent {
+	padding-left: var(--list-indent, 2.25em) !important;
 }
 
-.sidenote-print-row {
-	border: none !important;
-	vertical-align: top !important;
-}
+/* Positioned out of the anchor's own flow entirely rather than sized as a
+   fraction of it — the anchor keeps its full natural width, so this never
+   pushes it over the way a shared-row sidenote column used to (see
+   .sidenote-print-wrap's comment for the table version of that bug).
+   `left: 100%` / `right: 100%` (in .is-left below) pin this group just
+   outside the wrap's left/right edge, sized to a fixed physical width.
 
-.sidenote-print-content-cell {
-	border: none !important;
-	padding: 0 !important;
-	vertical-align: top !important;
-	width: 70% !important;
-}
-
-/* --sn-print-gutter (defined on .sidenote-print-page) is the gap between the
-   body text and the sidenote column, always on the cell's body-facing side.
-   The fallback keeps the gutter intact if this cell ever renders outside a
+   --sn-print-gutter (defined on .sidenote-print-page) is the gap between
+   the body text and the sidenote column, on the group's body-facing side.
+   The fallbacks below keep sizing intact if this ever renders outside a
    .sidenote-print-page container. */
-.sidenote-print-sidenote-cell {
-	border: none !important;
-	padding: 2.5em 0 0 var(--sn-print-gutter, 3em) !important;
-	vertical-align: top !important;
-	width: 30% !important;
+.sidenote-print-sidenote-group {
+	position: absolute !important;
+	top: 0 !important;
+	left: 100% !important;
+	right: auto !important;
+	margin: 0 !important;
+	padding: 2.5em 0 0 var(--sn-print-gutter, 1cm) !important;
+	width: var(--sn-print-sidenote-width, 5.2cm) !important;
 	font-size: 0.75em !important;
 	line-height: 1.35 !important;
 	color: #11111b !important;
 	/* --sn-text-align-right is the same "Text alignment" setting the on-screen
-	   right-margin sidenotes use — keyed by the cell's physical side (this
-	   cell is used whenever a sidenote lands in the right margin), not by
+	   right-margin sidenotes use — keyed by the group's physical side (this
+	   rule is used whenever a sidenote lands in the right margin), not by
 	   whether that's the document's default side or an override. Fallback
 	   matches this rule's old hardcoded behaviour, for the (unlikely) case
 	   export runs somewhere the variable was never set. */
 	text-align: var(--sn-text-align-right, left) !important;
 }
 
-.sidenote-print-sidenote-cell.is-left {
-	padding: 2.5em var(--sn-print-gutter, 3em) 0 0 !important;
+.sidenote-print-sidenote-group.is-left {
+	left: auto !important;
+	right: 100% !important;
+	padding: 2.5em var(--sn-print-gutter, 1cm) 0 0 !important;
 	/* Previously hardcoded to right regardless of the "Text alignment"
 	   setting — on-screen left-margin sidenotes honoured a "left" choice,
 	   PDF export silently overrode it back to right. */
@@ -113,10 +125,27 @@
 
 	/* Gap between the body text and the sidenote column. Defined here so both
 	   print layout knobs live together, but it is consumed on
-	   .sidenote-print-sidenote-cell — and an em in a custom property resolves
-	   against the element that USES it, so this is 3 x that cell's 0.75em
+	   .sidenote-print-sidenote-group — and an em in a custom property resolves
+	   against the element that USES it, so this is 3 x that group's 0.75em
 	   note text, not 3 x the body text. */
 	--sn-print-gutter: 3em;
+
+	/* Physical width of the sidenote column itself — matched by
+	   .sidenote-print-sidenote-group's own `width`. Fixed rather than a
+	   percentage so it's the same physical size for a top-level paragraph
+	   and a bullet three lists deep; kept here too (not just as that rule's
+	   fallback) so the document-wide reservation just below can size itself
+	   off the same number instead of a separately-tuned percentage that
+	   could quietly drift out of sync with it. */
+	--sn-print-sidenote-width: 5.2cm;
+
+	/* What every paragraph in the document — not just ones with a footnote
+	   — needs to leave clear so the sidenote column never overlaps ordinary
+	   body text. Sidenote width + gutter, not sidenote width alone: the
+	   gutter is padding INSIDE the sidenote cell (see .sidenote-print-sidenote-group),
+	   so without adding it here the reserved margin would land exactly on
+	   the sidenote's own text with no breathing room before the body. */
+	--sn-print-reserved: calc(var(--sn-print-sidenote-width) + var(--sn-print-gutter));
 
 	padding-left: var(--sn-print-body-inset) !important;
 	padding-right: 0 !important;
@@ -128,26 +157,45 @@
 }
 
 /* Width constraint for the export container — the anchor paragraphs need
-   to make room for the sidenote table column next to them.
+   to make room for the sidenote column beside them.
+
+   .sidenote-print-wrap is in this type list for exactly the same reason as
+   the rest of it: a footnote's anchor is wrapped in one (see that class's
+   own comment), and once it is, IT is the thing that needs the width
+   reservation applied — not the p/li inside it, which should stay at its
+   wrap's full width. Leaving .sidenote-print-wrap out of this list used to
+   mean the anchor still matched (nothing excluded it) and picked up a
+   reservation of its own, which a separate rule then reset back to zero —
+   and with it, the reservation this whole selector exists to apply. That
+   reservation is what keeps the sidenote group's escape distance (a
+   fixed length from the WRAP's own edge — see .sidenote-print-sidenote-group)
+   from landing at a negative, off-page coordinate: with no reserved gap the
+   wrap sits flush with the page edge, and the sidenote — positioned further
+   out from there — renders outside the printable area entirely. Confirmed
+   against a real headless-Chrome print-to-PDF run: on-screen a negative
+   x-coordinate is just off in the (scrollable) void and looks harmless, but
+   Chromium's print pipeline doesn't render it at all.
 
    The `:not(:is(...) *)` clause excludes any of these elements that is
    ALREADY a descendant of another one of them — a bullet inside a list, a
    nested list inside that list item, a paragraph inside a blockquote or
-   callout. Without it, every one of these tags matches this same selector at
-   every nesting level, so each level narrowed (and, in --left mode below,
-   shifted) on top of its parent's — a second-level nested bullet ended up
-   two thirds of the way across the page.
+   callout, or (per the above) an anchor inside its own wrap. Without it,
+   every one of these tags matches this same selector at every nesting
+   level, so each level narrowed (and, in --left mode below, shifted) on top
+   of its parent's — a second-level nested bullet ended up two thirds of the
+   way across the page.
 
    This must exclude the match at the SOURCE rather than apply it everywhere
    and try to cancel it back out on nested elements: a downstream reset has
    to force a value (e.g. margin-left: 0), and there is no way for that reset
-   to distinguish "the 30% this plugin added" from "the indent a theme's own
-   CSS uses for nested lists" once both are on the same property — a reset
-   was tried here and it flattened all list nesting to one level. Preventing
-   the match in the first place leaves nested elements completely untouched:
-   they inherit the narrowed width through the box model, and whatever
-   property the theme uses for its own nested-list indentation is never
-   touched at all. */
+   to distinguish "the reservation this plugin added" from "the indent a
+   theme's own CSS uses for nested lists" once both are on the same property
+   — a reset was tried here and it flattened all list nesting to one level
+   (and, later, broke the wrap's own reservation the way described above).
+   Preventing the match in the first place leaves nested elements completely
+   untouched: they inherit the narrowed width through the box model, and
+   whatever property the theme uses for its own nested-list indentation is
+   never touched at all. */
 .sidenote-print-page
 	:is(
 		p,
@@ -166,7 +214,8 @@
 		.math,
 		.MathJax,
 		pre,
-		.contains-task-list
+		.contains-task-list,
+		.sidenote-print-wrap
 	):not(
 		:is(
 				p,
@@ -185,25 +234,17 @@
 				.math,
 				.MathJax,
 				pre,
-				.contains-task-list
+				.contains-task-list,
+				.sidenote-print-wrap
 			)
 			*
 	),
 .sidenote-print-page section.footnotes {
-	max-width: 70% !important;
-}
-/* Both of these narrow a container that's already been narrowed once by a
-   rule above (the sidenote table's content cell, or section.footnotes
-   itself) — reset so the narrowing doesn't compound on their children. */
-.sidenote-print-page .sidenote-print-table,
-.sidenote-print-page .sidenote-print-table td,
-.sidenote-print-page
-	.sidenote-print-table
-	:is(p, li, h1, h2, h3, h4, h5, h6),
-.sidenote-print-page
-	section.footnotes
-	:is(p, li, h1, h2, h3, h4, h5, h6, ul, ol, blockquote) {
-	max-width: none !important;
+	/* Matches --sn-print-sidenote-width + --sn-print-gutter (defined on
+	   .sidenote-print-page) — the sidenote group's own physical size, not a
+	   percentage, now that it's positioned rather than laid out as a table
+	   column. See that variable's comment. */
+	max-width: calc(100% - var(--sn-print-reserved, 6.2cm)) !important;
 }
 
 /* Left-margin layout additionally needs the body nudged right. Same
@@ -227,7 +268,8 @@
 		.math,
 		.MathJax,
 		pre,
-		.contains-task-list
+		.contains-task-list,
+		.sidenote-print-wrap
 	):not(
 		:is(
 				p,
@@ -246,22 +288,15 @@
 				.math,
 				.MathJax,
 				pre,
-				.contains-task-list
+				.contains-task-list,
+				.sidenote-print-wrap
 			)
 			*
 	),
 .sidenote-print-page--left section.footnotes {
-	margin-left: 30% !important;
-}
-.sidenote-print-page--left .sidenote-print-table,
-.sidenote-print-page--left .sidenote-print-table td,
-.sidenote-print-page--left
-	.sidenote-print-table
-	:is(p, li, h1, h2, h3, h4, h5, h6),
-.sidenote-print-page--left
-	section.footnotes
-	:is(p, li, h1, h2, h3, h4, h5, h6, ul, ol, blockquote) {
-	margin-left: 0 !important;
+	/* Matches --sn-print-reserved on .sidenote-print-page — see the
+	   max-width rule above's comment. */
+	margin-left: var(--sn-print-reserved, 6.2cm) !important;
 }
 
 /* Inline spans moved into the print margin column — the text lives in
@@ -274,16 +309,6 @@
    reading mode, so the endnote list shouldn't repeat them */
 .sidenote-footnote-item-hidden {
 	display: none;
-}
-
-/* Visible in browser print */
-@media print {
-	.sidenote-print-table {
-		display: table;
-	}
-	/* .sidenote {
-		display: none ;
-	} */
 }
 
 /* Horizontal page margins are deliberately symmetric, and set to the

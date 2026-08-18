@@ -174,8 +174,8 @@ export function injectPrintSidenotes(
 		const anchor = refTarget.closest<HTMLElement>(
 			"p, li, h1, h2, h3, h4, h5, h6",
 		);
-		// Without an anchor there is no margin column to move the note
-		// into, so leave the reference untouched.
+		// Without an anchor there is no margin column to move the
+		// reference into, so leave the reference untouched.
 		if (!anchor) continue;
 
 		const isMargin = isMarginNote(id);
@@ -316,8 +316,36 @@ function prunePrintEndnotes(
 }
 
 /**
- * Shared logic: wrap anchor paragraphs in table layouts and
- * inject the max-width style constraint.
+ * Whether `anchor` (or the `<li>` enclosing it, if it's a `<p>` inside a
+ * loose list item) is currently a direct child of a `<ul>`/`<ol>` — exactly
+ * what Obsidian's own `ul > li { margin-inline-start: var(--list-indent) }`
+ * rule matches (a CHILD combinator, so it only fires for an `<li>` that is
+ * still a direct list child).
+ *
+ * buildPrintTables below moves the anchor into a `<td>`, which un-matches
+ * that rule for it specifically — the anchor stops being a direct child of
+ * any `<ul>`/`<ol>` — so a bulleted anchor rendered flush with its
+ * unindented siblings instead of at its own list depth. This is always a
+ * single lost indent, not one per nesting level: an ANCESTOR `<li>` several
+ * levels up keeps its own `ul > li` match — and thus its own indent —
+ * regardless of what happens to a `<td>`-wrapped descendant further down,
+ * since that rule matches each `<li>` independently of the others. Only the
+ * anchor's own, individual match is lost, so this checks only that one
+ * relationship rather than walking and summing the whole ancestor chain.
+ */
+function anchorLostListIndent(anchor: HTMLElement): boolean {
+	let li: HTMLElement | null = anchor;
+	while (li && li.tagName !== "LI") {
+		li = li.parentElement;
+	}
+	const parent = li?.parentElement;
+	return parent?.tagName === "UL" || parent?.tagName === "OL";
+}
+
+/**
+ * Shared logic: wrap each anchor in a plain positioning `<div>` (never a
+ * `<table>` — see the note on .sidenote-print-wrap in styles.css for why)
+ * and inject the width-reservation style constraint.
  */
 function buildPrintTables(
 	ctx: PrintExportContext,
@@ -330,19 +358,27 @@ function buildPrintTables(
 	for (const [anchor, sidenotes] of sidenotesByAnchor) {
 		if (!anchor.parentNode) continue;
 
-		const table = createEl("table");
-		table.className = "sidenote-print-table";
+		// Measured before the anchor moves — see anchorLostListIndent.
+		const lostIndent = anchorLostListIndent(anchor);
 
-		const row = createEl("tr");
-		row.className = "sidenote-print-row";
+		const wrap = createDiv();
+		wrap.className = "sidenote-print-wrap";
+		if (lostIndent) {
+			// Restores the single indent level lost by no longer being a
+			// direct `ul`/`ol` child (see anchorLostListIndent) without
+			// moving the wrapper itself — the sidenote group, positioned
+			// independently of the anchor's own width, is unaffected either
+			// way. A class rather than an inline style: the value
+			// (styles.css's --list-indent fallback) is a fixed constant, not
+			// something that varies per anchor the way the sidenote group's
+			// text-align below does.
+			wrap.classList.add("sidenote-print-wrap--lost-indent");
+		}
 
-		const contentCell = createEl("td");
-		contentCell.className = "sidenote-print-content-cell";
-
-		const sidenoteCell = createEl("td");
-		sidenoteCell.className = "sidenote-print-sidenote-cell";
+		const sidenoteGroup = createDiv();
+		sidenoteGroup.className = "sidenote-print-sidenote-group";
 		if (!isRight) {
-			sidenoteCell.classList.add("is-left");
+			sidenoteGroup.classList.add("is-left");
 		}
 		// Inline, not left to the stylesheet: Obsidian's PDF export may
 		// rasterise from a print-specific context that does not resolve this
@@ -351,33 +387,25 @@ function buildPrintTables(
 		// An inline style travels with this exact DOM node however it gets
 		// printed, and "important" beats the stylesheet's own !important
 		// rule regardless of whether the variable resolved.
-		sidenoteCell.style.setProperty(
+		sidenoteGroup.style.setProperty(
 			"text-align",
 			resolveSidenoteTextAlign(ctx.settings.textAlignment, isRight ? "right" : "left"),
 			"important",
 		);
 
-		anchor.parentNode.insertBefore(table, anchor);
-		contentCell.appendChild(anchor);
+		anchor.parentNode.insertBefore(wrap, anchor);
+		wrap.appendChild(anchor);
 
 		for (const sn of sidenotes) {
-			if (sidenoteCell.childNodes.length > 0) {
+			if (sidenoteGroup.childNodes.length > 0) {
 				const spacer = createDiv();
 				spacer.className = "sidenote-print-spacer";
-				sidenoteCell.appendChild(spacer);
+				sidenoteGroup.appendChild(spacer);
 			}
-			sidenoteCell.appendChild(sn);
+			sidenoteGroup.appendChild(sn);
 		}
 
-		if (isRight) {
-			row.appendChild(contentCell);
-			row.appendChild(sidenoteCell);
-		} else {
-			row.appendChild(sidenoteCell);
-			row.appendChild(contentCell);
-		}
-
-		table.appendChild(row);
+		wrap.appendChild(sidenoteGroup);
 	}
 
 	// Width-constraining rules live in styles.css, scoped to this class;
