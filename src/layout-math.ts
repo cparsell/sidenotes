@@ -415,6 +415,31 @@ export function findStableCmRefLine(root: HTMLElement): HTMLElement | null {
  * resolves against that parent instead, so we compute a per-wrapper
  * offset that compensates for the difference.
  */
+/**
+ * Walk up from `el` to the nearest ancestor the browser will actually use as
+ * the containing block for one of its `position: absolute` descendants —
+ * i.e. the first ancestor whose computed `position` isn't `static`.
+ *
+ * Used instead of a fixed tag/class selector (`li, blockquote, .callout`)
+ * because that list can skip right past the TRUE containing block. styles.css
+ * gives `<p>` its own `position: relative` unconditionally, and Obsidian
+ * wraps callout body text in `.callout-content > p` — so for a sidenote
+ * inside a callout, the nearest positioned ancestor is that `<p>`, not
+ * `.callout` itself, and the two differ by the callout's own padding/border
+ * (its icon inset, on the left). Measuring `.callout` there computed a
+ * shift of zero — no correction at all — and the sidenote rendered off in
+ * the callout's padding instead of the margin. Same issue for blockquotes,
+ * which get the identical `<p>`-wrapped treatment.
+ */
+function findPositionedAncestor(el: HTMLElement): HTMLElement | null {
+	let node = el.parentElement;
+	while (node) {
+		if (getComputedStyle(node).position !== "static") return node;
+		node = node.parentElement;
+	}
+	return null;
+}
+
 export function correctIndentedSidenotePositions(
 	settings: SidenoteSettings,
 	root: HTMLElement,
@@ -436,14 +461,7 @@ export function correctIndentedSidenotePositions(
 	);
 
 	for (const wrapper of Array.from(wrappers)) {
-		const indentedParent = wrapper.closest<HTMLElement>(
-			// Must match the elements styles.css makes `position: relative`,
-			// since the shift below compensates for the wrapper resolving
-			// against one of them. `.callout-content` was measured here
-			// previously while the CSS positions `.callout` — the two differ by
-			// the callout's padding and border.
-			"li, blockquote, .callout",
-		);
+		const indentedParent = findPositionedAncestor(wrapper);
 
 		if (!indentedParent) {
 			// Not indented — inherit the global offsets
