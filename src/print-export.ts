@@ -185,10 +185,13 @@ export function injectPrintSidenotes(
 		const numStr = isMargin ? "" : stripSideSuffix(id);
 
 		if (ctx.settings.hideFootnoteNumbers) {
-			const link = ref.tagName === "A" ? ref : refTarget.querySelector("a");
-			if (link instanceof HTMLElement) {
-				link.classList.add("sidenote-fn-link-hidden");
-			}
+			// Hides the whole original reference (not just its inner <a>,
+			// found via a brittle querySelector that silently did nothing
+			// when the markup didn't have one) via the same reliable
+			// !important class used everywhere else in this file — the
+			// sequential number below is the only one meant to remain
+			// visible.
+			hideForPrint(refTarget);
 		}
 
 		if (!isMargin) {
@@ -343,6 +346,43 @@ function anchorLostListIndent(anchor: HTMLElement): boolean {
 }
 
 /**
+ * How many `ul > li` / `ol > li` matches (see anchorLostListIndent above)
+ * lie on the path from `anchor`'s PARENT up to the document root — every
+ * ANCESTOR list item's own indent, deliberately excluding the anchor's own
+ * match even when anchor itself is such an `<li>`.
+ *
+ * .sidenote-print-sidenote-group positions itself at 100% of its wrap's own
+ * width — i.e. relative to wherever the wrap happens to sit. That position
+ * is shifted right by every ANCESTOR list item's own `margin-inline-start`
+ * (real, unwrapped `<li>`s that keep their normal indent), but NOT by the
+ * anchor's own — that contribution is compensated separately, as padding
+ * INSIDE the wrap (see anchorLostListIndent), which moves the anchor's text
+ * without moving the wrap's own outer edge at all. Counting the anchor's own
+ * match here as well double-counted it into the sidenote's escape distance,
+ * overshooting every list-nested sidenote leftward by exactly one
+ * list-indent unit regardless of actual depth — confirmed against a real
+ * headless-Chrome print-to-PDF run: a single-level-nested sidenote and a
+ * two-level-nested one landed at the same (over-corrected) x either way,
+ * since both were off by that same constant one unit.
+ */
+function computeListNestingDepth(anchor: HTMLElement): number {
+	let depth = 0;
+	let node: HTMLElement | null = anchor.parentElement;
+	while (node) {
+		const parent: HTMLElement | null = node.parentElement;
+		if (
+			parent &&
+			(parent.tagName === "UL" || parent.tagName === "OL") &&
+			node.tagName === "LI"
+		) {
+			depth++;
+		}
+		node = parent;
+	}
+	return depth;
+}
+
+/**
  * Shared logic: wrap each anchor in a plain positioning `<div>` (never a
  * `<table>` — see the note on .sidenote-print-wrap in styles.css for why)
  * and inject the width-reservation style constraint.
@@ -358,8 +398,10 @@ function buildPrintTables(
 	for (const [anchor, sidenotes] of sidenotesByAnchor) {
 		if (!anchor.parentNode) continue;
 
-		// Measured before the anchor moves — see anchorLostListIndent.
+		// Measured before the anchor moves — see anchorLostListIndent and
+		// computeListNestingDepth.
 		const lostIndent = anchorLostListIndent(anchor);
+		const nestingDepth = computeListNestingDepth(anchor);
 
 		const wrap = createDiv();
 		wrap.className = "sidenote-print-wrap";
@@ -391,6 +433,13 @@ function buildPrintTables(
 			"text-align",
 			resolveSidenoteTextAlign(ctx.settings.textAlignment, isRight ? "right" : "left"),
 			"important",
+		);
+		// Per-anchor and genuinely variable (see computeListNestingDepth) —
+		// unlike --list-indent's own value, this can't be expressed as a
+		// fixed CSS class the way sidenote-print-wrap--lost-indent is.
+		sidenoteGroup.style.setProperty(
+			"--sn-nesting-depth",
+			String(nestingDepth),
 		);
 
 		anchor.parentNode.insertBefore(wrap, anchor);

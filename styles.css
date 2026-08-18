@@ -72,7 +72,32 @@
 
 .sidenote-print-sidenote-group.is-left {
 	left: auto !important;
-	right: 100% !important;
+	/* Plain `right: 100%` pins this group's right edge to the WRAP's own
+	   left edge — which, unlike the wrap's right edge, shifts rightward
+	   with every list level the anchor is nested under (each ancestor
+	   `<li>`'s own `margin-inline-start` moves its left edge in without
+	   moving its right edge, since its width is auto and stays anchored to
+	   its parent's right edge — so nesting only ever drifts the LEFT side).
+	   A sidenote several levels deep inherited that same rightward drift
+	   from its wrap, landing further from the page margin than a sidenote
+	   on a top-level anchor. --sn-nesting-depth (set per anchor in
+	   print-export.ts) is exactly that drift, in list-indent units, so
+	   adding it here cancels it back out — this is why only .is-left needs
+	   it and the default (right-margin) rule above doesn't: that one
+	   references the wrap's RIGHT edge via `left: 100%`, which nesting
+	   never moves. */
+	/* / 0.75, not just * depth * list-indent: --list-indent is an em value,
+	   and a custom property's relative units resolve against whatever
+	   element var() is actually used in — this element, not wherever
+	   --sn-nesting-depth or --list-indent themselves were set. This
+	   element's own font-size is 0.75em (below), so plain em math here
+	   would only apply the compensation at 75% strength, leaving a
+	   residual drift proportional to nesting depth. Dividing by the exact
+	   0.75 this rule itself uses corrects for that scale factor. */
+	right: calc(
+		100% +
+			(var(--sn-nesting-depth, 0) * var(--list-indent, 2.25em) / 0.75)
+	) !important;
 	padding: 2.5em var(--sn-print-gutter, 1cm) 0 0 !important;
 	/* Previously hardcoded to right regardless of the "Text alignment"
 	   setting — on-screen left-margin sidenotes honoured a "left" choice,
@@ -235,7 +260,8 @@
 				.MathJax,
 				pre,
 				.contains-task-list,
-				.sidenote-print-wrap
+				.sidenote-print-wrap,
+				section.footnotes
 			)
 			*
 	),
@@ -243,7 +269,15 @@
 	/* Matches --sn-print-sidenote-width + --sn-print-gutter (defined on
 	   .sidenote-print-page) — the sidenote group's own physical size, not a
 	   percentage, now that it's positioned rather than laid out as a table
-	   column. See that variable's comment. */
+	   column. See that variable's comment.
+
+	   section.footnotes is ALSO in the exclusion list above (not just this
+	   rule's own selector) for the same reason .sidenote-print-wrap is: its
+	   own `ol`/`li`/`p` are of types this same general selector matches, and
+	   without the exclusion each one ALSO picked up its own reservation on
+	   top of the one this rule already applies to the section as a whole —
+	   the endnote list ended up shifted twice as far right as the body
+	   text above it. */
 	max-width: calc(100% - var(--sn-print-reserved, 6.2cm)) !important;
 }
 
@@ -289,7 +323,8 @@
 				.MathJax,
 				pre,
 				.contains-task-list,
-				.sidenote-print-wrap
+				.sidenote-print-wrap,
+				section.footnotes
 			)
 			*
 	),
