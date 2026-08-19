@@ -122,7 +122,7 @@ export function positionReadingSidenotes(
 		readingRoot,
 		true,
 	);
-	correctIndentedSidenotePositions(ctx.settings, readingRoot);
+	correctIndentedSidenotePositions(ctx.settings, readingRoot, true);
 
 	// All margins in the DOM, not just newly created ones, so collisions
 	// between old and new sidenotes are resolved. Deliberately the same

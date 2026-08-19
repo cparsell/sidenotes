@@ -95,8 +95,7 @@
 	   residual drift proportional to nesting depth. Dividing by the exact
 	   0.75 this rule itself uses corrects for that scale factor. */
 	right: calc(
-		100% +
-			(var(--sn-nesting-depth, 0) * var(--list-indent, 2.25em) / 0.75)
+		100% + (var(--sn-nesting-depth, 0) * var(--list-indent, 2.25em) / 0.75)
 	) !important;
 	padding: 2.5em var(--sn-print-gutter, 1cm) 0 0 !important;
 	/* Previously hardcoded to right regardless of the "Text alignment"
@@ -170,7 +169,9 @@
 	   gutter is padding INSIDE the sidenote cell (see .sidenote-print-sidenote-group),
 	   so without adding it here the reserved margin would land exactly on
 	   the sidenote's own text with no breathing room before the body. */
-	--sn-print-reserved: calc(var(--sn-print-sidenote-width) + var(--sn-print-gutter));
+	--sn-print-reserved: calc(
+		var(--sn-print-sidenote-width) + var(--sn-print-gutter)
+	);
 
 	padding-left: var(--sn-print-body-inset) !important;
 	padding-right: 0 !important;
@@ -395,7 +396,8 @@
 		(
 				var(--sidenote-width) +
 					var(--sidenote-gap-effective, var(--sidenote-gap))
-			) * var(--sn-page-offset-factor, 0)
+			) *
+			var(--sn-page-offset-factor, 0)
 	);
 	--sidenote-edge-offset: var(--sidenote-gap);
 }
@@ -613,7 +615,21 @@
 .markdown-reading-view h5,
 .markdown-reading-view h6,
 .markdown-reading-view blockquote,
-.markdown-reading-view .callout {
+.markdown-reading-view .callout,
+/* Editing mode's equivalent. Most Live Preview content is line-based
+   (.cm-line, already position:relative above) rather than rendered as real
+   p/li/blockquote elements — but a callout renders as an embedded WIDGET
+   whose *inside* (.callout-content > p, same as reading mode) is actual
+   HTML, not cm-lines, so it needs this rule too. Without it, nothing inside
+   a Live Preview callout is a positioned ancestor at all, and
+   correctIndentedSidenotePositions in layout-math.ts — which walks up
+   looking for one — falls through to "not indented" and applies no
+   correction, leaving a callout-nested sidenote positioned as if it were a
+   top-level paragraph. */
+.markdown-source-view.mod-cm6 .callout p,
+.markdown-source-view.mod-cm6 .callout li,
+.markdown-source-view.mod-cm6 .callout blockquote,
+.markdown-source-view.mod-cm6 .callout {
 	position: relative;
 }
 
@@ -636,8 +652,43 @@
    left this one clipping the sidenote away: `auto` still clips until
    scrolled, it isn't a no-op like `visible`. */
 .markdown-reading-view .callout:has(.sidenote-number) .callout-content,
-.markdown-source-view.mod-cm6 .callout:has(.sidenote-number) .callout-content {
+.markdown-source-view.mod-cm6
+	.callout:has(.sidenote-number)
+	.callout-content {
 	overflow: visible;
+}
+
+/* THIRD clipping layer, editing mode only: Obsidian wraps the whole callout
+   widget in .cm-embed-block, which is harmless while idle but gets its own
+   `overflow: hidden` the instant the mouse hovers it (for a box-shadow
+   effect) — the margin computed visible/opacity:1 at a plausible on-screen 
+	 position, but `elementFromPoint` at that exact spot returned .cm-scroller, 
+	 not the margin, meaning something between the callout and the scroller 
+	 was still clipping it despite both .callout and .callout-content above 
+	 being freed. Since the sidenote margin escapes far outside the callout's 
+	 own visual footprint, this hover rule clips it away almost any time the 
+	 callout is actually being looked at — !important because the hover rule 
+	 has to be beaten unconditionally, not just avoided at rest. */
+.markdown-source-view.mod-cm6 .cm-embed-block:has(.sidenote-number) {
+	overflow: visible !important;
+}
+
+/* FOURTH layer, and the one actually responsible — confirmed live via
+   DevTools: forcing the margin to `z-index: 999999` with a solid red
+   background and re-running elementFromPoint at its own coordinates still
+   returned .cm-scroller, and no red box appeared on screen at all. That
+   only happens with CSS `contain: paint`, which Obsidian sets on
+   .cm-embed-block.cm-callout (almost certainly for render-isolation
+   performance on embedded widgets) — it forces everything inside to be
+   clipped to the container's own box for painting purposes, a SEPARATE
+   mechanism from `overflow` that overflow:visible has no power over at
+   all. This is why the three overflow fixes above were each individually
+   correct but never actually fixed anything: none of them touch paint
+   containment. `:has()`-scoped, like the others, so an ordinary callout
+   keeps its full performance containment untouched. */
+.markdown-source-view.mod-cm6
+	.cm-embed-block.cm-callout:has(.sidenote-number) {
+	contain: none !important;
 }
 
 /* === Hide original span content === */

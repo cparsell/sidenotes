@@ -443,6 +443,7 @@ function findPositionedAncestor(el: HTMLElement): HTMLElement | null {
 export function correctIndentedSidenotePositions(
 	settings: SidenoteSettings,
 	root: HTMLElement,
+	isReadingMode: boolean,
 ) {
 	const position = settings.sidenotePosition;
 
@@ -455,6 +456,14 @@ export function correctIndentedSidenotePositions(
 	const globalOffsetRight =
 		parseFloat(root.style.getPropertyValue("--sidenote-offset-right")) ||
 		0;
+
+	// Editing mode has no .markdown-preview-sizer to look a per-wrapper
+	// baseline up in (see the section lookup below) — CM6 is its own
+	// virtualised world of .cm-line elements instead. findStableCmRefLine is
+	// the same single reference line updateSidenotePositioning already used
+	// to compute the global offsets read above, so reusing it here keeps the
+	// correction measured against the exact baseline it's correcting.
+	const editingRefLine = isReadingMode ? null : findStableCmRefLine(root);
 
 	const wrappers = root.querySelectorAll<HTMLElement>(
 		"span.sidenote-number",
@@ -471,22 +480,25 @@ export function correctIndentedSidenotePositions(
 			continue;
 		}
 
-		// Baseline: the top-level preview section this sidenote lives in.
+		// Baseline this wrapper's shift is measured against.
 		//
-		// Deliberately per-wrapper rather than one document-wide reference
-		// element. A global baseline has to be *found*, and both ways of
-		// finding it are wrong somewhere: the first visible paragraph may not
-		// exist partway down a long list (leaving indented notes uncorrected,
-		// so they cut into the text), and the preview sizer is not the text
-		// column when a theme centres content within it (over-correcting, so
-		// they fly off the side).
+		// Reading mode: the top-level preview section this sidenote lives in,
+		// found per-wrapper rather than once for the whole document. A global
+		// baseline has to be *found*, and both ways of finding it are wrong
+		// somewhere: the first visible paragraph may not exist partway down a
+		// long list (leaving indented notes uncorrected, so they cut into the
+		// text), and the preview sizer is not the text column when a theme
+		// centres content within it (over-correcting, so they fly off the
+		// side). A section div is a direct child of the sizer, spans exactly
+		// the body text column for its region, and is always present — no
+		// scanning, no dependence on what happens to be scrolled into view.
 		//
-		// A section div is a direct child of the sizer, spans exactly the body
-		// text column for its region, and is always present — no scanning, no
-		// dependence on what happens to be scrolled into view.
-		const section = wrapper.closest<HTMLElement>(
-			".markdown-preview-sizer > div",
-		);
+		// Editing mode: no per-wrapper equivalent exists (CM6 has no
+		// .markdown-preview-sizer), so this reuses editingRefLine — the same
+		// single reference line the global offset was already computed from.
+		const section = isReadingMode
+			? wrapper.closest<HTMLElement>(".markdown-preview-sizer > div")
+			: editingRefLine;
 		if (!section) continue;
 
 		const refRect = section.getBoundingClientRect();
@@ -532,9 +544,18 @@ export function applyLineOffset(
 	isEditingMode: boolean = false,
 ) {
 	if (isEditingMode) {
-		// In editing mode, sidenotes are inside .cm-line which already has position: relative
-		// The wrapper is inline within the line, so we need to find the offset within the line
-		const line = wrapper.closest<HTMLElement>(".cm-line");
+		// In editing mode, sidenotes are normally inside .cm-line, which
+		// already has position: relative. A sidenote inside a callout has no
+		// .cm-line ancestor at all though — Obsidian renders the callout as
+		// a single replaced block widget (.callout-content > p, same as
+		// reading mode), not per-line elements — so this falls back to
+		// whatever .callout p/li/blockquote/.callout position:relative CSS
+		// resolves to instead (see findPositionedAncestor's own comment).
+		// Without it this returned early and --sidenote-line-offset was
+		// simply never set for a callout-nested sidenote.
+		const line =
+			wrapper.closest<HTMLElement>(".cm-line") ??
+			findPositionedAncestor(wrapper);
 		if (!line) return;
 
 		// Get positions

@@ -20,6 +20,7 @@ import {
 import {
 	type SidenoteMode,
 	applyLineOffset,
+	correctIndentedSidenotePositions,
 	updateSidenotePositioning,
 } from "./layout-math";
 import { updateCollisionsIn } from "./collision-runner";
@@ -92,6 +93,12 @@ export function positionEditingSidenotes(
 				cmRoot,
 				false,
 			);
+			// Reading mode's counterpart already ran this; editing mode never
+			// did, which is why a callout-nested sidenote positioned as if it
+			// were a top-level paragraph in Live Preview even after reading
+			// mode was fixed. Must run after updateSidenotePositioning, which
+			// sets the global --sidenote-offset this reads and corrects.
+			correctIndentedSidenotePositions(ctx.settings, cmRoot, false);
 			// The captured root, not this.cmRoot — the active leaf may have
 			// changed between scheduling this frame and running it.
 			updateCollisionsIn(ctx.settings, cmRoot);

@@ -1330,7 +1330,14 @@ export default class SidenotePlugin
 		const editor = (view.editor as { cm?: EditorView })?.cm;
 		if (!editor?.state || !editor?.lineBlockAt) return null;
 
-		const lineEl = el.closest(".cm-line");
+		// A sidenote inside a callout (or any other replaced block widget —
+		// code blocks, embeds) has no .cm-line ancestor at all: Obsidian
+		// swaps the whole widget's source lines for a single rendered DOM
+		// subtree wrapped in .cm-embed-block, not per-line elements. Without
+		// this fallback, getDocumentPosition always returned null there, so
+		// findSidenoteIndex (editing-mode.ts) had no way to disambiguate two
+		// identically-worded sidenotes inside — or straddling — a callout.
+		const lineEl = el.closest(".cm-line") ?? el.closest(".cm-embed-block");
 		if (!lineEl) return null;
 
 		const rect = lineEl.getBoundingClientRect();
