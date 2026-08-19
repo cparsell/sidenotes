@@ -53,10 +53,31 @@
 .sidenote-print-sidenote-group {
 	position: absolute !important;
 	top: 0 !important;
-	left: 100% !important;
+	/* --sn-callout-offset (set per anchor in print-export.ts, see its own
+	   comment) compensates for the anchor sitting inside a `.callout`,
+	   which has its own inset padding a list item doesn't — measured in JS
+	   rather than counted-and-multiplied like --sn-nesting-depth below,
+	   since a callout's padding is a real CSS length (themeable, not a
+	   fixed per-level constant like --list-indent) and only ever needs
+	   adding once, not once per nesting level. Already an absolute px
+	   value by the time it's set, so — unlike --sn-nesting-depth's
+	   em-based term — it does not need this element's own 0.75 font-size
+	   scale factored out. */
+	left: calc(100% + var(--sn-callout-offset, 0px)) !important;
 	right: auto !important;
 	margin: 0 !important;
-	padding: 2.5em 0 0 var(--sn-print-gutter, 1cm) !important;
+	/* 0.2em, not 0 flat: the group's own text is smaller (0.75em below) than
+	   the anchor's, so a smaller font's shorter ascent needs a small nudge
+	   down to align baselines with the anchor's first line rather than
+	   sitting visibly high above it. This used to be 2.5em, a leftover from
+	   the old table-row layout (where the row's own vertical-align needed
+	   compensating) that never got recalibrated after the group switched to
+	   `position: absolute; top: 0` directly against the wrap — at 2.5em and
+	   this element's own 0.75em font-size, that was a full 30px push down
+	   the anchor's own top with nothing else offsetting it, landing the
+	   sidenote text visibly a line below the line it was actually attached
+	   to. */
+	padding: 0.4em 0 0 var(--sn-print-gutter, 1cm) !important;
 	width: var(--sn-print-sidenote-width, 5.2cm) !important;
 	font-size: 0.75em !important;
 	line-height: 1.35 !important;
@@ -95,13 +116,31 @@
 	   residual drift proportional to nesting depth. Dividing by the exact
 	   0.75 this rule itself uses corrects for that scale factor. */
 	right: calc(
-		100% + (var(--sn-nesting-depth, 0) * var(--list-indent, 2.25em) / 0.75)
+		100% +
+			(var(--sn-nesting-depth, 0) * var(--list-indent, 2.25em) / 0.75) +
+			var(--sn-callout-offset, 0px)
 	) !important;
-	padding: 2.5em var(--sn-print-gutter, 1cm) 0 0 !important;
+	/* 0.2em top, not the old 2.5em — see the default rule's own comment,
+	   same fix, same reasoning, just the mirrored padding shorthand. */
+	padding: 0.2em var(--sn-print-gutter, 1cm) 0 0 !important;
 	/* Previously hardcoded to right regardless of the "Text alignment"
 	   setting — on-screen left-margin sidenotes honoured a "left" choice,
 	   PDF export silently overrode it back to right. */
 	text-align: var(--sn-text-align-left, right) !important;
+}
+
+/* A footnote inside a callout has its sidenote group escape far outside
+   the callout's own box (same as reading/editing mode's .sidenote-margin
+   does) — but unlike those two, nothing here previously overrode Obsidian's
+   native `.callout { overflow: hidden }` (rounded-corner clipping) or
+   `.callout-content { overflow-x: auto }` (its own separate scroll/clip
+   layer) for the print/export DOM, so an escaping print sidenote was
+   clipped away exactly like the live-view ones were before those got
+   fixed. Scoped to callouts that actually contain a sidenote wrap, so an
+   ordinary callout keeps its corner clipping untouched. */
+.sidenote-print-page .callout:has(.sidenote-print-wrap),
+.sidenote-print-page .callout:has(.sidenote-print-wrap) .callout-content {
+	overflow: visible !important;
 }
 
 .sidenote-print-spacer {

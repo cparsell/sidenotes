@@ -383,6 +383,57 @@ function computeListNestingDepth(anchor: HTMLElement): number {
 }
 
 /**
+ * Cumulative inset, in px, from every `.callout`/`.callout-content`
+ * ancestor's own padding — the callout equivalent of
+ * computeListNestingDepth above, needed for the same reason: the sidenote
+ * group escapes relative to the WRAP's position, and a callout shifts that
+ * position by its own padding (its icon inset, on the left) just like a
+ * list item's `margin-inline-start` does.
+ *
+ * Measured directly rather than counted-and-multiplied like the list case:
+ * a callout's padding is a real, themeable CSS length (Obsidian exposes it
+ * as `--callout-padding` / `--callout-content-padding`), not a fixed
+ * known-in-advance constant the way `--list-indent` is, and it only ever
+ * needs adding once per callout, not compounded per nesting level the way
+ * list indentation naturally does. Both `.callout` and `.callout-content`
+ * contribute their OWN, separate padding — Obsidian renders a callout's
+ * body as `.callout > .callout-content > p`, and each of those two wrapping
+ * elements insets the `<p>` by its own padding independently — so both
+ * classes are checked, not just `.callout`.
+ *
+ * `isRight` selects which side's padding to sum: a right-margin sidenote
+ * escapes from the wrap's RIGHT edge (see the CSS default rule's own
+ * comment on why list nesting never moves that edge — callout padding is
+ * different, since it insets the `<p>` from BOTH sides, unlike a list
+ * item's margin which only ever moves the left edge), so it needs the
+ * callout's padding-right instead of padding-left.
+ */
+function computeCalloutInsetPx(anchor: HTMLElement, isRight: boolean): number {
+	let total = 0;
+	let node: HTMLElement | null = anchor.parentElement;
+	while (node) {
+		if (
+			node.classList.contains("callout") ||
+			node.classList.contains("callout-content")
+		) {
+			const style = getComputedStyle(node);
+			// Border insets the content box exactly like padding does, and
+			// .callout has one (for its rounded corner) — small (a handful
+			// of px) but real, so it's summed in alongside padding rather
+			// than left for the next person to rediscover as a residual
+			// few-pixel drift.
+			const padding = isRight ? style.paddingRight : style.paddingLeft;
+			const border = isRight
+				? style.borderRightWidth
+				: style.borderLeftWidth;
+			total += (parseFloat(padding) || 0) + (parseFloat(border) || 0);
+		}
+		node = node.parentElement;
+	}
+	return total;
+}
+
+/**
  * Shared logic: wrap each anchor in a plain positioning `<div>` (never a
  * `<table>` — see the note on .sidenote-print-wrap in styles.css for why)
  * and inject the width-reservation style constraint.
@@ -398,10 +449,11 @@ function buildPrintTables(
 	for (const [anchor, sidenotes] of sidenotesByAnchor) {
 		if (!anchor.parentNode) continue;
 
-		// Measured before the anchor moves — see anchorLostListIndent and
-		// computeListNestingDepth.
+		// Measured before the anchor moves — see anchorLostListIndent,
+		// computeListNestingDepth, and computeCalloutInsetPx.
 		const lostIndent = anchorLostListIndent(anchor);
 		const nestingDepth = computeListNestingDepth(anchor);
+		const calloutInsetPx = computeCalloutInsetPx(anchor, isRight);
 
 		const wrap = createDiv();
 		wrap.className = "sidenote-print-wrap";
@@ -441,6 +493,15 @@ function buildPrintTables(
 			"--sn-nesting-depth",
 			String(nestingDepth),
 		);
+		// See computeCalloutInsetPx — already an absolute px measurement,
+		// so unlike --sn-nesting-depth this needs no further unit math in
+		// the CSS that consumes it.
+		if (calloutInsetPx > 0) {
+			sidenoteGroup.style.setProperty(
+				"--sn-callout-offset",
+				`${calloutInsetPx}px`,
+			);
+		}
 
 		anchor.parentNode.insertBefore(wrap, anchor);
 		wrap.appendChild(anchor);
