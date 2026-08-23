@@ -63,7 +63,9 @@ import {
 import { createFootnoteSidenotePlugin } from "./widgets";
 import {
 	type InlineEditorHandle,
+	captureMainEditorCursor,
 	openInlineMarkdownEditor,
+	restoreMainEditorCursor,
 } from "./inline-editor";
 
 type CleanupFn = () => void;
@@ -1541,6 +1543,8 @@ export default class SidenotePlugin
 		const found = this.findHtmlSidenoteInSource(marginText);
 		const originalText = found?.text ?? sourceSpan.textContent ?? "";
 
+		const savedCursor = captureMainEditorCursor(this.app);
+
 		margin.dataset.editing = "true";
 		margin.innerHTML = "";
 
@@ -1556,6 +1560,8 @@ export default class SidenotePlugin
 				if (changed) {
 					this.commitHtmlSpanSidenoteText(originalText, text);
 				}
+
+				restoreMainEditorCursor(this.app, savedCursor);
 
 				margin.innerHTML = "";
 				margin.appendChild(

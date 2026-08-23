@@ -7,7 +7,7 @@
  * concerns, so they belong here.
  */
 
-import { App, EditorPosition, TFile } from "obsidian";
+import { App, EditorPosition, MarkdownView, TFile } from "obsidian";
 import { EditorView, keymap, Command } from "@codemirror/view";
 import { EditorState, EditorSelection } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
@@ -33,6 +33,24 @@ interface MinimalEditor {
 		from: EditorPosition,
 		to?: EditorPosition,
 	): void;
+}
+
+/** Cursor position in the main document editor, wherever it was last left. */
+export function captureMainEditorCursor(app: App): EditorPosition | null {
+	const editor = app.workspace.getActiveViewOfType(MarkdownView)?.editor;
+	return editor?.getCursor() ?? null;
+}
+
+/** Return focus and the cursor to the main document editor after a nested editor closes. */
+export function restoreMainEditorCursor(
+	app: App,
+	pos: EditorPosition | null,
+) {
+	if (!pos) return;
+	const editor = app.workspace.getActiveViewOfType(MarkdownView)?.editor;
+	if (!editor) return;
+	editor.setCursor(pos);
+	editor.focus();
 }
 
 function cmToPos(view: EditorView, offset: number): EditorPosition {

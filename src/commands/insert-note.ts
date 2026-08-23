@@ -132,7 +132,8 @@ export function insertNote(
 	const hadDefinitions = findLastDefinitionLine(content) !== -1;
 
 	const footnoteContent =
-		selectedText || (variant.marginNote ? "New margin note" : "New sidenote");
+		selectedText ||
+		(variant.marginNote ? "New margin note" : "New sidenote");
 
 	const suffix = variant.oppositeMargin
 		? oppositeSide === "right"
@@ -144,7 +145,20 @@ export function insertNote(
 	// Reference first, then the definition — appendDefinition re-reads the
 	// document because this insertion shifts the line numbers below it.
 	editor.replaceRange(`[^${newId}]`, cursor);
-	appendDefinition(editor, `[^${newId}]: ${footnoteContent}`, hadDefinitions);
+	appendDefinition(
+		editor,
+		`[^${newId}]: ${footnoteContent}`,
+		hadDefinitions,
+	);
+
+	// appendDefinition's own replaceRange leaves the cursor wherever it wrote
+	// the definition; park it back after the reference instead, since that's
+	// what the margin editor (opened below) restores focus to on close.
+	editor.setCursor({
+		line: cursor.line,
+		ch: cursor.ch + `[^${newId}]`.length + 1,
+	});
+	editor.focus();
 
 	ctx.requestFootnoteEdit(newId);
 }

@@ -1,4 +1,8 @@
-import { MarkdownView, editorLivePreviewField } from "obsidian";
+import {
+	EditorPosition,
+	MarkdownView,
+	editorLivePreviewField,
+} from "obsidian";
 import {
 	EditorView,
 	ViewUpdate,
@@ -21,9 +25,10 @@ import type { SidenoteWidgetHost } from "./widget-host";
 import {
 	type InlineEditorCloseResult,
 	type InlineEditorHandle,
+	captureMainEditorCursor,
 	openInlineMarkdownEditor,
+	restoreMainEditorCursor,
 } from "./inline-editor";
-
 
 // ======================================================
 // ========CodeMirror 6 Footnote Sidenote Widget ========
@@ -104,8 +109,13 @@ class FootnoteSidenoteWidget extends WidgetType {
 			this.startMarginEdit(margin);
 		});
 
-		// Prevent mousedown from propagating to CM6 editor
+		// Prevent mousedown from propagating to CM6 editor.
+		// without preventDefault the browser still moves the native
+		// caret to the click point before our click handler runs, so the
+		// "restore cursor to where it was" on close would restore it to the
+		// widget instead of wherever the user actually left it.
 		wrapper.addEventListener("mousedown", (e) => {
+			e.preventDefault();
 			e.stopPropagation();
 		});
 
@@ -146,7 +156,8 @@ class FootnoteSidenoteWidget extends WidgetType {
 	 */
 	private marginEditor: InlineEditorHandle | null = null;
 
-
+	/** Main editor cursor at the moment the margin editor opened; restored on close. */
+	private savedCursor: EditorPosition | null = null;
 
 	/**
 	 * Everything that has to happen once the margin editor has closed.
@@ -169,16 +180,16 @@ class FootnoteSidenoteWidget extends WidgetType {
 			this.commitFootnoteText(result.renderText);
 		}
 
+		restoreMainEditorCursor(this.host.app, this.savedCursor);
+		this.savedCursor = null;
+
 		// Re-render with this.content deliberately, NOT the new text: the
 		// write-back above changes the document, so CM6 rebuilds this widget
 		// with the updated content a moment later. Rendering the new text here
 		// too would briefly show it twice over.
 		margin.innerHTML = "";
 		margin.appendChild(
-			renderLinksToFragment(
-				normalizeText(this.content),
-				this.host.app,
-			),
+			renderLinksToFragment(normalizeText(this.content), this.host.app),
 		);
 
 		// Signal that reading mode needs a refresh if the user switches modes
@@ -193,8 +204,7 @@ class FootnoteSidenoteWidget extends WidgetType {
 	}
 
 	private commitFootnoteText(newText: string) {
-		const view =
-			this.host.app.workspace.getActiveViewOfType(MarkdownView);
+		const view = this.host.app.workspace.getActiveViewOfType(MarkdownView);
 		if (!view?.editor) return;
 
 		const editor = view.editor;
@@ -231,7 +241,11 @@ class FootnoteSidenoteWidget extends WidgetType {
 			if ((e.target as HTMLElement).closest("a")) {
 				return;
 			}
-			// Stop propagation so CM6 main editor doesn't steal focus/click
+			// preventDefault, not just stopPropagation: without it the browser
+			// still moves the native caret into the main editor at the click
+			// point, which would corrupt the "restore cursor to where it was"
+			// position captured on click.
+			e.preventDefault();
 			e.stopPropagation();
 			// Let click focus our margin editor
 		};
@@ -265,6 +279,7 @@ class FootnoteSidenoteWidget extends WidgetType {
 	private startMarginEdit(margin: HTMLElement) {
 		if (this.marginEditor) return;
 
+		this.savedCursor = captureMainEditorCursor(this.host.app);
 		this.host.setActiveFootnoteEdit(this.footnoteId);
 		margin.dataset.editing = "true";
 		margin.innerHTML = "";
@@ -437,8 +452,7 @@ class FootnoteSidenoteViewPlugin {
 		const content = state.doc.toString();
 
 		// Parse footnote definitions first
-		const footnoteDefinitions =
-			parseFootnoteDefinitions(content);
+		const footnoteDefinitions = parseFootnoteDefinitions(content);
 
 		// Find all footnote references [^id] (not definitions [^id]:)
 		const referenceRegex = /\[\^([^\]]+)\](?!:)/g;

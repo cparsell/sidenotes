@@ -7,12 +7,14 @@
  * document-level click listener and leaves the popup behind.
  */
 
-import type { App, PluginManifest } from "obsidian";
+import type { App, EditorPosition, PluginManifest } from "obsidian";
 import type { SidenoteSettings } from "./settings";
 import { normalizeText, renderLinksToFragment } from "./content";
 import {
 	type InlineEditorHandle,
+	captureMainEditorCursor,
 	openInlineMarkdownEditor,
+	restoreMainEditorCursor,
 } from "./inline-editor";
 
 export interface MarginNotePopupContext {
@@ -87,6 +89,7 @@ export function setupMarginNotePopup(
 	if (editable) {
 		let popupEditor: InlineEditorHandle | null = null;
 		let isEditing = false;
+		let savedCursor: EditorPosition | null = null;
 
 		const renderReadOnly = () => {
 			contentEl.innerHTML = "";
@@ -105,6 +108,8 @@ export function setupMarginNotePopup(
 			// Defensive: the content click handler bails while isEditing,
 			// so there should be no editor open here.
 			popupEditor?.close({ commit: false });
+
+			savedCursor = captureMainEditorCursor(ctx.app);
 
 			contentEl.innerHTML = "";
 			popup.classList.add("is-visible");
@@ -129,6 +134,8 @@ export function setupMarginNotePopup(
 						}
 						currentRawText = text;
 					}
+
+					restoreMainEditorCursor(ctx.app, savedCursor);
 
 					isEditing = false;
 					contentEl.innerHTML = "";
