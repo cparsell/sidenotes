@@ -390,6 +390,13 @@ class MarginNoteMarkerWidget extends WidgetType {
  */
 class FootnoteSidenoteViewPlugin {
 	decorations: DecorationSet;
+	/**
+	 * The `Decoration.replace` ranges covering the raw `[^id]` text, fed to
+	 * `EditorView.atomicRanges`. Replacing a range collapses it visually but
+	 * does NOT stop the cursor entering it — without this facet the caret walks
+	 * invisibly through the hidden characters, one arrow press each.
+	 */
+	atomicRanges: DecorationSet;
 	private lastSettingsVersion: number;
 	private lastLivePreview: boolean;
 
@@ -399,6 +406,7 @@ class FootnoteSidenoteViewPlugin {
 	) {
 		this.lastSettingsVersion = host.settingsVersion;
 		this.lastLivePreview = this.isLivePreview(view.state);
+		this.atomicRanges = Decoration.none;
 		this.decorations = this.buildDecorations(view.state);
 	}
 
@@ -440,15 +448,22 @@ class FootnoteSidenoteViewPlugin {
 	buildDecorations(state: EditorState): DecorationSet {
 		// Only show footnote sidenotes in editing mode when using footnote-edit format
 		if (this.host.settings.sidenoteFormat !== "footnote-edit") {
+			this.atomicRanges = Decoration.none;
 			return Decoration.none;
 		}
 
 		// Source mode renders the bare markdown — no sidenotes
 		if (!this.isLivePreview(state)) {
+			this.atomicRanges = Decoration.none;
 			return Decoration.none;
 		}
 
-		const decorations: { from: number; decoration: Decoration }[] = [];
+		const decorations: {
+			from: number;
+			to: number;
+			decoration: Decoration;
+		}[] = [];
+		const replaced: { from: number; to: number }[] = [];
 		const content = state.doc.toString();
 
 		// Parse footnote definitions first
@@ -503,6 +518,7 @@ class FootnoteSidenoteViewPlugin {
 			if (isMargin) {
 				decorations.push({
 					from: to,
+					to,
 					decoration: Decoration.widget({
 						widget: new MarginNoteMarkerWidget(this.host, id),
 						side: -1,
@@ -510,24 +526,48 @@ class FootnoteSidenoteViewPlugin {
 				});
 			}
 
-			decorations.push({
-				from: to,
-				decoration: Decoration.widget({
-					widget: new FootnoteSidenoteWidget(
-						footnoteContent,
-						numberText,
-						id,
-						this.host,
-					),
-					side: 1,
-				}),
-			});
+			const footnoteWidget = new FootnoteSidenoteWidget(
+				footnoteContent,
+				numberText,
+				id,
+				this.host,
+			);
+
+			if (this.host.settings.hideFootnoteNumbers) {
+				// Replace the raw `[^id]` text rather than leaving it in the
+				// document and hiding it with CSS. Hiding it with CSS leaves the
+				// characters in CM6's layout, so the caret's visual position and
+				// its document offset disagree, causing the cursor to land a character
+				// past the symbol. Replacing collapses the range properly — but note that a
+				// replace is NOT atomic on its own; `replaced` feeds the
+				// atomicRanges facet below, which is what makes the whole
+				// reference cost exactly one arrow press.
+				decorations.push({
+					from,
+					to,
+					decoration: Decoration.replace({ widget: footnoteWidget }),
+				});
+				replaced.push({ from, to });
+			} else {
+				decorations.push({
+					from: to,
+					to,
+					decoration: Decoration.widget({
+						widget: footnoteWidget,
+						side: 1,
+					}),
+				});
+			}
 		}
 
 		// Sort by position and create DecorationSet
 		decorations.sort((a, b) => a.from - b.from);
+		replaced.sort((a, b) => a.from - b.from);
+		this.atomicRanges = Decoration.set(
+			replaced.map((r) => Decoration.mark({}).range(r.from, r.to)),
+		);
 		return Decoration.set(
-			decorations.map((d) => d.decoration.range(d.from)),
+			decorations.map((d) => d.decoration.range(d.from, d.to)),
 		);
 	}
 
@@ -540,7 +580,7 @@ class FootnoteSidenoteViewPlugin {
  * Create the CodeMirror 6 ViewPlugin for footnote sidenotes.
  */
 export function createFootnoteSidenotePlugin(host: SidenoteWidgetHost) {
-	return ViewPlugin.fromClass(
+	const plugin = ViewPlugin.fromClass(
 		class {
 			inner: FootnoteSidenoteViewPlugin;
 
@@ -560,4 +600,14 @@ export function createFootnoteSidenotePlugin(host: SidenoteWidgetHost) {
 			decorations: (v) => v.inner.decorations,
 		},
 	);
+
+	// The replaced `[^id]` ranges have to be declared atomic separately —
+	// Decoration.replace collapses them visually but leaves every hidden
+	// offset reachable by the caret.
+	return [
+		plugin,
+		EditorView.atomicRanges.of(
+			(view) => view.plugin(plugin)?.inner.atomicRanges ?? Decoration.none,
+		),
+	];
 }
