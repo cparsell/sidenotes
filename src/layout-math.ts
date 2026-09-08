@@ -33,10 +33,12 @@ export type SidenoteMode = "hidden" | "compact" | "normal" | "full";
  * pick the first containing a visible block-level element at the top level of
  * the content flow, falling back to the sizer itself.
  *
- * Only `updateSidenotePositioning` uses this, and only as a last-resort
- * fallback for the text edge (it prefers `getReadingTextLeft`). Do not reach
- * for it as a measurement baseline — see the comment in
- * `correctIndentedSidenotePositions` for why that goes wrong.
+ * Only `updateSidenotePositioning` uses this, as the reading-mode text
+ * column: the element it returns is the positioning context the offsets are
+ * resolved against, which is the whole reason they are measured from it. Do
+ * not swap in a container box (the sizer, the scroller) as a measurement
+ * baseline — see the comment on textLeft/textRight there, and the one in
+ * `correctIndentedSidenotePositions`, for why that goes wrong.
  */
 function findReadingRefElement(root: HTMLElement): HTMLElement | null {
 	const sizer = root.querySelector<HTMLElement>(".markdown-preview-sizer");
@@ -76,6 +78,11 @@ export function applyRootMetrics(
 	root.dataset.sidenoteMode = mode;
 	root.dataset.sidenotePosition = settings.sidenotePosition;
 	root.dataset.sidenoteAnchor = settings.sidenoteAnchor;
+	// Gates the --page-offset padding rules in styles.css: at 0, those rules
+	// should not apply at all (see the comment there), not apply and resolve
+	// to a padding of literal 0.
+	root.dataset.sidenotePageOffset =
+		settings.pageOffsetFactor > 0 ? "true" : "false";
 
 	root.style.setProperty(
 		"--sidenote-scale",
@@ -89,23 +96,38 @@ export function applyRootMetrics(
 export function clearRootMetrics(root: HTMLElement) {
 	root.style.removeProperty("--editor-width");
 	root.style.removeProperty("--sidenote-scale");
-	root.style.removeProperty("--sidenote-gap-effective");
+	root.style.removeProperty("--sidenote-width");
 	root.dataset.sidenoteMode = "";
 	root.dataset.hasSidenotes = "";
 	root.dataset.sidenotePosition = "";
 	root.dataset.sidenoteHasOpposite = "";
+	root.dataset.sidenotePageOffset = "";
+	root.dataset.sidenoteNoRoom = "";
 }
 
 /**
  * Calculate and apply sidenote positioning based on anchor mode and gaps.
  *
- * For LEFT sidenotes:
- * - TEXT ANCHOR: Sidenote's right edge is gap1 away from text. As editor widens,
- *   gap between sidenote and editor edge increases.
- * - EDGE ANCHOR: Sidenote's left edge is gap2 away from editor edge. As editor widens,
- *   gap between sidenote and text increases.
+ * The two anchor modes trade off position against width when
+ * `sidenoteGap`/`sidenoteGap2` can't both be satisfied — which one gives is
+ * the entire difference between them:
  *
- * Both modes respect both gap constraints as minimums.
+ * - TEXT ANCHOR: position is what moves. The note's near edge sits exactly
+ *   `sidenoteGap` (plus drift) from the text — its width is the
+ *   settings-driven natural width, never adjusted — so the note tracks the
+ *   text and, in turn, "Page offset factor" when that shifts the text. It
+ *   stops at `sidenoteGap2` from the pane's physical edge, giving up some
+ *   of the text gap rather than sliding out against the edge.
+ * - EDGE ANCHOR: width is what moves. The note's near edge always sits
+ *   exactly `sidenoteGap2` from the pane's physical edge — full stop, never
+ *   adjusted, so it's independent of the text, drift, and "Page offset
+ *   factor" alike. If the resulting gap to text would come in under
+ *   `sidenoteGap`, the note's WIDTH shrinks (down to `minSidenoteWidth`,
+ *   below which the note hides — see `data-sidenote-no-room`) so the gap
+ *   promise holds without moving the note.
+ *
+ * `sidenoteGap2` therefore constrains both modes; the difference is whether
+ * it's the fixed position (edge) or the outermost one allowed (text).
  */
 export function updateSidenotePositioning(
 	settings: SidenoteSettings,
@@ -163,21 +185,14 @@ export function updateSidenotePositioning(
 	const extraSpace = Math.max(0, editorWidth - s.hideBelow);
 	const gapGrowth = extraSpace * growthFactor * 0.25; // subtle growth
 
-	const gap1 = baseGap1 + gapGrowth;
-	const gap2 = baseGap2 + gapGrowth;
-
-	// Publish the *grown* gap so the CSS that reserves margin space uses the
-	// same number this function positions against.
-	//
-	// `--page-offset` used to be computed from the base `--sidenote-gap`, with
-	// no knowledge of gapGrowth — so with sidenoteGapDrift above 0 it reserved
-	// less room than the sidenote actually needs, and the shortfall widened
-	// with the pane. In text-anchor mode that clipped the left edge of
-	// left-margin sidenotes.
-	//
-	// Written before the reference-line lookup below, which can bail: the
-	// reservation should stay correct even when positioning cannot run.
-	root.style.setProperty("--sidenote-gap-effective", pxRounded(gap1));
+	// Drift widens gap1 (the text-side gap) as the editor grows — it never
+	// touches gap2 (see below): sidenoteGap2 is a fixed distance from the
+	// pane edge in edge-anchor mode, full stop, not something that should
+	// grow with editor width. In text-anchor mode gap1 is what the note's
+	// position is built from, so drift moves the note; in edge-anchor mode
+	// gap1 only feeds the width cap below, so drift there can only shrink
+	// the note, never move it.
+	const gap1 = Math.max(0, baseGap1 + gapGrowth);
 
 	// Find a representative line/paragraph to measure the text column edge.
 	// In reading mode, Obsidian virtualises content so the first <p> may
@@ -192,18 +207,48 @@ export function updateSidenotePositioning(
 
 	const refRect = refLine.getBoundingClientRect();
 
-	// Get sidenote width from an existing margin element, or fall back to calculation
-	const sidenoteWidth = getSidenoteWidthPx(settings, root);
+	// Clear any width clamp a PREVIOUS pass left in place before measuring,
+	// so "natural" below reflects the current settings-driven cascade (base
+	// width + editor-width-driven scale) rather than last frame's shrink —
+	// otherwise a note that once shrank could never grow back.
+	root.style.removeProperty("--sidenote-width");
+	const naturalWidth = getSidenoteWidthPx(settings, root);
 
 	// Compute both sides unconditionally so a per-sidenote override can
 	// place an individual note in the margin opposite the document-wide
 	// "Sidenote position" setting.
 
-	// --- LEFT ---
-	// Available space between editor left edge and the text (refLine left edge)
-	const textLeft = isReadingMode
-		? (getReadingTextLeft(root) ?? refRect.left)
-		: (getEditorTextEdges(root)?.left ?? refRect.left);
+	// The text column edges, taken from refLine's OWN rect.
+	//
+	// This has to be refLine and nothing else: every offset this function
+	// writes is consumed as `left`/`right` on a position:absolute
+	// `.sidenote-margin`, whose containing block is the .cm-line (editing)
+	// or p/li/callout (reading) the note sits in — refLine is a stand-in for
+	// exactly that box, which is why correctIndentedSidenotePositions
+	// measures its per-wrapper corrections against refLine too.
+	//
+	// It used to come from getEditorTextEdges/getReadingTextLeft — the
+	// scroller's (or sizer's) padding edge — which is a DIFFERENT frame the
+	// moment a theme centres the text column inside that box. Obsidian's
+	// "Readable line length" does exactly that, via max-width + auto margins
+	// on .cm-sizer, so in editing mode the padding edge sat hundreds of
+	// pixels left of the real text. Mixing the two frames is what put
+	// sidenotes on top of the body text: `editorEdgeLeft - textLeft` came
+	// out as 0 (both were the scroller's edge), and the pane-edge clamp
+	// below then pinned the note's left edge to the text's own left edge.
+	//
+	// One exception: findReadingRefElement falls back to the preview sizer
+	// itself when it can't find a visible block. That box is a container,
+	// not a text column — its border box sits outside its own page padding —
+	// so strip that padding to land on the same edges a <p> inside it would
+	// have had.
+	const sizerFallbackEdges =
+		isReadingMode &&
+		refLine.classList.contains("markdown-preview-sizer")
+			? getReadingTextEdges(root)
+			: null;
+	const textLeft = sizerFallbackEdges?.left ?? refRect.left;
+	const textRight = sizerFallbackEdges?.right ?? refRect.right;
 
 	// The real editor edge (scroller/view), not rootRect.left, which may
 	// already carry the page-offset padding.
@@ -213,33 +258,6 @@ export function updateSidenotePositioning(
 		return (scroller ?? root).getBoundingClientRect().left;
 	})();
 
-	// The two candidate positions, both expressed relative to the text column
-	// edge. Each anchor mode prefers one and is bounded by the other.
-	//
-	// Text-anchored: the note's RIGHT edge sits gap1 from the text.
-	// Edge-anchored: the note's LEFT edge sits gap2 from the pane edge.
-	const textAnchoredLeft = -(gap1 + sidenoteWidth);
-	const edgeAnchoredLeft = editorEdgeLeft + gap2 - textLeft;
-
-	let cssLeft: number;
-	if (anchorMode === "text") {
-		// The gap to the text is the whole point of this mode, so it is never
-		// traded away. Clamping the note to the pane edge when space runs short
-		// was tried and is worse: it slides the note over the body text, which
-		// is less usable than a note that runs off the edge.
-		cssLeft = textAnchoredLeft;
-	} else {
-		// Prefer the pane edge, but never intrude into the text column.
-		cssLeft = Math.min(edgeAnchoredLeft, textAnchoredLeft);
-	}
-
-	// --- RIGHT ---
-	// Available space between text (refLine right edge) and editor right edge
-	const textEdges = !isReadingMode
-		? getEditorTextEdges(root)
-		: null;
-	const textRight = textEdges ? textEdges.right : refRect.right;
-
 	const editorEdgeRight = (() => {
 		if (isReadingMode) return root.getBoundingClientRect().right;
 
@@ -247,17 +265,87 @@ export function updateSidenotePositioning(
 		return (scroller ?? root).getBoundingClientRect().right;
 	})();
 
-	// Mirror of the left side. cssRight works inversely: more negative moves
-	// the element further right.
-	const textAnchoredRight = -(gap1 + sidenoteWidth);
-	const edgeAnchoredRight = editorEdgeRight - gap2 - textRight;
-
-	let cssRight: number;
-	if (anchorMode === "text") {
-		cssRight = textAnchoredRight;
-	} else {
-		cssRight = Math.min(edgeAnchoredRight, textAnchoredRight);
+	// In edge-anchor mode, shrink the (single, shared-between-sides) width
+	// instead of moving the note when sidenoteGap2 (position) and
+	// sidenoteGap (the minimum gap to text) can't both be honored at the
+	// natural width. Only the sides actually in use constrain it — an unused
+	// margin's tightness shouldn't shrink a note that isn't there.
+	//
+	// `--sidenote-width` has always been one shared value for every
+	// sidenote regardless of side (see its CSS definition), so a single
+	// shared cap here matches that existing granularity rather than adding
+	// finer-grained control the rest of the system doesn't have.
+	let sidenoteWidth = naturalWidth;
+	let noRoom = false;
+	if (anchorMode === "edge") {
+		let widthCap = Infinity;
+		if (sides.left) {
+			widthCap = Math.min(
+				widthCap,
+				textLeft - editorEdgeLeft - baseGap2 - gap1,
+			);
+		}
+		if (sides.right) {
+			widthCap = Math.min(
+				widthCap,
+				editorEdgeRight - textRight - baseGap2 - gap1,
+			);
+		}
+		if (widthCap !== Infinity) {
+			sidenoteWidth = Math.max(0, Math.min(naturalWidth, widthCap));
+			if (sidenoteWidth < s.minSidenoteWidth * remToPx) {
+				noRoom = true;
+			}
+			if (sidenoteWidth !== naturalWidth) {
+				root.style.setProperty(
+					"--sidenote-width",
+					pxRounded(sidenoteWidth),
+				);
+			}
+		}
 	}
+	// Gates a CSS rule that hides `.sidenote-margin` outright — deliberately
+	// separate from `data-sidenote-mode="hidden"` (the too-narrow-editor
+	// case), which also switches off `--page-offset`. This is a lateral-room
+	// problem only: the text shift "Page offset factor" already reserved is
+	// still exactly as valid as it was, so it must stay in effect.
+	root.dataset.sidenoteNoRoom = noRoom ? "true" : "false";
+
+	// The edge-anchored position for each side: the note's outer edge exactly
+	// sidenoteGap2 in from the pane's physical edge.
+	//
+	// Each is written in its OWN side's sign convention, and they are
+	// mirrors, not copies. `left` grows rightward from the containing
+	// block's left edge, so the offset is (target - textLeft); `right` grows
+	// LEFTWARD from its right edge, so the offset is (textRight - target).
+	// Writing the right one as a straight copy of the left
+	// (`editorEdgeRight - gap2 - textRight`) is the negation of the correct
+	// value: it put the note's right edge at 2*textRight - editorEdgeRight +
+	// gap2, i.e. deep inside the body text instead of out in the margin.
+	const edgeAnchoredLeft = editorEdgeLeft + baseGap2 - textLeft;
+	const edgeAnchoredRight = textRight - editorEdgeRight + baseGap2;
+
+	// Text-anchored: the note's near edge sits gap1 from the text. One value
+	// for both sides — each side's sign convention already points its offset
+	// outward, away from the text.
+	const textAnchored = -(gap1 + sidenoteWidth);
+
+	// In text-anchor mode the note holds its gap to the text right up until
+	// that would carry it past sidenoteGap2 from the pane edge, and then it
+	// stops there: sidenoteGap2 is a minimum distance from the editor edge
+	// in BOTH modes — edge anchor just makes it the fixed position rather
+	// than a floor. In a pane too narrow for both gaps this gives up some of
+	// the text gap, since text anchor never adjusts width and something has
+	// to yield; what it buys is a note that stays in the margin instead of
+	// sliding out to sit flush against (or past) the pane's edge.
+	const cssLeft =
+		anchorMode === "text"
+			? Math.max(textAnchored, edgeAnchoredLeft)
+			: edgeAnchoredLeft;
+	const cssRight =
+		anchorMode === "text"
+			? Math.max(textAnchored, edgeAnchoredRight)
+			: edgeAnchoredRight;
 
 	root.style.setProperty("--sidenote-offset-left", pxRounded(cssLeft));
 	root.style.setProperty("--sidenote-offset-right", pxRounded(cssRight));
@@ -303,10 +391,11 @@ export function getSidenoteWidthPx(
  * The body text column edges in reading mode: the preview sizer's CONTENT
  * box, i.e. inside its page padding.
  *
- * This is the same column a top-level paragraph occupies, which is why it is
- * a valid stand-in for one. The sizer's *border* box is not — it sits outside
- * the padding, and using it as a baseline inflates every measurement by that
- * padding.
+ * Only used for the sizer fallback in `updateSidenotePositioning` — when
+ * `findReadingRefElement` couldn't find a real block and handed back the
+ * sizer itself. The sizer's *border* box is not the text column: it sits
+ * outside the padding, and using it as a baseline inflates every
+ * measurement by that padding.
  */
 export function getReadingTextEdges(
 	root: HTMLElement,
@@ -323,28 +412,6 @@ export function getReadingTextEdges(
 	};
 }
 
-export function getReadingTextLeft(root: HTMLElement): number | null {
-	return getReadingTextEdges(root)?.left ?? null;
-}
-
-
-export function getEditorTextEdges(
-	root: HTMLElement,
-): { left: number; right: number } | null {
-	// The page offset for sidenotes is applied to the scroller, so measure from it.
-	const scroller = root.querySelector<HTMLElement>(".cm-scroller");
-	if (!scroller) return null;
-
-	const r = scroller.getBoundingClientRect();
-	const cs = getComputedStyle(scroller);
-	const pl = parseFloat(cs.paddingLeft) || 0;
-	const pr = parseFloat(cs.paddingRight) || 0;
-
-	return {
-		left: r.left + pl,
-		right: r.right - pr,
-	};
-}
 
 /**
  * Helper for updateSidenotePositioning to find a stable reference line

@@ -362,7 +362,6 @@ export default class SidenotePlugin
 		(wrapper as SidenoteWrapperElement)._popupCleanup = cleanup;
 	}
 
-
 	private cleanupView(view: MarkdownView | null) {
 		if (!view) return;
 
@@ -424,12 +423,12 @@ export default class SidenotePlugin
 				| undefined;
 			this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
 
-			// Not user-configurable — see the field's doc comment in
-			// settings.ts. Older data.json files may carry a stored value
-			// (0-1 range, or briefly 1-2 during development); pin it to the
-			// one value that neither clips the sidenote nor narrows the text
-			// for no reason, regardless of what's on disk.
-			this.settings.pageOffsetFactor = 1;
+			// Clamp on the way in, not just on save, so
+			// the first render matches the slider the user is shown.
+			this.settings.pageOffsetFactor = Math.max(
+				0,
+				Math.min(1, this.settings.pageOffsetFactor),
+			);
 		} catch (error) {
 			console.error("Sidenote plugin: Failed to load settings", error);
 			this.settings = Object.assign({}, DEFAULT_SETTINGS);
@@ -459,9 +458,7 @@ export default class SidenotePlugin
 			s.fontSize = Math.max(50, Math.min(150, s.fontSize));
 			s.fontSizeCompact = Math.max(50, Math.min(150, s.fontSizeCompact));
 			s.lineHeight = Math.max(1, Math.min(3, s.lineHeight));
-			// Not user-configurable — see the field's doc comment in
-			// settings.ts.
-			s.pageOffsetFactor = 1;
+			s.pageOffsetFactor = Math.max(0, Math.min(1, s.pageOffsetFactor));
 
 			await this.saveData(this.settings);
 
@@ -866,7 +863,6 @@ export default class SidenotePlugin
 		});
 	}
 
-
 	/**
 	 * True when the active markdown view is showing rendered preview.
 	 *
@@ -916,7 +912,6 @@ export default class SidenotePlugin
 			? viewData || cached || editorText || ""
 			: editorText || viewData || cached || "";
 	}
-
 
 	// ==================== Mode Calculation ====================
 
@@ -1427,7 +1422,6 @@ export default class SidenotePlugin
 		buildEditingHtmlSidenotes(this, cmRoot, mode);
 	}
 
-
 	// ==================== Text Normalization ====================
 
 	private normalizeText(s: string): string {
@@ -1574,8 +1568,6 @@ export default class SidenotePlugin
 		});
 	}
 
-
-
 	/**
 	 * Write a located edit back to the note's source.
 	 *
@@ -1602,7 +1594,10 @@ export default class SidenotePlugin
 			// Patch the cache in place so re-opening the sidenote before the
 			// async file write lands reads the new text. Only when the cache
 			// belongs to this file — patching another file's would corrupt it.
-			if (this.cachedSourcePath === file.path && this.cachedSourceContent) {
+			if (
+				this.cachedSourcePath === file.path &&
+				this.cachedSourceContent
+			) {
 				const edit = locate(this.cachedSourceContent);
 				if (edit) {
 					this.cachedSourceContent = applyEdit(
@@ -1621,7 +1616,8 @@ export default class SidenotePlugin
 		if (!edit) return;
 
 		// editor.replaceRange can scroll the view; put it back.
-		const scroller = this.cmRoot?.querySelector<HTMLElement>(".cm-scroller");
+		const scroller =
+			this.cmRoot?.querySelector<HTMLElement>(".cm-scroller");
 		const scrollTop = scroller?.scrollTop ?? 0;
 
 		this.isEditingMargin = true;
@@ -1640,7 +1636,10 @@ export default class SidenotePlugin
 		this.isEditingMargin = false;
 	}
 
-	public commitHtmlSpanSidenoteText(originalText: string, newText: string) {
+	public commitHtmlSpanSidenoteText(
+		originalText: string,
+		newText: string,
+	) {
 		this.commitSourceEdit((content) =>
 			findHtmlSpanEdit(content, originalText, newText),
 		);
@@ -1683,7 +1682,4 @@ export default class SidenotePlugin
 	private renderLinksToFragment(text: string): DocumentFragment {
 		return renderLinksToFragment(text, this.app);
 	}
-
-
 }
-

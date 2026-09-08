@@ -423,19 +423,18 @@
 	);
 	--sidenote-gap: var(--sn-gap, 2rem);
 	--sidenote-gap2: var(--sn-gap2, 1rem);
-	/* Space reserved beside the text for the sidenote column.
+	/* Optional additional space beside the text for the sidenote column: the sidenote's
+	   own width plus its minimum gap to the text, scaled by the "page offset
+	   factor" setting. At 1 that is exactly the room a sidenote needs; lower
+	   values shift the body text less and let the sidenote reach further into
+	   the pane's own margin.
 
-	   Uses --sidenote-gap-effective, which the positioning code publishes: it
-	   is the base gap PLUS the width-driven growth from the "gap drift"
-	   setting. Reading the base --sidenote-gap here instead under-reserved
-	   whenever drift was above 0, by a margin that widened with the pane, and
-	   clipped the outer edge of the sidenotes in text-anchor mode. Falls back
-	   to the base gap for the frame before JS has measured. */
+	   Deliberately the BASE --sidenote-gap, not the width-driven growth the
+	   "gap drift" setting adds on top of it (layout-math.ts). Drift moves the
+	   sidenotes only — feeding it in here is what made the drift slider drag
+	   the body text sideways along with them. */
 	--page-offset: calc(
-		(
-				var(--sidenote-width) +
-					var(--sidenote-gap-effective, var(--sidenote-gap))
-			) *
+		(var(--sidenote-width) + var(--sidenote-gap)) *
 			var(--sn-page-offset-factor, 0)
 	);
 	--sidenote-edge-offset: var(--sidenote-gap);
@@ -468,43 +467,51 @@
 	overflow-x: visible !important;
 }
 
-/* === Page offset — LEFT position === */
-.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="compact"]
+/* === Page offset — LEFT position ===
+   Gated on [data-sidenote-page-offset="true"], set by JS only when "Page
+   offset factor" is above 0. Below that these rules don't match at all, so
+   the scroller/sizer keeps whatever padding the theme itself gives it
+   instead of --page-offset forcing it to a literal 0 — which is what "the
+   note text should not be moved" (the setting's own promise at 0) requires:
+   not moved TO zero, left untouched. It also means whatever margin the
+   theme *does* leave natively is still there for a sidenote to sit in,
+   rather than getting overwritten away. */
+.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="compact"]
 	.cm-scroller,
-.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="normal"]
+.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="normal"]
 	.cm-scroller,
-.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="full"]
+.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="full"]
 	.cm-scroller {
 	padding-left: var(--page-offset) !important;
 	padding-right: 0 !important;
 }
 
-.markdown-reading-view[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="compact"]
+.markdown-reading-view[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="compact"]
 	.markdown-preview-sizer,
-.markdown-reading-view[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="normal"]
+.markdown-reading-view[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="normal"]
 	.markdown-preview-sizer,
-.markdown-reading-view[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-mode="full"]
+.markdown-reading-view[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="full"]
 	.markdown-preview-sizer {
 	padding-left: var(--page-offset) !important;
 	padding-right: 0 !important;
 }
 
 /* === Page offset — RIGHT position === */
-.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="compact"]
+.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="compact"]
 	.cm-scroller,
-.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="normal"]
+.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="normal"]
 	.cm-scroller,
-.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="full"]
+.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="full"]
 	.cm-scroller {
 	padding-right: var(--page-offset) !important;
 	padding-left: 0 !important;
 }
 
-.markdown-reading-view[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="compact"]
+.markdown-reading-view[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="compact"]
 	.markdown-preview-sizer,
-.markdown-reading-view[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="normal"]
+.markdown-reading-view[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="normal"]
 	.markdown-preview-sizer,
-.markdown-reading-view[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-mode="full"]
+.markdown-reading-view[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="full"]
 	.markdown-preview-sizer {
 	padding-right: var(--page-offset) !important;
 	padding-left: 0 !important;
@@ -516,38 +523,38 @@
    it that side has no room at all, so edge-anchored overrides collapse
    against — or past — the pane's real edge instead of respecting
    sidenoteGap / sidenoteGap2 / sidenoteGapDrift like normal sidenotes do. */
-.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-mode="compact"]
+.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="compact"]
 	.cm-scroller,
-.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-mode="normal"]
+.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="normal"]
 	.cm-scroller,
-.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-mode="full"]
+.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="full"]
 	.cm-scroller {
 	padding-right: var(--page-offset) !important;
 }
 
-.markdown-reading-view[data-sidenote-position="left"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-mode="compact"]
+.markdown-reading-view[data-sidenote-position="left"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="compact"]
 	.markdown-preview-sizer,
-.markdown-reading-view[data-sidenote-position="left"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-mode="normal"]
+.markdown-reading-view[data-sidenote-position="left"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="normal"]
 	.markdown-preview-sizer,
-.markdown-reading-view[data-sidenote-position="left"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-mode="full"]
+.markdown-reading-view[data-sidenote-position="left"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="full"]
 	.markdown-preview-sizer {
 	padding-right: var(--page-offset) !important;
 }
 
-.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-mode="compact"]
+.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="compact"]
 	.cm-scroller,
-.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-mode="normal"]
+.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="normal"]
 	.cm-scroller,
-.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-mode="full"]
+.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="full"]
 	.cm-scroller {
 	padding-left: var(--page-offset) !important;
 }
 
-.markdown-reading-view[data-sidenote-position="right"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-mode="compact"]
+.markdown-reading-view[data-sidenote-position="right"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="compact"]
 	.markdown-preview-sizer,
-.markdown-reading-view[data-sidenote-position="right"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-mode="normal"]
+.markdown-reading-view[data-sidenote-position="right"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="normal"]
 	.markdown-preview-sizer,
-.markdown-reading-view[data-sidenote-position="right"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-mode="full"]
+.markdown-reading-view[data-sidenote-position="right"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="full"]
 	.markdown-preview-sizer {
 	padding-left: var(--page-offset) !important;
 }
@@ -857,6 +864,22 @@
 .markdown-source-view.mod-cm6[data-sidenote-mode="hidden"]
 	.sidenote-margin,
 .markdown-reading-view[data-sidenote-mode="hidden"] .sidenote-margin {
+	display: none !important;
+	visibility: hidden !important;
+	pointer-events: none !important;
+}
+
+/* No room for the sidenote column at all (edge-anchor mode: set by JS in
+   layout-math.ts when sidenoteGap2 + the minimum width + sidenoteGap can't
+   all fit). Deliberately its own attribute rather than reusing
+   data-sidenote-mode="hidden" above: that attribute ALSO switches off
+   --page-offset (see the page-offset rules), and a too-narrow MARGIN has
+   nothing to do with whether the text shift "Page offset factor" reserved
+   is still valid — it is, so it must stay in effect even while the note
+   itself is hidden. */
+.markdown-source-view.mod-cm6[data-sidenote-no-room="true"]
+	.sidenote-margin,
+.markdown-reading-view[data-sidenote-no-room="true"] .sidenote-margin {
 	display: none !important;
 	visibility: hidden !important;
 	pointer-events: none !important;

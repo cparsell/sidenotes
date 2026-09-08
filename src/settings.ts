@@ -24,18 +24,38 @@ export interface SidenoteSettings {
 	// Width & Spacing
 	minSidenoteWidth: number;
 	maxSidenoteWidth: number;
+	/** Minimum gap between the sidenote and the body text. */
 	sidenoteGap: number;
+	/** Minimum gap between the sidenote and the editor's physical edge. */
 	sidenoteGap2: number;
 	sidenoteGapDrift: number;
+	/**
+	 * Which of `sidenoteGap` / `sidenoteGap2` is a fixed position and which
+	 * is just a minimum the sidenote's WIDTH gives way to satisfy — see
+	 * layout-math.ts's `updateSidenotePositioning` doc comment for the full
+	 * reasoning:
+	 *
+	 * - "text": the note's position is fixed `sidenoteGap` from the text
+	 *   (so it tracks the text, and `pageOffsetFactor`, wherever they go).
+	 * - "edge": the note's position is fixed `sidenoteGap2` from the
+	 *   editor's physical edge — independent of the text, drift, and
+	 *   `pageOffsetFactor` alike. If that and `sidenoteGap` can't both be
+	 *   satisfied at the natural width, the WIDTH shrinks (down to
+	 *   `minSidenoteWidth`, below which the note hides) rather than the
+	 *   position moving.
+	 */
 	sidenoteAnchor: "text" | "edge";
 	/**
-	 * Not user-configurable — retained only so older `data.json` files with a
-	 * stored value don't error, and pinned to 1 wherever it's read
-	 * (main.ts saveSettings/loadSettings). 1 reserves exactly the space a
-	 * sidenote needs to push the body text aside without clipping. Any other
-	 * value either clips the sidenote or narrows the text to open unwanted
-	 * space at the pane edge — see the "page offset factor" removal note in
-	 * settings.ts's UI section for the reasoning.
+	 * How far the body text is nudged aside to make room for sidenotes, as a
+	 * fraction of the room one needs (sidenote width + `sidenoteGap`). 1
+	 * reserves exactly that; 0 leaves the text at the theme's own position,
+	 * untouched.
+	 *
+	 * Only this setting moves the body text — never `sidenoteGap`,
+	 * `sidenoteGap2`, or `sidenoteGapDrift` (see `sidenoteAnchor`'s doc
+	 * comment for how those position/size the sidenote itself instead). The
+	 * two were briefly wired together, which made a drift change shift the
+	 * text too.
 	 */
 	pageOffsetFactor: number;
 
@@ -340,7 +360,7 @@ export class SidenoteSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Sidenote anchor")
 			.setDesc(
-				"Whether sidenotes are positioned relative to the text body or the editor edge",
+				"Text: the note stays a fixed gap from the text ('Minimum gap between sidenote and text'), so it moves when the text does. Edge: the note stays a fixed gap from the editor edge ('Minimum gap between sidenote and editor edge'), and its width shrinks instead of moving if that and the text gap can't both fit",
 			)
 			.addDropdown((dropdown) =>
 				dropdown
@@ -382,7 +402,7 @@ export class SidenoteSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Minimum gap between sidenote and text")
 			.setDesc(
-				"Space between the margin and body text in rem (default: 2)",
+				"Space between the sidenote and body text, in rem (default: 2). Anchored to text: this is the note's fixed distance from the text. Anchored to edge: this is a minimum the note's width shrinks to protect, not a position",
 			)
 			.addSlider((slider) =>
 				slider
@@ -397,7 +417,7 @@ export class SidenoteSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Minimum gap between sidenote and editor edge")
 			.setDesc(
-				"When anchored to text: minimum distance from editor edge. When anchored to edge: minimum distance from text body. (rem, default: 1)",
+				"Space between the sidenote and the editor's physical edge, in rem (default: 1). Only used when anchored to edge, where it's the note's fixed distance from that edge; unused when anchored to text",
 			)
 			.addSlider((slider) =>
 				slider
@@ -412,7 +432,7 @@ export class SidenoteSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Gap drift factor")
 			.setDesc(
-				"Adjusts how much the gaps grow as editor width increases (default: 0.5). At 0, gaps stay at their minimum. At 1, gaps grow by the maximum amount (20% of extra space).",
+				"Adjusts how much 'Minimum gap between sidenote and text' grows as editor width increases (default: 0.3). At 0 it stays at its minimum; at 1 it grows by the maximum amount (25% of extra space). Anchored to text, this widens the gap and moves the note along with it. Anchored to edge, position never moves — this only tightens the width clamp, so the note can end up narrower.",
 			)
 			.addSlider((slider) =>
 				slider
@@ -424,13 +444,20 @@ export class SidenoteSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		// No "page offset factor" control here. The body text is pushed over
-		// by exactly the space a sidenote needs — a fixed 1:1 relationship,
-		// not a user-adjustable one. Any value other than "exactly enough"
-		// either clips the sidenote off the pane (less) or shifts the sidenote
-		// and text together, purely narrowing the text to open a gap at the
-		// pane edge nobody asked for (more). See pageOffsetFactor in
-		// settings.ts for the values this is pinned to.
+		new Setting(containerEl)
+			.setName("Page offset factor")
+			.setDesc(
+				"Adjusts how much the note text is shifted over to make room for sidenotes (default: 1). At 1, exactly the sidenote's width plus its minimum gap is reserved; at 0 the text is left untouched. Only moves the text — never the sidenotes themselves, which 'Sidenote anchor' and its gap settings control. Only affects notes that have sidenotes.",
+			)
+			.addSlider((slider) =>
+				slider
+					.setLimits(0, 1, 0.1)
+					.setValue(this.plugin.settings.pageOffsetFactor)
+					.onChange(async (value) => {
+						this.plugin.settings.pageOffsetFactor = value;
+						await this.plugin.saveSettings();
+					}),
+			);
 
 		new Setting(containerEl).setName("Breakpoints").setHeading();
 
@@ -831,7 +858,7 @@ export class SidenoteSettingTab extends PluginSettingTab {
 				items: [
 					{
 						name: "Sidenote anchor",
-						desc: "Whether sidenotes are positioned relative to the text body or the editor edge",
+						desc: "Text: the note stays a fixed gap from the text ('Minimum gap between sidenote and text'), so it moves when the text does. Edge: the note stays a fixed gap from the editor edge ('Minimum gap between sidenote and editor edge'), and its width shrinks instead of moving if that and the text gap can't both fit",
 						control: {
 							type: "dropdown",
 							key: "sidenoteAnchor",
@@ -868,7 +895,7 @@ export class SidenoteSettingTab extends PluginSettingTab {
 					},
 					{
 						name: "Minimum gap between sidenote and text",
-						desc: "Space between the margin and body text in rem (default: 2)",
+						desc: "Space between the sidenote and body text, in rem (default: 2). Anchored to text: this is the note's fixed distance from the text. Anchored to edge: this is a minimum the note's width shrinks to protect, not a position",
 						control: {
 							type: "slider",
 							key: "sidenoteGap",
@@ -880,7 +907,7 @@ export class SidenoteSettingTab extends PluginSettingTab {
 					},
 					{
 						name: "Minimum gap between sidenote and editor edge",
-						desc: "When anchored to text: minimum distance from editor edge. When anchored to edge: minimum distance from text body. (rem, default: 1)",
+						desc: "Space between the sidenote and the editor's physical edge, in rem (default: 1). Only used when anchored to edge, where it's the note's fixed distance from that edge; unused when anchored to text",
 						control: {
 							type: "slider",
 							key: "sidenoteGap2",
@@ -892,12 +919,24 @@ export class SidenoteSettingTab extends PluginSettingTab {
 					},
 					{
 						name: "Gap drift factor",
-						desc: "Adjusts how much the gaps grow as editor width increases (default: 0.5). At 0, gaps stay at their minimum. At 1, gaps grow by the maximum amount (20% of extra space).",
+						desc: "Adjusts how much 'Minimum gap between sidenote and text' grows as editor width increases (default: 0.3). At 0 it stays at its minimum; at 1 it grows by the maximum amount (25% of extra space). Anchored to text, this widens the gap and moves the note along with it. Anchored to edge, position never moves — this only tightens the width clamp, so the note can end up narrower.",
 						control: {
 							type: "slider",
 							key: "sidenoteGapDrift",
 							defaultValue: s.sidenoteGapDrift,
 							min: -1,
+							max: 1,
+							step: 0.1,
+						},
+					},
+					{
+						name: "Page offset factor",
+						desc: "Adjusts how much the note text is shifted over to make room for sidenotes (default: 1). At 1, exactly the sidenote's width plus its minimum gap is reserved; at 0 the text is left untouched. Only moves the text — never the sidenotes themselves, which 'Sidenote anchor' and its gap settings control. Only affects notes that have sidenotes.",
+						control: {
+							type: "slider",
+							key: "pageOffsetFactor",
+							defaultValue: s.pageOffsetFactor,
+							min: 0,
 							max: 1,
 							step: 0.1,
 						},
@@ -1016,7 +1055,11 @@ export class SidenoteSettingTab extends PluginSettingTab {
 							type: "dropdown",
 							key: "textAlignment",
 							defaultValue: s.textAlignment,
-							options: { left: "Left", right: "Right", justify: "Justified" },
+							options: {
+								left: "Left",
+								right: "Right",
+								justify: "Justified",
+							},
 						},
 					},
 				],

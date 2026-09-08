@@ -89,11 +89,15 @@ Suggestions that have not been implemented and are not yet being actively develo
      - **HTML**: uses `<span>` elements to format the sidenotes. I originally designed using this because it was an easy way for me to set up CSS styles in Obsidian as well as CSS styles in my web-published notes
    - **Number style**: Try 'neumorphic badge' for numbers that are more visually identifiable
    - **Width & Spacing**:
-     - Minimum sidenote width
-     - Maximum sidenote width
-     - Minimum gap between sidenote and text
-     - Minimum gap between sidenote and editor edge
-   - **Page offset factor**: Make some room for the sidenotes if you want. This shifts the note text over (only affects notes that have sidenotes)
+     - **Minimum sidenote width**
+     - **Maximum sidenote width**
+     - **Sidenote anchor**: Which gap below is a fixed position, and which is just a minimum the sidenote's width gives way to protect
+       - **Anchor to text**: the sidenote stays a fixed distance from the text (**Minimum gap between sidenote and text**), so it moves whenever the text does — including with **Page offset factor** below
+       - **Anchor to editor edge**: the sidenote stays a fixed distance from the pane's edge (**Minimum gap between sidenote and editor edge**), full stop. If that and the minimum text gap can't both fit, the sidenote's _width_ shrinks instead of its position moving — down to the minimum sidenote width, below which it hides
+     - **Minimum gap between sidenote and text**
+     - **Minimum gap between sidenote and editor edge**
+     - **Gap drift factor**: How much the text gap grows as the pane gets wider. Anchored to text, this moves the sidenote further out; anchored to the edge, position never moves — it only tightens how much the sidenote's width can use
+   - **Page offset factor**: How much the note text is shifted over to make room for sidenotes (only affects notes that have sidenotes). Only moves the text — never the sidenotes themselves
 
 ## Use
 
