@@ -869,6 +869,18 @@
 	pointer-events: none !important;
 }
 
+/* Hidden mode skips wrapping HTML sidenote spans entirely, so an unwrapped
+   <span class="sidenote"> would otherwise render its content inline in the
+   body text. Scoped to hidden mode only: in the other modes the spans are
+   measured (getBoundingClientRect) before being wrapped, and display:none
+   would zero those rects. */
+.markdown-source-view.mod-cm6[data-sidenote-mode="hidden"]
+	span.sidenote:not(.sidenote-number > span.sidenote),
+.markdown-reading-view[data-sidenote-mode="hidden"]
+	span.sidenote:not(.sidenote-number > span.sidenote) {
+	display: none !important;
+}
+
 /* No room for the sidenote column at all (edge-anchor mode: set by JS in
    layout-math.ts when sidenoteGap2 + the minimum width + sidenoteGap can't
    all fit). Deliberately its own attribute rather than reusing
