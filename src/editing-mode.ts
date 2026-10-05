@@ -127,7 +127,9 @@ export function buildEditingHtmlSidenotes(
 	const unwrappedSpans = Array.from(
 		cmRoot.querySelectorAll<HTMLElement>("span.sidenote"),
 	).filter(
-		(span) => !span.parentElement?.classList.contains("sidenote-number"),
+		(span) =>
+			!span.parentElement?.classList.contains("sidenote-number") &&
+			!span.closest(".sidenote-margin"),
 	);
 	// console.warn(unwrappedSpans.length, "unwrapped sidenote spans found");
 	// If there are new sidenotes to process, we need to renumber everything

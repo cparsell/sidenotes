@@ -1,5 +1,6 @@
 import type { App } from "obsidian";
 import type { SidenoteSettings } from "./settings";
+import { renderEmbed } from "./embeds";
 
 // ==================== Number Formatting ====================
 
@@ -84,15 +85,23 @@ function appendTextWithBreaks(
 	}
 }
 
+/** True when the text contains an embed (`![[file]]` or `![alt](path)`). */
+export function containsEmbed(text: string): boolean {
+	return /!\[\[[^\]]+\]\]|!\[[^\]]*\]\([^)\s]+\)/.test(text);
+}
+
 /**
  * Render markdown-formatted text to a DocumentFragment.
  * Supports: **bold**, *italic*, _italic_, `code`, [links](url), and [[wiki links]]
  * @param text The markdown-formatted text to render
  * @param app Obsidian's App instance, used to resolve internal-link clicks
+ * @param sourcePath Path of the note containing the text, used to resolve embeds
+ *   (defaults to the active file)
  */
 export function renderLinksToFragment(
 	text: string,
 	app: App,
+	sourcePath = app.workspace.getActiveFile()?.path ?? "",
 ): DocumentFragment {
 	const frag = createFragment();
 
@@ -100,10 +109,11 @@ export function renderLinksToFragment(
 	// - Bold: **text** or __text__
 	// - Italic: *text* or _text_ (but not inside **)
 	// - Code: `text`
+	// - Embeds: ![[file|size]] and ![alt](path)
 	// - Markdown links: [text](url)
 	// - Wiki links: [[target]] or [[target|display]]
 	const combinedRe =
-		/\*\*(.+?)\*\*|__(.+?)__|\*([^*]+?)\*|(?<![*_])_([^_]+?)_(?![*_])|`([^`]+)`|\[([^\]]+)\]\(([^)\s]+)\)|\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
+		/\*\*(.+?)\*\*|__(.+?)__|\*([^*]+?)\*|!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]|!\[([^\]]*)\]\(([^)\s]+)\)|(?<![*_])_([^_]+?)_(?![*_])|`([^`]+)`|\[([^\]]+)\]\(([^)\s]+)\)|\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
 
 	let last = 0;
 	let m: RegExpExecArray | null;
@@ -132,20 +142,28 @@ export function renderLinksToFragment(
 			const em = createEl("em");
 			em.textContent = m[3];
 			frag.appendChild(em);
-		} else if (m[4] !== undefined) {
+		} else if (m[4] !== undefined || m[7] !== undefined) {
+			// Embed: ![[file|size]] or ![alt](path)
+			const isWiki = m[4] !== undefined;
+			const target = (isWiki ? m[4] : m[7])?.trim() ?? "";
+			const alias = isWiki ? m[5]?.trim() : m[6]?.trim();
+			frag.appendChild(
+				renderEmbed(app, target, alias, sourcePath, fullMatch),
+			);
+		} else if (m[8] !== undefined) {
 			// Italic: _text_
 			const em = createEl("em");
-			em.textContent = m[4];
+			em.textContent = m[8];
 			frag.appendChild(em);
-		} else if (m[5] !== undefined) {
+		} else if (m[9] !== undefined) {
 			// Code: `text`
 			const code = createEl("code");
-			code.textContent = m[5];
+			code.textContent = m[9];
 			frag.appendChild(code);
-		} else if (m[6] !== undefined && m[7] !== undefined) {
+		} else if (m[10] !== undefined && m[11] !== undefined) {
 			// Markdown link: [text](url)
-			const label = m[6];
-			const url = m[7].trim();
+			const label = m[10];
+			const url = m[11].trim();
 
 			const isExternal =
 				url.startsWith("http://") ||
@@ -171,10 +189,10 @@ export function renderLinksToFragment(
 				});
 			}
 			frag.appendChild(a);
-		} else if (m[8] !== undefined) {
+		} else if (m[12] !== undefined) {
 			// Wiki link: [[target]] or [[target|display]]
-			const target = m[8].trim();
-			const display = m[9]?.trim() || target;
+			const target = m[12].trim();
+			const display = m[13]?.trim() || target;
 
 			const a = createEl("a");
 			a.textContent = display;
@@ -279,7 +297,9 @@ export function stripSideSuffix(id: string): string {
 	return id.replace(/-[rl]$/i, "");
 }
 
-export function parseFootnoteDefinitions(content: string): Map<string, string> {
+export function parseFootnoteDefinitions(
+	content: string,
+): Map<string, string> {
 	const definitions = new Map<string, string>();
 
 	// Match footnote definitions: [^id]: text
@@ -356,7 +376,9 @@ export function parseFootnoteIdString(
 ): string | null {
 	if (!raw) return null;
 
-	const hashMatch = raw.match(new RegExp(`^${prefix}-(.+?)-[a-f0-9]+$`, "i"));
+	const hashMatch = raw.match(
+		new RegExp(`^${prefix}-(.+?)-[a-f0-9]+$`, "i"),
+	);
 	if (hashMatch?.[1]) return hashMatch[1];
 
 	const simpleMatch = raw.match(new RegExp(`^${prefix}-(.+)$`, "i"));

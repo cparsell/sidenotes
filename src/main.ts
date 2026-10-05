@@ -27,6 +27,7 @@ import {
 import type { SidenoteWidgetHost } from "./widget-host";
 import { registerSidenoteCommands } from "./commands";
 import { setupMarginNotePopup } from "./margin-note-popup";
+import { NOTE_EMBED_CLASS, setEmbedOwner } from "./embeds";
 import {
 	type SourceEdit,
 	applyEdit,
@@ -166,6 +167,7 @@ export default class SidenotePlugin
 
 		this.addSettingTab(new SidenoteSettingTab(this.app, this));
 		applyCssVariables(this.settings);
+		setEmbedOwner(this);
 
 		// Register the CM6 extension for footnote sidenotes in editing mode
 		this.registerEditorExtension([createFootnoteSidenotePlugin(this)]);
@@ -180,6 +182,15 @@ export default class SidenotePlugin
 		});
 
 		this.registerMarkdownPostProcessor((element, context) => {
+			// A note embedded in a margin is rendered through this same
+			// post-processor; sidenotes inside it must not be wrapped again.
+			if (
+				element.classList.contains(NOTE_EMBED_CLASS) ||
+				element.closest(`.${NOTE_EMBED_CLASS}`)
+			) {
+				return;
+			}
+
 			let hasContent = false;
 
 			if (this.settings.sidenoteFormat === "html") {
@@ -288,6 +299,7 @@ export default class SidenotePlugin
 	}
 
 	onunload() {
+		setEmbedOwner(null);
 		this.scheduler.dispose();
 		this.cleanups.forEach((fn) => fn());
 		this.cleanups = [];

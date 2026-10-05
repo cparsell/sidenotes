@@ -16,6 +16,7 @@ import type { SidenoteSettings } from "./settings";
 import {
 	type SidenoteSide,
 	buildSourceRefOrder,
+	containsEmbed,
 	formatNumber,
 	getSidenoteSideOverride,
 	isMarginNote,
@@ -269,6 +270,8 @@ export function collectReadingItems(
 			if (el.parentElement?.classList.contains("sidenote-number")) {
 				return;
 			}
+			// Inside an embedded note rendered in a margin — leave it alone.
+			if (el.closest(".sidenote-margin")) return;
 			const docIndex = sourceIndices[i] ?? i;
 			allItems.push({
 				el,
@@ -333,7 +336,7 @@ export function collectReadingItems(
 		const processedBaseIds = new Set<string>();
 
 		for (const sup of Array.from(footnoteSups)) {
-			if (sup.closest(".sidenote-number")) continue;
+			if (sup.closest(".sidenote-number, .sidenote-margin")) continue;
 			// Skip elements inside the footnotes section (these are backrefs, not refs)
 			if (sup.closest("section.footnotes, .footnotes")) continue;
 
@@ -482,7 +485,16 @@ export function buildReadingMargins(
 		}
 
 		if (item.type === "sidenote") {
-			cloneContentToMargin(ctx.app, item.el, margin);
+			if (item.rawText && containsEmbed(item.rawText)) {
+				// Obsidian fills embeds in asynchronously, so a clone can
+				// capture an empty placeholder that never updates. Render the
+				// source text instead, which resolves the embed synchronously.
+				margin.appendChild(
+					renderLinksToFragment(normalizeText(item.rawText), ctx.app),
+				);
+			} else {
+				cloneContentToMargin(ctx.app, item.el, margin);
+			}
 		} else {
 			// For footnotes, hide the original [1] link inside the sup
 			const anchor = item.el.querySelector("a.footnote-link");

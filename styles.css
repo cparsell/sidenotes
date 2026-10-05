@@ -767,6 +767,31 @@
 	transition: var(--sn-transition, none);
 }
 
+/* Embedded media (![[image.png]], audio, video) stays inside the margin */
+.sidenote-margin .sidenote-embed {
+	display: block;
+	max-width: 100%;
+	height: auto;
+	margin: 0.25em 0;
+}
+
+/* An embedded note: bounded so a long transclusion can't swamp the margin */
+.sidenote-margin .sidenote-embed-note {
+	max-height: var(--sn-embed-max-height, 20em);
+	overflow-y: auto;
+	padding: 0.25em 0.5em;
+	border-left: 2px solid var(--background-modifier-border);
+	font-size: inherit;
+}
+
+.sidenote-margin .sidenote-embed-note > :first-child {
+	margin-top: 0;
+}
+
+.sidenote-margin .sidenote-embed-note > :last-child {
+	margin-bottom: 0;
+}
+
 /* A margin is inserted with the document-wide offset and only receives its
    per-wrapper indent correction once the positioning pass runs, a frame or two
    later. Since --sn-transition animates left/right, that correction is
