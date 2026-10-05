@@ -8,9 +8,11 @@
  */
 
 import {
+	Keymap,
 	MarkdownRenderChild,
 	MarkdownRenderer,
 	resolveSubpath,
+	setIcon,
 } from "obsidian";
 import type { App, Component, TFile } from "obsidian";
 
@@ -109,7 +111,7 @@ export function renderEmbed(
 	}
 
 	if (file && ext === "md" && embedOwner) {
-		return renderNoteEmbed(app, file, subpath, embedOwner);
+		return renderNoteEmbed(app, file, subpath, sourcePath, embedOwner);
 	}
 
 	return renderFallbackLink(app, target, alias, sourcePath, raw);
@@ -126,15 +128,35 @@ function renderNoteEmbed(
 	app: App,
 	file: TFile,
 	subpath: string | undefined,
+	sourcePath: string,
 	owner: Component,
 ): HTMLElement {
 	sweepDetachedEmbeds();
 
-	const el = createDiv({
-		cls: `sidenote-embed ${NOTE_EMBED_CLASS} markdown-rendered`,
+	// The wrapper doesn't scroll, so the open button stays put while the
+	// content inside it does.
+	const wrap = createDiv({ cls: `sidenote-embed ${NOTE_EMBED_CLASS}` });
+	const content = wrap.createDiv({
+		cls: "sidenote-embed-note-content markdown-rendered",
 	});
-	const child = new MarkdownRenderChild(el);
-	const live: LiveEmbed = { child, el, wasConnected: false };
+
+	const open = wrap.createEl("a", {
+		cls: "sidenote-embed-open",
+		attr: { "aria-label": "Open note", role: "button" },
+	});
+	setIcon(open, "link");
+	open.addEventListener("click", (e) => {
+		e.preventDefault();
+		e.stopPropagation();
+		void app.workspace.openLinkText(
+			file.path + (subpath ?? ""),
+			sourcePath,
+			Keymap.isModEvent(e),
+		);
+	});
+
+	const child = new MarkdownRenderChild(wrap);
+	const live: LiveEmbed = { child, el: wrap, wasConnected: false };
 	liveEmbeds.add(live);
 	owner.addChild(child);
 
@@ -146,14 +168,20 @@ function renderNoteEmbed(
 				await app.vault.cachedRead(file),
 				subpath,
 			);
-			await MarkdownRenderer.render(app, markdown, el, file.path, child);
+			await MarkdownRenderer.render(
+				app,
+				markdown,
+				content,
+				file.path,
+				child,
+			);
 		} catch (error) {
 			console.error("Sidenote plugin: failed to render note embed", error);
-			el.setText(file.basename);
+			content.setText(file.basename);
 		}
 	})();
 
-	return el;
+	return wrap;
 }
 
 /** Narrow a note's text to a `#Heading` or `#^block` subpath, if given. */

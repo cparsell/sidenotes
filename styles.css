@@ -777,19 +777,58 @@
 
 /* An embedded note: bounded so a long transclusion can't swamp the margin */
 .sidenote-margin .sidenote-embed-note {
+	position: relative;
+	border-left: 2px solid var(--background-modifier-border);
+}
+
+.sidenote-margin .sidenote-embed-note-content {
 	max-height: var(--sn-embed-max-height, 20em);
 	overflow-y: auto;
 	padding: 0.25em 0.5em;
-	border-left: 2px solid var(--background-modifier-border);
 	font-size: inherit;
 }
 
-.sidenote-margin .sidenote-embed-note > :first-child {
+.sidenote-margin .sidenote-embed-note-content > :first-child {
 	margin-top: 0;
 }
 
-.sidenote-margin .sidenote-embed-note > :last-child {
+.sidenote-margin .sidenote-embed-note-content > :last-child {
 	margin-bottom: 0;
+}
+
+/* Open-note button, top right; revealed on hover like Obsidian's own embeds */
+.sidenote-margin .sidenote-embed-open {
+	position: absolute;
+	top: 2px;
+	right: 2px;
+	display: flex;
+	padding: 2px;
+	border-radius: var(--radius-s);
+	color: var(--text-faint);
+	background: var(--background-primary);
+	cursor: pointer;
+	opacity: 0;
+	transition: opacity 0.1s;
+}
+
+.sidenote-margin .sidenote-embed-open .svg-icon {
+	width: 14px;
+	height: 14px;
+}
+
+.sidenote-margin .sidenote-embed-note:hover .sidenote-embed-open,
+.sidenote-margin .sidenote-embed-open:focus-visible {
+	opacity: 1;
+}
+
+.sidenote-margin .sidenote-embed-open:hover {
+	color: var(--text-normal);
+}
+
+@media (hover: none) {
+	.sidenote-margin .sidenote-embed-open {
+		opacity: 1;
+	}
 }
 
 /* A margin is inserted with the document-wide offset and only receives its
