@@ -191,11 +191,25 @@ function sliceBySubpath(
 	markdown: string,
 	subpath: string | undefined,
 ): string {
-	if (!subpath) return markdown;
+	if (!subpath) return tidyEmbedMarkdown(markdown);
 	const cache = app.metadataCache.getFileCache(file);
 	const hit = cache ? resolveSubpath(cache, subpath) : null;
-	if (!hit) return markdown;
-	return markdown.slice(hit.start.offset, hit.end?.offset ?? markdown.length);
+	if (!hit) return tidyEmbedMarkdown(markdown);
+	return tidyEmbedMarkdown(
+		markdown.slice(hit.start.offset, hit.end?.offset ?? markdown.length),
+	);
+}
+
+/**
+ * Drop what would only add dead space at the top of a narrow margin:
+ * frontmatter (Obsidian's own embeds don't show properties), leading blank
+ * lines, and runs of blank lines, which render as empty paragraphs.
+ */
+function tidyEmbedMarkdown(markdown: string): string {
+	return markdown
+		.replace(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/, "")
+		.replace(/(\r?\n){3,}/g, "\n\n")
+		.trim();
 }
 
 /** Link to the target, without the stray "!" a plain-text embed would show. */
