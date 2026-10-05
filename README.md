@@ -2,7 +2,7 @@
 
 I first discovered sidenotes, at least in a conscious way, on [Gwern.net](https://gwern.net/sidenote) which was referencing [Edward Tufte's conventions](https://edwardtufte.github.io/tufte-css/).
 
-![Sidenotes Basics](https://github.com/cparsell/sidenotes/blob/main/gh_assets/Screenshot2.png)
+![Sidenotes Basics](https://github.com/cparsell/sidenotes/blob/main/gh_assets/Screenshot_2026-10-05.png)
 _Basic sidenote capabilities demonstrated_
 
 ![Neumorphic badges](https://github.com/cparsell/sidenotes/blob/main/gh_assets/Screenshot-badges-multi.png)
