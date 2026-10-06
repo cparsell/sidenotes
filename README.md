@@ -26,7 +26,7 @@ Numbered notes displayed in the margin instead of at the bottom of the note. Run
   - **Markdown footnotes**: `This is a sentence[^1].`
 - **Visible in Editing and Reading modes.** Source mode is left alone: it shows the bare markdown.
 - **Editable in the margin.** In Editing mode, click a sidenote, edit it, and press `ENTER` to save; `SHIFT+ENTER` adds a new line (HTML format only — Markdown footnote definitions are single-line). Reading mode is read-only.
-- **Supports internal and external links**, plus basic Markdown formatting: **bold**, _italic_, and `inline code`.
+- **Supports Obsidian Markdown formatting**, like `**bold**`, `_italic_`, `inline code`, `[[Internal link]]`, `[External link](https://example.com)`, `![[Embedded image.png|200]]`, and `![[Embedded note]]`.
 - **Per-note margin override.** Pin an individual sidenote to the margin opposite the global "Sidenote position" setting with the `Insert sidenote (opposite margin)` command, or by hand:
   - **HTML**: add a `right` or `left` class, e.g. `<span class="sidenote right">text</span>`
   - **Footnotes**: append `-r` or `-l` to the footnote ID, e.g. `[^3-r]`
