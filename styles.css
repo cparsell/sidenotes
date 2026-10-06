@@ -771,8 +771,20 @@
 .sidenote-margin .sidenote-embed {
 	display: block;
 	max-width: 100%;
-	height: auto;
 	margin: 0.25em 0;
+}
+
+.sidenote-margin img.sidenote-embed,
+.sidenote-margin video.sidenote-embed {
+	height: auto;
+}
+
+/* An audio player has no intrinsic height: `height: auto` collapses it to
+   nothing, so give it the browser's own control-bar height and the full
+   margin width. */
+.sidenote-margin audio.sidenote-embed {
+	width: 100%;
+	height: 54px;
 }
 
 /* An embedded note: bounded so a long transclusion can't swamp the margin */
