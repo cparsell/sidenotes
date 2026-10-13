@@ -100,13 +100,13 @@ export const DEFAULT_SETTINGS: SidenoteSettings = {
 	numberColor: "",
 
 	// Width & Spacing
+	sidenoteAnchor: "text",
 	minSidenoteWidth: 10,
 	maxSidenoteWidth: 18,
 	sidenoteGap: 2,
-	sidenoteGap2: 1,
-	sidenoteGapDrift: 0.3,
-	sidenoteAnchor: "text",
-	pageOffsetFactor: 1,
+	sidenoteGap2: 2,
+	sidenoteGapDrift: 0.1,
+	pageOffsetFactor: 0.4,
 
 	// Breakpoints
 	hideBelow: 900,
