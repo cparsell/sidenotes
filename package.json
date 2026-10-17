@@ -29,5 +29,8 @@
 		"tslib": "2.4.0",
 		"typescript": "^5.8.3",
 		"typescript-eslint": "^8.36.0"
+	},
+	"allowScripts": {
+		"esbuild@0.25.5": true
 	}
 }
