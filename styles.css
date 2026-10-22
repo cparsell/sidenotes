@@ -441,8 +441,8 @@
 }
 
 /* --- Compact mode overrides --- */
-.markdown-source-view.mod-cm6[data-sidenote-mode="compact"],
-.markdown-reading-view[data-sidenote-mode="compact"] {
+.markdown-source-view.mod-cm6[data-sidenote-mode='compact'],
+.markdown-reading-view[data-sidenote-mode='compact'] {
 	--sidenote-base-width: var(--sn-base-width-compact, 8rem);
 	--sidenote-max-extra: var(--sn-max-extra-compact, 4rem);
 	--sidenote-gap: var(--sn-gap-compact, 1rem);
@@ -450,8 +450,8 @@
 }
 
 /* --- Full mode overrides --- */
-.markdown-source-view.mod-cm6[data-sidenote-mode="full"],
-.markdown-reading-view[data-sidenote-mode="full"] {
+.markdown-source-view.mod-cm6[data-sidenote-mode='full'],
+.markdown-reading-view[data-sidenote-mode='full'] {
 	--sidenote-base-width: var(--sn-base-width-full, 18rem);
 	--sidenote-max-extra: 2rem;
 	--sidenote-gap: var(--sn-gap-full, 3rem);
@@ -476,42 +476,42 @@
    not moved TO zero, left untouched. It also means whatever margin the
    theme *does* leave natively is still there for a sidenote to sit in,
    rather than getting overwritten away. */
-.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="compact"]
+.markdown-source-view.mod-cm6[data-sidenote-position='left'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='compact']
 	.cm-scroller,
-.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="normal"]
+.markdown-source-view.mod-cm6[data-sidenote-position='left'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='normal']
 	.cm-scroller,
-.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="full"]
+.markdown-source-view.mod-cm6[data-sidenote-position='left'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='full']
 	.cm-scroller {
 	padding-left: var(--page-offset) !important;
 	padding-right: 0 !important;
 }
 
-.markdown-reading-view[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="compact"]
+.markdown-reading-view[data-sidenote-position='left'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='compact']
 	.markdown-preview-sizer,
-.markdown-reading-view[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="normal"]
+.markdown-reading-view[data-sidenote-position='left'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='normal']
 	.markdown-preview-sizer,
-.markdown-reading-view[data-sidenote-position="left"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="full"]
+.markdown-reading-view[data-sidenote-position='left'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='full']
 	.markdown-preview-sizer {
 	padding-left: var(--page-offset) !important;
 	padding-right: 0 !important;
 }
 
 /* === Page offset — RIGHT position === */
-.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="compact"]
+.markdown-source-view.mod-cm6[data-sidenote-position='right'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='compact']
 	.cm-scroller,
-.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="normal"]
+.markdown-source-view.mod-cm6[data-sidenote-position='right'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='normal']
 	.cm-scroller,
-.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="full"]
+.markdown-source-view.mod-cm6[data-sidenote-position='right'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='full']
 	.cm-scroller {
 	padding-right: var(--page-offset) !important;
 	padding-left: 0 !important;
 }
 
-.markdown-reading-view[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="compact"]
+.markdown-reading-view[data-sidenote-position='right'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='compact']
 	.markdown-preview-sizer,
-.markdown-reading-view[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="normal"]
+.markdown-reading-view[data-sidenote-position='right'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='normal']
 	.markdown-preview-sizer,
-.markdown-reading-view[data-sidenote-position="right"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="full"]
+.markdown-reading-view[data-sidenote-position='right'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='full']
 	.markdown-preview-sizer {
 	padding-right: var(--page-offset) !important;
 	padding-left: 0 !important;
@@ -523,38 +523,38 @@
    it that side has no room at all, so edge-anchored overrides collapse
    against — or past — the pane's real edge instead of respecting
    sidenoteGap / sidenoteGap2 / sidenoteGapDrift like normal sidenotes do. */
-.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="compact"]
+.markdown-source-view.mod-cm6[data-sidenote-position='left'][data-sidenote-has-opposite='true'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='compact']
 	.cm-scroller,
-.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="normal"]
+.markdown-source-view.mod-cm6[data-sidenote-position='left'][data-sidenote-has-opposite='true'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='normal']
 	.cm-scroller,
-.markdown-source-view.mod-cm6[data-sidenote-position="left"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="full"]
+.markdown-source-view.mod-cm6[data-sidenote-position='left'][data-sidenote-has-opposite='true'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='full']
 	.cm-scroller {
 	padding-right: var(--page-offset) !important;
 }
 
-.markdown-reading-view[data-sidenote-position="left"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="compact"]
+.markdown-reading-view[data-sidenote-position='left'][data-sidenote-has-opposite='true'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='compact']
 	.markdown-preview-sizer,
-.markdown-reading-view[data-sidenote-position="left"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="normal"]
+.markdown-reading-view[data-sidenote-position='left'][data-sidenote-has-opposite='true'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='normal']
 	.markdown-preview-sizer,
-.markdown-reading-view[data-sidenote-position="left"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="full"]
+.markdown-reading-view[data-sidenote-position='left'][data-sidenote-has-opposite='true'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='full']
 	.markdown-preview-sizer {
 	padding-right: var(--page-offset) !important;
 }
 
-.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="compact"]
+.markdown-source-view.mod-cm6[data-sidenote-position='right'][data-sidenote-has-opposite='true'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='compact']
 	.cm-scroller,
-.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="normal"]
+.markdown-source-view.mod-cm6[data-sidenote-position='right'][data-sidenote-has-opposite='true'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='normal']
 	.cm-scroller,
-.markdown-source-view.mod-cm6[data-sidenote-position="right"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="full"]
+.markdown-source-view.mod-cm6[data-sidenote-position='right'][data-sidenote-has-opposite='true'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='full']
 	.cm-scroller {
 	padding-left: var(--page-offset) !important;
 }
 
-.markdown-reading-view[data-sidenote-position="right"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="compact"]
+.markdown-reading-view[data-sidenote-position='right'][data-sidenote-has-opposite='true'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='compact']
 	.markdown-preview-sizer,
-.markdown-reading-view[data-sidenote-position="right"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="normal"]
+.markdown-reading-view[data-sidenote-position='right'][data-sidenote-has-opposite='true'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='normal']
 	.markdown-preview-sizer,
-.markdown-reading-view[data-sidenote-position="right"][data-sidenote-has-opposite="true"][data-has-sidenotes="true"][data-sidenote-page-offset="true"][data-sidenote-mode="full"]
+.markdown-reading-view[data-sidenote-position='right'][data-sidenote-has-opposite='true'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='full']
 	.markdown-preview-sizer {
 	padding-left: var(--page-offset) !important;
 }
@@ -562,10 +562,10 @@
 /* === Sidenote positioning (uses --sidenote-offset set by JS) === */
 
 /* LEFT */
-.markdown-source-view.mod-cm6[data-sidenote-position="left"]
+.markdown-source-view.mod-cm6[data-sidenote-position='left']
 	.sidenote-margin,
-.markdown-reading-view[data-sidenote-position="left"] .sidenote-margin,
-.markdown-source-view.mod-cm6[data-sidenote-position="left"]
+.markdown-reading-view[data-sidenote-position='left'] .sidenote-margin,
+.markdown-source-view.mod-cm6[data-sidenote-position='left']
 	.cm-line
 	.sidenote-number[data-footnote-id]
 	.sidenote-margin {
@@ -581,10 +581,10 @@
 }
 
 /* RIGHT */
-.markdown-source-view.mod-cm6[data-sidenote-position="right"]
+.markdown-source-view.mod-cm6[data-sidenote-position='right']
 	.sidenote-margin,
-.markdown-reading-view[data-sidenote-position="right"] .sidenote-margin,
-.markdown-source-view.mod-cm6[data-sidenote-position="right"]
+.markdown-reading-view[data-sidenote-position='right'] .sidenote-margin,
+.markdown-source-view.mod-cm6[data-sidenote-position='right']
 	.cm-line
 	.sidenote-number[data-footnote-id]
 	.sidenote-margin {
@@ -604,12 +604,12 @@
    "Sidenote position" setting. Selectors are shaped to match the specificity
    of the base LEFT/RIGHT rules above (including the .cm-line variant) so
    this reliably wins regardless of source order. */
-.markdown-source-view.mod-cm6 .sidenote-margin[data-sidenote-side="left"],
-.markdown-reading-view .sidenote-margin[data-sidenote-side="left"],
+.markdown-source-view.mod-cm6 .sidenote-margin[data-sidenote-side='left'],
+.markdown-reading-view .sidenote-margin[data-sidenote-side='left'],
 .markdown-source-view.mod-cm6
 	.cm-line
 	.sidenote-number[data-footnote-id]
-	.sidenote-margin[data-sidenote-side="left"] {
+	.sidenote-margin[data-sidenote-side='left'] {
 	left: calc(
 		var(
 				--sidenote-offset-left,
@@ -621,12 +621,12 @@
 	text-align: var(--sn-text-align-opposite, right) !important;
 }
 
-.markdown-source-view.mod-cm6 .sidenote-margin[data-sidenote-side="right"],
-.markdown-reading-view .sidenote-margin[data-sidenote-side="right"],
+.markdown-source-view.mod-cm6 .sidenote-margin[data-sidenote-side='right'],
+.markdown-reading-view .sidenote-margin[data-sidenote-side='right'],
 .markdown-source-view.mod-cm6
 	.cm-line
 	.sidenote-number[data-footnote-id]
-	.sidenote-margin[data-sidenote-side="right"] {
+	.sidenote-margin[data-sidenote-side='right'] {
 	right: calc(
 		var(
 				--sidenote-offset-right,
@@ -707,13 +707,13 @@
 /* THIRD clipping layer, editing mode only: Obsidian wraps the whole callout
    widget in .cm-embed-block, which is harmless while idle but gets its own
    `overflow: hidden` the instant the mouse hovers it (for a box-shadow
-   effect) — the margin computed visible/opacity:1 at a plausible on-screen 
-	 position, but `elementFromPoint` at that exact spot returned .cm-scroller, 
-	 not the margin, meaning something between the callout and the scroller 
-	 was still clipping it despite both .callout and .callout-content above 
-	 being freed. Since the sidenote margin escapes far outside the callout's 
-	 own visual footprint, this hover rule clips it away almost any time the 
-	 callout is actually being looked at — !important because the hover rule 
+   effect) — the margin computed visible/opacity:1 at a plausible on-screen
+	 position, but `elementFromPoint` at that exact spot returned .cm-scroller,
+	 not the margin, meaning something between the callout and the scroller
+	 was still clipping it despite both .callout and .callout-content above
+	 being freed. Since the sidenote margin escapes far outside the callout's
+	 own visual footprint, this hover rule clips it away almost any time the
+	 callout is actually being looked at — !important because the hover rule
 	 has to be beaten unconditionally, not just avoided at rest. */
 .markdown-source-view.mod-cm6 .cm-embed-block:has(.sidenote-number) {
 	overflow: visible !important;
@@ -802,7 +802,9 @@
 
 /* Obsidian's rendered-markdown block margins are sized for a full-width page,
    and blank source lines can come through as empty paragraphs. */
-.sidenote-margin .sidenote-embed-note-content :is(p, ul, ol, blockquote, pre, table, h1, h2, h3, h4, h5, h6) {
+.sidenote-margin
+	.sidenote-embed-note-content
+	:is(p, ul, ol, blockquote, pre, table, h1, h2, h3, h4, h5, h6) {
 	margin-block: 0 0.5em;
 }
 
@@ -810,12 +812,17 @@
 	display: none;
 }
 
-.sidenote-margin .sidenote-embed-note-content :is(.el-p, .el-div, .el-h1, .el-h2, .el-h3, .el-ul, .el-ol) {
+.sidenote-margin
+	.sidenote-embed-note-content
+	:is(.el-p, .el-div, .el-h1, .el-h2, .el-h3, .el-ul, .el-ol) {
 	margin: 0;
 }
 
 .sidenote-margin .sidenote-embed-note-content > :first-child,
-.sidenote-margin .sidenote-embed-note-content > :first-child > :first-child {
+.sidenote-margin
+	.sidenote-embed-note-content
+	> :first-child
+	> :first-child {
 	margin-top: 0;
 	margin-block-start: 0;
 }
@@ -895,24 +902,24 @@
    `color` and ties with — or beats — the plain selector here, so on source
    order alone it wins and the hover tint never appears for footnotes. Same
    selector shaping the per-sidenote side overrides use above. */
-.sidenote-margin:hover:not([data-editing="true"]),
+.sidenote-margin:hover:not([data-editing='true']),
 .cm-line
 	.sidenote-number[data-footnote-id]
-	.sidenote-margin:hover:not([data-editing="true"]) {
+	.sidenote-margin:hover:not([data-editing='true']) {
 	color: var(--sn-hover-color, var(--text-muted));
 }
 
-.sidenote-margin[data-editing="true"] {
+.sidenote-margin[data-editing='true'] {
 	display: block !important;
 }
 
-.sidenote-margin[data-editing="true"]::before {
+.sidenote-margin[data-editing='true']::before {
 	float: left !important;
 	margin-right: 0.3em !important;
 	shape-outside: margin-box !important;
 }
 
-.sidenote-margin[data-editing="true"]
+.sidenote-margin[data-editing='true']
 	> .cm-editor
 	> .cm-scroller
 	> .cm-content {
@@ -922,7 +929,7 @@
 	box-sizing: border-box !important;
 }
 
-.sidenote-margin[data-editing="true"]
+.sidenote-margin[data-editing='true']
 	> .cm-editor
 	> .cm-scroller
 	> .cm-content
@@ -933,14 +940,14 @@
 	white-space: pre-wrap !important;
 }
 
-.sidenote-margin[data-editing="true"] > .cm-editor > .cm-announced {
+.sidenote-margin[data-editing='true'] > .cm-editor > .cm-announced {
 	display: none !important;
 }
 
 /* Compact mode typography */
-.markdown-source-view.mod-cm6[data-sidenote-mode="compact"]
+.markdown-source-view.mod-cm6[data-sidenote-mode='compact']
 	.sidenote-margin,
-.markdown-reading-view[data-sidenote-mode="compact"] .sidenote-margin {
+.markdown-reading-view[data-sidenote-mode='compact'] .sidenote-margin {
 	font-size: var(
 		--sn-font-size-compact,
 		calc(var(--font-text-size, 16px) * 0.7)
@@ -955,9 +962,9 @@
 }
 
 /* Hidden mode */
-.markdown-source-view.mod-cm6[data-sidenote-mode="hidden"]
+.markdown-source-view.mod-cm6[data-sidenote-mode='hidden']
 	.sidenote-margin,
-.markdown-reading-view[data-sidenote-mode="hidden"] .sidenote-margin {
+.markdown-reading-view[data-sidenote-mode='hidden'] .sidenote-margin {
 	display: none !important;
 	visibility: hidden !important;
 	pointer-events: none !important;
@@ -968,9 +975,9 @@
    body text. Scoped to hidden mode only: in the other modes the spans are
    measured (getBoundingClientRect) before being wrapped, and display:none
    would zero those rects. */
-.markdown-source-view.mod-cm6[data-sidenote-mode="hidden"]
+.markdown-source-view.mod-cm6[data-sidenote-mode='hidden']
 	span.sidenote:not(.sidenote-number > span.sidenote),
-.markdown-reading-view[data-sidenote-mode="hidden"]
+.markdown-reading-view[data-sidenote-mode='hidden']
 	span.sidenote:not(.sidenote-number > span.sidenote) {
 	display: none !important;
 }
@@ -983,37 +990,37 @@
    nothing to do with whether the text shift "Page offset factor" reserved
    is still valid — it is, so it must stay in effect even while the note
    itself is hidden. */
-.markdown-source-view.mod-cm6[data-sidenote-no-room="true"]
+.markdown-source-view.mod-cm6[data-sidenote-no-room='true']
 	.sidenote-margin,
-.markdown-reading-view[data-sidenote-no-room="true"] .sidenote-margin {
+.markdown-reading-view[data-sidenote-no-room='true'] .sidenote-margin {
 	display: none !important;
 	visibility: hidden !important;
 	pointer-events: none !important;
 }
 
 /* === Prevent clipping by CM layers (only when sidenotes are active) === */
-.markdown-source-view.mod-cm6[data-has-sidenotes="true"]:not(
-		[data-sidenote-mode="hidden"]
+.markdown-source-view.mod-cm6[data-has-sidenotes='true']:not(
+		[data-sidenote-mode='hidden']
 	)
 	.cm-editor,
-.markdown-source-view.mod-cm6[data-has-sidenotes="true"]:not(
-		[data-sidenote-mode="hidden"]
+.markdown-source-view.mod-cm6[data-has-sidenotes='true']:not(
+		[data-sidenote-mode='hidden']
 	)
 	.cm-content,
-.markdown-source-view.mod-cm6[data-has-sidenotes="true"]:not(
-		[data-sidenote-mode="hidden"]
+.markdown-source-view.mod-cm6[data-has-sidenotes='true']:not(
+		[data-sidenote-mode='hidden']
 	)
 	.cm-sizer,
-.markdown-source-view.mod-cm6[data-has-sidenotes="true"]:not(
-		[data-sidenote-mode="hidden"]
+.markdown-source-view.mod-cm6[data-has-sidenotes='true']:not(
+		[data-sidenote-mode='hidden']
 	)
 	.cm-contentContainer {
 	overflow: visible !important;
 }
 
 /* Empty mode — opacity fade */
-.markdown-source-view.mod-cm6[data-sidenote-mode=""] .sidenote-margin,
-.markdown-reading-view[data-sidenote-mode=""] .sidenote-margin {
+.markdown-source-view.mod-cm6[data-sidenote-mode=''] .sidenote-margin,
+.markdown-reading-view[data-sidenote-mode=''] .sidenote-margin {
 	opacity: 0;
 	pointer-events: none;
 	position: absolute;
@@ -1033,7 +1040,7 @@
 }
 
 /* === Sidenote margin while an inline editor is open === */
-.sidenote-margin[data-editing="true"] {
+.sidenote-margin[data-editing='true'] {
 	background: var(--background-modifier-form-field);
 	border-radius: 4px;
 	padding: 4px 6px;
@@ -1074,11 +1081,11 @@
    ========================================================== */
 
 /* --- Plain (superscript) --- */
-[data-sn-badge-style="plain"] .sidenote-number {
+[data-sn-badge-style='plain'] .sidenote-number {
 	line-height: 0;
 }
 
-[data-sn-badge-style="plain"] .sidenote-number::after {
+[data-sn-badge-style='plain'] .sidenote-number::after {
 	vertical-align: baseline;
 	position: relative;
 	top: -0.5em;
@@ -1089,24 +1096,24 @@
 	color: var(--sn-number-color, var(--text-accent));
 }
 
-[data-sn-show-numbers="true"][data-sn-badge-style="plain"]
+[data-sn-show-numbers='true'][data-sn-badge-style='plain']
 	.sidenote-number::after {
 	content: attr(data-sidenote-num);
 }
 
-[data-sn-show-numbers="false"][data-sn-badge-style="plain"]
+[data-sn-show-numbers='false'][data-sn-badge-style='plain']
 	.sidenote-number::after {
 	content: none;
 }
 
-[data-sn-show-numbers="true"][data-sn-badge-style="plain"]
+[data-sn-show-numbers='true'][data-sn-badge-style='plain']
 	.sidenote-margin[data-sidenote-num]::before {
-	content: attr(data-sidenote-num) ". ";
+	content: attr(data-sidenote-num) '. ';
 	font-weight: bold;
 	color: var(--sn-number-color, inherit);
 }
 
-[data-sn-show-numbers="false"][data-sn-badge-style="plain"]
+[data-sn-show-numbers='false'][data-sn-badge-style='plain']
 	.sidenote-margin[data-sidenote-num]::before {
 	content: none;
 }
@@ -1122,7 +1129,7 @@
 	--sn-badge-hover-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
 }
 
-[data-sn-badge-style="neumorphic"]
+[data-sn-badge-style='neumorphic']
 	.sidenote-margin[data-sidenote-num]::before {
 	content: attr(data-sidenote-num);
 	display: inline-flex;
@@ -1144,16 +1151,16 @@
 	box-shadow: var(--sn-badge-shadow);
 }
 
-[data-sn-badge-style="neumorphic"]
+[data-sn-badge-style='neumorphic']
 	.sidenote-margin:hover[data-sidenote-num]::before,
-[data-sn-badge-style="neumorphic"]
-	.sidenote-margin[data-editing="true"][data-sidenote-num]::before {
+[data-sn-badge-style='neumorphic']
+	.sidenote-margin[data-editing='true'][data-sidenote-num]::before {
 	background-color: var(--sn-active-bg);
 	color: var(--text-accent);
 	box-shadow: var(--sn-badge-hover-shadow);
 }
 
-[data-sn-badge-style="neumorphic"] .sidenote-number::after {
+[data-sn-badge-style='neumorphic'] .sidenote-number::after {
 	content: attr(data-sidenote-num);
 	display: inline-flex;
 	align-items: center;
@@ -1176,10 +1183,10 @@
 /* Highlight sidenote when hovering over number in the note text.
    Second selector is the specificity-matched footnote variant — see the note
    on .sidenote-margin:hover above. */
-.sidenote-number:hover .sidenote-margin:not([data-editing="true"]),
+.sidenote-number:hover .sidenote-margin:not([data-editing='true']),
 .cm-line
 	.sidenote-number[data-footnote-id]:hover
-	.sidenote-margin:not([data-editing="true"]) {
+	.sidenote-margin:not([data-editing='true']) {
 	color: var(--sn-hover-color, var(--text-muted));
 }
 
@@ -1188,7 +1195,7 @@
 	color: var(--sn-number-color, var(--text-accent));
 }
 
-[data-sn-badge-style="neumorphic"] .sidenote-number:hover::after {
+[data-sn-badge-style='neumorphic'] .sidenote-number:hover::after {
 	background-color: var(--sn-active-bg);
 	box-shadow: var(--sn-badge-hover-shadow);
 }
@@ -1202,7 +1209,7 @@
 	--sn-pill-hover-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
 }
 
-[data-sn-badge-style="pill"] .sidenote-margin[data-sidenote-num]::before {
+[data-sn-badge-style='pill'] .sidenote-margin[data-sidenote-num]::before {
 	content: attr(data-sidenote-num);
 	display: inline-flex;
 	align-items: center;
@@ -1226,19 +1233,19 @@
 		transform 0.15s ease;
 }
 
-[data-sn-badge-style="pill"]
+[data-sn-badge-style='pill']
 	.sidenote-margin:hover[data-sidenote-num]::before {
 	box-shadow: var(--sn-pill-hover-shadow);
 	transform: scale(1.1);
 }
 
-[data-sn-badge-style="pill"]
-	.sidenote-margin[data-editing="true"][data-sidenote-num]::before {
+[data-sn-badge-style='pill']
+	.sidenote-margin[data-editing='true'][data-sidenote-num]::before {
 	box-shadow: var(--sn-pill-hover-shadow);
 	transform: scale(1.1);
 }
 
-[data-sn-badge-style="pill"] .sidenote-number::after {
+[data-sn-badge-style='pill'] .sidenote-number::after {
 	content: attr(data-sidenote-num);
 	display: inline-flex;
 	align-items: center;
@@ -1258,7 +1265,7 @@
 	box-shadow: var(--sn-pill-shadow);
 }
 
-[data-sn-badge-style="pill"] .sidenote-number:hover::after {
+[data-sn-badge-style='pill'] .sidenote-number:hover::after {
 	box-shadow: var(--sn-pill-hover-shadow);
 }
 
@@ -1269,14 +1276,14 @@
    ========================================================== */
 
 /* Hide footnote definitions in Live Preview */
-[data-sn-format="footnote-edit"][data-sn-hide-footnotes="true"]
-	.markdown-source-view.mod-cm6.is-live-preview[data-has-sidenotes="true"][data-sidenote-mode="normal"]
+[data-sn-format='footnote-edit'][data-sn-hide-footnotes='true']
+	.markdown-source-view.mod-cm6.is-live-preview[data-has-sidenotes='true'][data-sidenote-mode='normal']
 	.cm-line.HyperMD-footnote,
-[data-sn-format="footnote-edit"][data-sn-hide-footnotes="true"]
-	.markdown-source-view.mod-cm6.is-live-preview[data-has-sidenotes="true"][data-sidenote-mode="compact"]
+[data-sn-format='footnote-edit'][data-sn-hide-footnotes='true']
+	.markdown-source-view.mod-cm6.is-live-preview[data-has-sidenotes='true'][data-sidenote-mode='compact']
 	.cm-line.HyperMD-footnote,
-[data-sn-format="footnote-edit"][data-sn-hide-footnotes="true"]
-	.markdown-source-view.mod-cm6.is-live-preview[data-has-sidenotes="true"][data-sidenote-mode="full"]
+[data-sn-format='footnote-edit'][data-sn-hide-footnotes='true']
+	.markdown-source-view.mod-cm6.is-live-preview[data-has-sidenotes='true'][data-sidenote-mode='full']
 	.cm-line.HyperMD-footnote {
 	display: none;
 }
@@ -1289,7 +1296,7 @@
    getBoundingClientRect() returns all zeros — which applyLineOffset then reads
    as a position, putting the margin far off. Keeping a zero-width box means
    the wrapper still reports the line it sits on. */
-[data-sn-hide-footnote-numbers="true"]
+[data-sn-hide-footnote-numbers='true']
 	.sidenote-number[data-footnote-id]
 	a.footnote-link {
 	display: inline-block;
@@ -1300,7 +1307,7 @@
 }
 
 /* Hide original [^1] reference numbers in Live Preview */
-[data-sn-format="footnote-edit"][data-sn-hide-footnote-numbers="true"]
+[data-sn-format='footnote-edit'][data-sn-hide-footnote-numbers='true']
 	.markdown-source-view.mod-cm6.is-live-preview
 	.cm-line:has(.sidenote-number[data-footnote-id])
 	.cm-footref {
@@ -1359,7 +1366,7 @@
 	margin: 0 !important;
 }
 
-.sidenote-margin[data-editing="true"] .sidenote-cm-editor .cm-content {
+.sidenote-margin[data-editing='true'] .sidenote-cm-editor .cm-content {
 	color: var(--sn-text-color, var(--text-normal)) !important;
 }
 
@@ -1414,7 +1421,7 @@ small.sidenote-margin.margin-note {
 }
 
 /* Hide margin note entries from the footnotes section at the bottom */
-section.footnotes li:has(> p > a[data-footref^="mn-"]) {
+section.footnotes li:has(> p > a[data-footref^='mn-']) {
 	display: none;
 }
 
@@ -1448,21 +1455,21 @@ section.footnotes li:has(> p > a[data-footref^="mn-"]) {
 }
 
 /* Hide badge styles for margin notes */
-[data-sn-badge-style="neumorphic"] .sidenote-number.margin-note::after {
+[data-sn-badge-style='neumorphic'] .sidenote-number.margin-note::after {
 	display: none;
 }
 
-[data-sn-badge-style="neumorphic"]
+[data-sn-badge-style='neumorphic']
 	.sidenote-margin.margin-note[data-sidenote-num]::before {
 	display: none;
 }
 
-[data-sn-badge-style="pill"]
+[data-sn-badge-style='pill']
 	.sidenote-margin.margin-note[data-sidenote-num]::before {
 	display: none;
 }
 
-[data-sn-badge-style="plain"] .sidenote-number.margin-note::after {
+[data-sn-badge-style='plain'] .sidenote-number.margin-note::after {
 	display: none;
 }
 

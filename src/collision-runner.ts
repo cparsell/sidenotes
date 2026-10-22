@@ -8,8 +8,8 @@
  * divergence that only shows up as a rendering glitch under virtualization.
  */
 
-import { resolveCollisionsBySide } from "./collision";
-import type { SidenoteSettings } from "./settings";
+import { resolveCollisionsBySide } from './collision'
+import type { SidenoteSettings } from './settings'
 
 /**
  * Re-stack the sidenote margins inside `root` so they do not overlap.
@@ -17,25 +17,25 @@ import type { SidenoteSettings } from "./settings";
  */
 export function updateCollisionsIn(
 	settings: SidenoteSettings,
-	root: HTMLElement | null | undefined,
+	root: HTMLElement | null | undefined
 ) {
-	if (!root?.isConnected) return;
+	if (!root?.isConnected) return
 
 	const margins = Array.from(
-		root.querySelectorAll<HTMLElement>("small.sidenote-margin"),
+		root.querySelectorAll<HTMLElement>('small.sidenote-margin')
 	)
 		// Detached margins measure as zero-height rects, which would drag the
 		// whole stack up. Reading mode virtualizes sections in and out, so this
 		// happens routinely there.
-		.filter((m) => m.isConnected);
+		.filter(m => m.isConnected)
 
-	if (margins.length === 0) return;
+	if (margins.length === 0) return
 
 	resolveCollisionsBySide(
 		margins,
 		settings.collisionSpacing,
-		settings.sidenotePosition,
-	);
+		settings.sidenotePosition
+	)
 }
 
 /**
@@ -47,8 +47,8 @@ export function updateCollisionsIn(
  */
 export function updateAllCollisions(
 	settings: SidenoteSettings,
-	roots: { cmRoot: HTMLElement | null; readingRoot: HTMLElement | null },
+	roots: { cmRoot: HTMLElement | null; readingRoot: HTMLElement | null }
 ) {
-	updateCollisionsIn(settings, roots.cmRoot);
-	updateCollisionsIn(settings, roots.readingRoot);
+	updateCollisionsIn(settings, roots.cmRoot)
+	updateCollisionsIn(settings, roots.readingRoot)
 }

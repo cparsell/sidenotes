@@ -1,34 +1,34 @@
 import {
 	EditorPosition,
 	MarkdownView,
-	editorLivePreviewField,
-} from "obsidian";
+	editorLivePreviewField
+} from 'obsidian'
 import {
 	EditorView,
 	ViewUpdate,
 	ViewPlugin,
 	Decoration,
 	DecorationSet,
-	WidgetType,
-} from "@codemirror/view";
-import { EditorState } from "@codemirror/state";
-import { setCssProps } from "./dom-utils";
+	WidgetType
+} from '@codemirror/view'
+import { EditorState } from '@codemirror/state'
+import { setCssProps } from './dom-utils'
 import {
 	formatNumber,
 	getSidenoteSideOverride,
 	isMarginNote,
 	normalizeText,
 	parseFootnoteDefinitions,
-	renderLinksToFragment,
-} from "./content";
-import type { SidenoteWidgetHost } from "./widget-host";
+	renderLinksToFragment
+} from './content'
+import type { SidenoteWidgetHost } from './widget-host'
 import {
 	type InlineEditorCloseResult,
 	type InlineEditorHandle,
 	captureMainEditorCursor,
 	openInlineMarkdownEditor,
-	restoreMainEditorCursor,
-} from "./inline-editor";
+	restoreMainEditorCursor
+} from './inline-editor'
 
 // ======================================================
 // ========CodeMirror 6 Footnote Sidenote Widget ========
@@ -41,123 +41,123 @@ class FootnoteSidenoteWidget extends WidgetType {
 		readonly content: string,
 		readonly numberText: string,
 		readonly footnoteId: string,
-		readonly host: SidenoteWidgetHost,
+		readonly host: SidenoteWidgetHost
 	) {
-		super();
+		super()
 	}
 
 	toDOM(): HTMLElement {
-		const isMargin = isMarginNote(this.footnoteId);
-		const sideOverride = getSidenoteSideOverride(this.footnoteId);
+		const isMargin = isMarginNote(this.footnoteId)
+		const sideOverride = getSidenoteSideOverride(this.footnoteId)
 
-		const wrapper = createSpan();
-		wrapper.className = "sidenote-number";
+		const wrapper = createSpan()
+		wrapper.className = 'sidenote-number'
 
-		wrapper.dataset.sidenoteNum = this.numberText;
-		wrapper.dataset.footnoteId = this.footnoteId;
+		wrapper.dataset.sidenoteNum = this.numberText
+		wrapper.dataset.footnoteId = this.footnoteId
 
-		const margin = createEl("small");
-		margin.className = "sidenote-margin";
+		const margin = createEl('small')
+		margin.className = 'sidenote-margin'
 		if (isMargin) {
-			margin.classList.add("margin-note");
-			wrapper.classList.add("margin-note");
+			margin.classList.add('margin-note')
+			wrapper.classList.add('margin-note')
 		}
 		if (sideOverride) {
-			wrapper.dataset.sidenoteSide = sideOverride;
-			margin.dataset.sidenoteSide = sideOverride;
+			wrapper.dataset.sidenoteSide = sideOverride
+			margin.dataset.sidenoteSide = sideOverride
 		}
 
-		margin.dataset.sidenoteNum = this.numberText;
+		margin.dataset.sidenoteNum = this.numberText
 		setCssProps(margin, {
-			"--sidenote-shift": "0px",
-			"--sidenote-line-offset": "0px",
-		});
+			'--sidenote-shift': '0px',
+			'--sidenote-line-offset': '0px'
+		})
 
 		// Render the content with markdown formatting support
 		const fragment = renderLinksToFragment(
 			normalizeText(this.content),
-			this.host.app,
-		);
-		margin.appendChild(fragment);
+			this.host.app
+		)
+		margin.appendChild(fragment)
 
 		// Setup popup
-		if (isMargin && this.host.settings.marginNoteDisplay === "popup") {
+		if (isMargin && this.host.settings.marginNoteDisplay === 'popup') {
 			this.host.setupMarginNotePopup(
 				wrapper,
 				margin,
 				this.content,
 				true,
-				this.footnoteId,
-			);
+				this.footnoteId
+			)
 		}
 
 		// Set up editing for the margin
-		this.setupMarginEditing(margin);
+		this.setupMarginEditing(margin)
 
-		wrapper.appendChild(margin);
+		wrapper.appendChild(margin)
 
 		// Add click handler on wrapper (the number badge) to trigger margin editing
-		wrapper.addEventListener("click", (e) => {
+		wrapper.addEventListener('click', e => {
 			// Don't trigger if clicking directly on the margin (it has its own handler)
-			if ((e.target as HTMLElement).closest(".sidenote-margin")) {
-				return;
+			if ((e.target as HTMLElement).closest('.sidenote-margin')) {
+				return
 			}
 
-			e.preventDefault();
-			e.stopPropagation();
+			e.preventDefault()
+			e.stopPropagation()
 
-			this.startMarginEdit(margin);
-		});
+			this.startMarginEdit(margin)
+		})
 
 		// Prevent mousedown from propagating to CM6 editor.
 		// without preventDefault the browser still moves the native
 		// caret to the click point before our click handler runs, so the
 		// "restore cursor to where it was" on close would restore it to the
 		// widget instead of wherever the user actually left it.
-		wrapper.addEventListener("mousedown", (e) => {
-			e.preventDefault();
-			e.stopPropagation();
-		});
+		wrapper.addEventListener('mousedown', e => {
+			e.preventDefault()
+			e.stopPropagation()
+		})
 
 		// After the widget is attached to the DOM, calculate line offset and trigger collision avoidance
 		window.requestAnimationFrame(() => {
 			if (wrapper.isConnected) {
 				// Calculate line offset within the .cm-line
-				const line = wrapper.closest(".cm-line");
+				const line = wrapper.closest('.cm-line')
 				if (line) {
-					const wrapperRect = wrapper.getBoundingClientRect();
-					const lineRect = line.getBoundingClientRect();
-					const lineOffset = wrapperRect.top - lineRect.top;
+					const wrapperRect = wrapper.getBoundingClientRect()
+					const lineRect = line.getBoundingClientRect()
+					const lineOffset = wrapperRect.top - lineRect.top
 					margin.style.setProperty(
-						"--sidenote-line-offset",
-						`${lineOffset}px`,
-					);
+						'--sidenote-line-offset',
+						`${lineOffset}px`
+					)
 				}
 
-				this.host.scheduleCollisionUpdate();
+				this.host.scheduleCollisionUpdate()
 			}
-		});
+		})
 
 		// Track height changes on this margin (inline editor open/close, late
 		// image loads) so collisions get re-resolved instead of going stale.
-		this.host.observeSidenoteVisibility(margin);
+		this.host.observeSidenoteVisibility(margin)
 
-		return wrapper;
+		return wrapper
 	}
 
 	destroy(dom: HTMLElement): void {
-		const margin = dom.querySelector<HTMLElement>("small.sidenote-margin");
-		if (margin) this.host.unobserveSidenoteVisibility(margin);
+		const margin = dom.querySelector<HTMLElement>('small.sidenote-margin')
+		if (margin) this.host.unobserveSidenoteVisibility(margin)
 	}
 
 	/**
 	 * The open margin editor, if any — also the "already editing" guard.
 	 * Replaces a view/original-text/outside-listener triple kept in sync by hand.
 	 */
-	private marginEditor: InlineEditorHandle | null = null;
+	private marginEditor: InlineEditorHandle | null = null
 
 	/** Main editor cursor at the moment the margin editor opened; restored on close. */
-	private savedCursor: EditorPosition | null = null;
+	private savedCursor: EditorPosition | null = null
 
 	/**
 	 * Everything that has to happen once the margin editor has closed.
@@ -165,68 +165,68 @@ class FootnoteSidenoteWidget extends WidgetType {
 	 */
 	private afterMarginEdit(
 		margin: HTMLElement,
-		result: InlineEditorCloseResult,
+		result: InlineEditorCloseResult
 	) {
-		this.marginEditor = null;
+		this.marginEditor = null
 
 		// Restore the number attribute
-		margin.dataset.sidenoteNum = this.numberText;
-		margin.dataset.editing = "false";
+		margin.dataset.sidenoteNum = this.numberText
+		margin.dataset.editing = 'false'
 
-		this.host.setActiveFootnoteEdit(null);
+		this.host.setActiveFootnoteEdit(null)
 
 		// If committing, write back to the footnote definition in the note.
 		if (result.committed && result.renderText !== this.content) {
-			this.commitFootnoteText(result.renderText);
+			this.commitFootnoteText(result.renderText)
 		}
 
-		restoreMainEditorCursor(this.host.app, this.savedCursor);
-		this.savedCursor = null;
+		restoreMainEditorCursor(this.host.app, this.savedCursor)
+		this.savedCursor = null
 
 		// Re-render with this.content deliberately, NOT the new text: the
 		// write-back above changes the document, so CM6 rebuilds this widget
 		// with the updated content a moment later. Rendering the new text here
 		// too would briefly show it twice over.
-		margin.innerHTML = "";
+		margin.innerHTML = ''
 		margin.appendChild(
-			renderLinksToFragment(normalizeText(this.content), this.host.app),
-		);
+			renderLinksToFragment(normalizeText(this.content), this.host.app)
+		)
 
 		// Signal that reading mode needs a refresh if the user switches modes
 		if (result.changed) {
-			this.host.needsReadingModeRefresh = true;
-			this.host.refreshCachedSourceContent();
+			this.host.needsReadingModeRefresh = true
+			this.host.refreshCachedSourceContent()
 		}
 
 		// The margin just swapped a CM editor for rendered text, so its height
 		// changed and every sidenote below it is now mispositioned.
-		this.host.scheduleCollisionUpdate();
+		this.host.scheduleCollisionUpdate()
 	}
 
 	private commitFootnoteText(newText: string) {
-		const view = this.host.app.workspace.getActiveViewOfType(MarkdownView);
-		if (!view?.editor) return;
+		const view = this.host.app.workspace.getActiveViewOfType(MarkdownView)
+		if (!view?.editor) return
 
-		const editor = view.editor;
-		const content = editor.getValue();
+		const editor = view.editor
+		const content = editor.getValue()
 
 		const escapedId = this.footnoteId.replace(
 			/[.*+?^${}()|[\]\\]/g,
-			"\\$&",
-		);
+			'\\$&'
+		)
 		const footnoteDefRegex = new RegExp(
 			`^(\\[\\^${escapedId}\\]:\\s*)(.+(?:\\n(?:[ \\t]+.+)*)?)$`,
-			"gm",
-		);
+			'gm'
+		)
 
-		const match = footnoteDefRegex.exec(content);
-		if (!match) return;
+		const match = footnoteDefRegex.exec(content)
+		if (!match) return
 
-		const prefix = match[1] ?? "";
-		const from = editor.offsetToPos(match.index + prefix.length);
-		const to = editor.offsetToPos(match.index + match[0].length);
+		const prefix = match[1] ?? ''
+		const from = editor.offsetToPos(match.index + prefix.length)
+		const to = editor.offsetToPos(match.index + match[0].length)
 
-		editor.replaceRange(newText, from, to);
+		editor.replaceRange(newText, from, to)
 	}
 
 	/**
@@ -234,42 +234,42 @@ class FootnoteSidenoteWidget extends WidgetType {
 	 * in EDITING MODE
 	 */
 	private setupMarginEditing(margin: HTMLElement) {
-		margin.dataset.editing = "false";
+		margin.dataset.editing = 'false'
 
 		const onMouseDown = (e: MouseEvent) => {
 			// Let clicks on links through so they can navigate normally
-			if ((e.target as HTMLElement).closest("a")) {
-				return;
+			if ((e.target as HTMLElement).closest('a')) {
+				return
 			}
 			// preventDefault, not just stopPropagation: without it the browser
 			// still moves the native caret into the main editor at the click
 			// point, which would corrupt the "restore cursor to where it was"
 			// position captured on click.
-			e.preventDefault();
-			e.stopPropagation();
+			e.preventDefault()
+			e.stopPropagation()
 			// Let click focus our margin editor
-		};
+		}
 
 		const onClick = (e: MouseEvent) => {
 			// If already editing, let CM handle cursor
 			if (this.marginEditor) {
-				e.stopPropagation();
-				return;
+				e.stopPropagation()
+				return
 			}
 
 			// Let clicks on links through so they can navigate normally
-			if ((e.target as HTMLElement).closest("a")) {
-				return;
+			if ((e.target as HTMLElement).closest('a')) {
+				return
 			}
 
-			e.preventDefault();
-			e.stopPropagation();
+			e.preventDefault()
+			e.stopPropagation()
 
-			this.startMarginEdit(margin);
-		};
+			this.startMarginEdit(margin)
+		}
 
-		margin.addEventListener("mousedown", onMouseDown);
-		margin.addEventListener("click", onClick);
+		margin.addEventListener('mousedown', onMouseDown)
+		margin.addEventListener('click', onClick)
 	}
 
 	/**
@@ -277,17 +277,17 @@ class FootnoteSidenoteWidget extends WidgetType {
 	 * In Editing Mode
 	 */
 	private startMarginEdit(margin: HTMLElement) {
-		if (this.marginEditor) return;
+		if (this.marginEditor) return
 
-		this.savedCursor = captureMainEditorCursor(this.host.app);
-		this.host.setActiveFootnoteEdit(this.footnoteId);
-		margin.dataset.editing = "true";
-		margin.innerHTML = "";
+		this.savedCursor = captureMainEditorCursor(this.host.app)
+		this.host.setActiveFootnoteEdit(this.footnoteId)
+		margin.dataset.editing = 'true'
+		margin.innerHTML = ''
 
 		// Set by the insert-sidenote command so a freshly created footnote
 		// opens with its placeholder text selected, ready to type over.
-		const selectAll = margin.dataset.selectAllOnOpen === "true";
-		delete margin.dataset.selectAllOnOpen;
+		const selectAll = margin.dataset.selectAllOnOpen === 'true'
+		delete margin.dataset.selectAllOnOpen
 
 		this.marginEditor = openInlineMarkdownEditor({
 			app: this.host.app,
@@ -295,11 +295,11 @@ class FootnoteSidenoteWidget extends WidgetType {
 			doc: this.content,
 			selectAll,
 			outsideBoundary: [margin],
-			onClose: (result) => this.afterMarginEdit(margin, result),
-		});
+			onClose: result => this.afterMarginEdit(margin, result)
+		})
 
 		// Opening the editor grows the margin; push the ones below it down.
-		this.host.scheduleCollisionUpdate();
+		this.host.scheduleCollisionUpdate()
 	}
 
 	eq(other: FootnoteSidenoteWidget): boolean {
@@ -307,81 +307,81 @@ class FootnoteSidenoteWidget extends WidgetType {
 			this.content === other.content &&
 			this.numberText === other.numberText &&
 			this.footnoteId === other.footnoteId
-		);
+		)
 	}
 
 	ignoreEvent(): boolean {
 		// Allow click and mousedown events to be handled by our handlers
-		return false;
+		return false
 	}
 }
 
 class MarginNoteMarkerWidget extends WidgetType {
 	constructor(
 		readonly host: SidenoteWidgetHost,
-		readonly footnoteId: string,
+		readonly footnoteId: string
 	) {
-		super();
+		super()
 	}
 
 	toDOM(): HTMLElement {
-		const span = createSpan();
-		span.className = "margin-note-marker";
+		const span = createSpan()
+		span.className = 'margin-note-marker'
 
-		const iconSetting = this.host.settings.popupIcon || "ⓘ";
+		const iconSetting = this.host.settings.popupIcon || 'ⓘ'
 
 		if (
-			iconSetting.endsWith(".png") ||
-			iconSetting.endsWith(".svg") ||
-			iconSetting.endsWith(".jpg")
+			iconSetting.endsWith('.png') ||
+			iconSetting.endsWith('.svg') ||
+			iconSetting.endsWith('.jpg')
 		) {
-			const img = createEl("img");
+			const img = createEl('img')
 			img.src = this.host.app.vault.adapter.getResourcePath(
-				`${this.host.manifest.dir}/assets/${iconSetting}`,
-			);
-			img.className = "margin-note-marker-img";
-			span.appendChild(img);
+				`${this.host.manifest.dir}/assets/${iconSetting}`
+			)
+			img.className = 'margin-note-marker-img'
+			span.appendChild(img)
 		} else {
-			span.textContent = iconSetting;
+			span.textContent = iconSetting
 		}
 
-		span.addEventListener("mousedown", (e) => {
-			e.stopPropagation();
-		});
+		span.addEventListener('mousedown', e => {
+			e.stopPropagation()
+		})
 
-		span.addEventListener("click", (e) => {
-			e.preventDefault();
-			e.stopPropagation();
+		span.addEventListener('click', e => {
+			e.preventDefault()
+			e.stopPropagation()
 
-			const cmContent = span.closest(".cm-content");
-			if (!cmContent) return;
+			const cmContent = span.closest('.cm-content')
+			if (!cmContent) return
 			const wrapper = cmContent.querySelector<HTMLElement>(
-				`span.sidenote-number[data-footnote-id="${this.footnoteId}"]`,
-			);
-			if (!wrapper) return;
+				`span.sidenote-number[data-footnote-id="${this.footnoteId}"]`
+			)
+			if (!wrapper) return
 
-			if (this.host.settings.marginNoteDisplay === "popup") {
+			if (this.host.settings.marginNoteDisplay === 'popup') {
 				const popupIcon = wrapper.querySelector<HTMLElement>(
-					".margin-note-icon",
-				);
-				if (popupIcon) popupIcon.click();
+					'.margin-note-icon'
+				)
+				if (popupIcon) popupIcon.click()
 			} else {
 				const marginEl = wrapper.querySelector<HTMLElement>(
-					"small.sidenote-margin",
-				);
-				if (marginEl) marginEl.click();
+					'small.sidenote-margin'
+				)
+				if (marginEl) marginEl.click()
 			}
-		});
+		})
 
-		return span;
+		return span
 	}
 
 	eq(other: MarginNoteMarkerWidget): boolean {
-		return this.footnoteId === other.footnoteId;
+		return this.footnoteId === other.footnoteId
 	}
 
 	ignoreEvent(): boolean {
-		return false;
+		return false
 	}
 }
 
@@ -389,25 +389,25 @@ class MarginNoteMarkerWidget extends WidgetType {
  * CodeMirror 6 ViewPlugin that adds sidenote decorations for footnotes.
  */
 class FootnoteSidenoteViewPlugin {
-	decorations: DecorationSet;
+	decorations: DecorationSet
 	/**
 	 * The `Decoration.replace` ranges covering the raw `[^id]` text, fed to
 	 * `EditorView.atomicRanges`. Replacing a range collapses it visually but
 	 * does NOT stop the cursor entering it — without this facet the caret walks
 	 * invisibly through the hidden characters, one arrow press each.
 	 */
-	atomicRanges: DecorationSet;
-	private lastSettingsVersion: number;
-	private lastLivePreview: boolean;
+	atomicRanges: DecorationSet
+	private lastSettingsVersion: number
+	private lastLivePreview: boolean
 
 	constructor(
 		private view: EditorView,
-		private host: SidenoteWidgetHost,
+		private host: SidenoteWidgetHost
 	) {
-		this.lastSettingsVersion = host.settingsVersion;
-		this.lastLivePreview = this.isLivePreview(view.state);
-		this.atomicRanges = Decoration.none;
-		this.decorations = this.buildDecorations(view.state);
+		this.lastSettingsVersion = host.settingsVersion
+		this.lastLivePreview = this.isLivePreview(view.state)
+		this.atomicRanges = Decoration.none
+		this.decorations = this.buildDecorations(view.state)
 	}
 
 	/**
@@ -416,20 +416,20 @@ class FootnoteSidenoteViewPlugin {
 	 * as "not a source-mode editor".
 	 */
 	private isLivePreview(state: EditorState): boolean {
-		return state.field(editorLivePreviewField, false) !== false;
+		return state.field(editorLivePreviewField, false) !== false
 	}
 
 	update(update: ViewUpdate) {
 		// Don't rebuild decorations while a footnote is being edited
 		if (this.host.isFootnoteBeingEdited()) {
-			return;
+			return
 		}
 
 		const settingsChanged =
-			this.host.settingsVersion !== this.lastSettingsVersion;
+			this.host.settingsVersion !== this.lastSettingsVersion
 
-		const livePreview = this.isLivePreview(update.state);
-		const modeChanged = livePreview !== this.lastLivePreview;
+		const livePreview = this.isLivePreview(update.state)
+		const modeChanged = livePreview !== this.lastLivePreview
 
 		if (
 			update.docChanged ||
@@ -438,82 +438,82 @@ class FootnoteSidenoteViewPlugin {
 			settingsChanged ||
 			modeChanged
 		) {
-			this.lastSettingsVersion = this.host.settingsVersion;
-			this.lastLivePreview = livePreview;
-			this.decorations = this.buildDecorations(update.state);
+			this.lastSettingsVersion = this.host.settingsVersion
+			this.lastLivePreview = livePreview
+			this.decorations = this.buildDecorations(update.state)
 		}
 	}
 
 	/* */
 	buildDecorations(state: EditorState): DecorationSet {
 		// Only show footnote sidenotes in editing mode when using footnote-edit format
-		if (this.host.settings.sidenoteFormat !== "footnote-edit") {
-			this.atomicRanges = Decoration.none;
-			return Decoration.none;
+		if (this.host.settings.sidenoteFormat !== 'footnote-edit') {
+			this.atomicRanges = Decoration.none
+			return Decoration.none
 		}
 
 		// Source mode renders the bare markdown — no sidenotes
 		if (!this.isLivePreview(state)) {
-			this.atomicRanges = Decoration.none;
-			return Decoration.none;
+			this.atomicRanges = Decoration.none
+			return Decoration.none
 		}
 
 		const decorations: {
-			from: number;
-			to: number;
-			decoration: Decoration;
-		}[] = [];
-		const replaced: { from: number; to: number }[] = [];
-		const content = state.doc.toString();
+			from: number
+			to: number
+			decoration: Decoration
+		}[] = []
+		const replaced: { from: number; to: number }[] = []
+		const content = state.doc.toString()
 
 		// Parse footnote definitions first
-		const footnoteDefinitions = parseFootnoteDefinitions(content);
+		const footnoteDefinitions = parseFootnoteDefinitions(content)
 
 		// Find all footnote references [^id] (not definitions [^id]:)
-		const referenceRegex = /\[\^([^\]]+)\](?!:)/g;
-		let match: RegExpExecArray | null;
+		const referenceRegex = /\[\^([^\]]+)\](?!:)/g
+		let match: RegExpExecArray | null
 
 		// Track footnote order for numbering
-		const footnoteOrder: string[] = [];
+		const footnoteOrder: string[] = []
 
 		// First pass: collect all footnote references in order
 		while ((match = referenceRegex.exec(content)) !== null) {
-			const id = match[1];
+			const id = match[1]
 			if (id && !footnoteOrder.includes(id)) {
-				footnoteOrder.push(id);
+				footnoteOrder.push(id)
 			}
 		}
 
 		// Reset regex
-		referenceRegex.lastIndex = 0;
+		referenceRegex.lastIndex = 0
 
 		// Assign numbers based on order of appearance, skipping margin notes
-		const footnoteNumbers = new Map<string, number>();
-		let counter = 1;
-		footnoteOrder.forEach((id) => {
-			if (id.startsWith("mn-")) {
-				footnoteNumbers.set(id, -1); // Margin note, no number
+		const footnoteNumbers = new Map<string, number>()
+		let counter = 1
+		footnoteOrder.forEach(id => {
+			if (id.startsWith('mn-')) {
+				footnoteNumbers.set(id, -1) // Margin note, no number
 			} else {
-				footnoteNumbers.set(id, counter++);
+				footnoteNumbers.set(id, counter++)
 			}
-		});
+		})
 
 		// Second pass: create decorations
 		while ((match = referenceRegex.exec(content)) !== null) {
-			const from = match.index;
-			const to = from + match[0].length;
-			const id = match[1];
+			const from = match.index
+			const to = from + match[0].length
+			const id = match[1]
 
-			if (!id) continue;
+			if (!id) continue
 
-			const footnoteContent = footnoteDefinitions.get(id);
-			if (!footnoteContent) continue;
+			const footnoteContent = footnoteDefinitions.get(id)
+			if (!footnoteContent) continue
 
-			const isMargin = id.startsWith("mn-");
-			const itemNum = footnoteNumbers.get(id) ?? 1;
+			const isMargin = id.startsWith('mn-')
+			const itemNum = footnoteNumbers.get(id) ?? 1
 			const numberText = isMargin
-				? ""
-				: formatNumber(itemNum, this.host.settings.numberStyle);
+				? ''
+				: formatNumber(itemNum, this.host.settings.numberStyle)
 
 			if (isMargin) {
 				decorations.push({
@@ -521,17 +521,17 @@ class FootnoteSidenoteViewPlugin {
 					to,
 					decoration: Decoration.widget({
 						widget: new MarginNoteMarkerWidget(this.host, id),
-						side: -1,
-					}),
-				});
+						side: -1
+					})
+				})
 			}
 
 			const footnoteWidget = new FootnoteSidenoteWidget(
 				footnoteContent,
 				numberText,
 				id,
-				this.host,
-			);
+				this.host
+			)
 
 			if (this.host.settings.hideFootnoteNumbers) {
 				// Replace the raw `[^id]` text rather than leaving it in the
@@ -545,30 +545,30 @@ class FootnoteSidenoteViewPlugin {
 				decorations.push({
 					from,
 					to,
-					decoration: Decoration.replace({ widget: footnoteWidget }),
-				});
-				replaced.push({ from, to });
+					decoration: Decoration.replace({ widget: footnoteWidget })
+				})
+				replaced.push({ from, to })
 			} else {
 				decorations.push({
 					from: to,
 					to,
 					decoration: Decoration.widget({
 						widget: footnoteWidget,
-						side: 1,
-					}),
-				});
+						side: 1
+					})
+				})
 			}
 		}
 
 		// Sort by position and create DecorationSet
-		decorations.sort((a, b) => a.from - b.from);
-		replaced.sort((a, b) => a.from - b.from);
+		decorations.sort((a, b) => a.from - b.from)
+		replaced.sort((a, b) => a.from - b.from)
 		this.atomicRanges = Decoration.set(
-			replaced.map((r) => Decoration.mark({}).range(r.from, r.to)),
-		);
+			replaced.map(r => Decoration.mark({}).range(r.from, r.to))
+		)
 		return Decoration.set(
-			decorations.map((d) => d.decoration.range(d.from, d.to)),
-		);
+			decorations.map(d => d.decoration.range(d.from, d.to))
+		)
 	}
 
 	destroy() {
@@ -582,24 +582,24 @@ class FootnoteSidenoteViewPlugin {
 export function createFootnoteSidenotePlugin(host: SidenoteWidgetHost) {
 	const plugin = ViewPlugin.fromClass(
 		class {
-			inner: FootnoteSidenoteViewPlugin;
+			inner: FootnoteSidenoteViewPlugin
 
 			constructor(view: EditorView) {
-				this.inner = new FootnoteSidenoteViewPlugin(view, host);
+				this.inner = new FootnoteSidenoteViewPlugin(view, host)
 			}
 
 			update(update: ViewUpdate) {
-				this.inner.update(update);
+				this.inner.update(update)
 			}
 
 			destroy() {
-				this.inner.destroy();
+				this.inner.destroy()
 			}
 		},
 		{
-			decorations: (v) => v.inner.decorations,
-		},
-	);
+			decorations: v => v.inner.decorations
+		}
+	)
 
 	// The replaced `[^id]` ranges have to be declared atomic separately —
 	// Decoration.replace collapses them visually but leaves every hidden
@@ -607,7 +607,7 @@ export function createFootnoteSidenotePlugin(host: SidenoteWidgetHost) {
 	return [
 		plugin,
 		EditorView.atomicRanges.of(
-			(view) => view.plugin(plugin)?.inner.atomicRanges ?? Decoration.none,
-		),
-	];
+			view => view.plugin(plugin)?.inner.atomicRanges ?? Decoration.none
+		)
+	]
 }

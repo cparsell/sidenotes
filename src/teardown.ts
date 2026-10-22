@@ -10,7 +10,7 @@
 
 /** A margin carrying the teardown for whatever was mounted inside it. */
 export interface SidenoteMarginElement extends HTMLElement {
-	_sidenoteCleanup?: () => void;
+	_sidenoteCleanup?: () => void
 }
 
 /**
@@ -19,12 +19,12 @@ export interface SidenoteMarginElement extends HTMLElement {
  * teardown has to be invoked explicitly.
  */
 export interface SidenoteWrapperElement extends HTMLElement {
-	_popupCleanup?: () => void;
+	_popupCleanup?: () => void
 }
 
 export interface TeardownHooks {
 	/** Stop observing a margin for visibility and height changes. */
-	unobserveSidenoteVisibility(margin: HTMLElement): void;
+	unobserveSidenoteVisibility(margin: HTMLElement): void
 }
 
 /**
@@ -34,14 +34,14 @@ export interface TeardownHooks {
  * the teardown and leave observers and listeners attached.
  */
 export function runPopupCleanup(wrapper: Element) {
-	const snWrapper = wrapper as SidenoteWrapperElement;
-	if (!snWrapper._popupCleanup) return;
+	const snWrapper = wrapper as SidenoteWrapperElement
+	if (!snWrapper._popupCleanup) return
 	try {
-		snWrapper._popupCleanup();
+		snWrapper._popupCleanup()
 	} catch (error) {
-		console.error("Sidenote plugin: popup cleanup failed", error);
+		console.error('Sidenote plugin: popup cleanup failed', error)
 	}
-	delete snWrapper._popupCleanup;
+	delete snWrapper._popupCleanup
 }
 
 /**
@@ -53,28 +53,30 @@ export function runPopupCleanup(wrapper: Element) {
 function unwrapSidenoteWrapper(
 	hooks: TeardownHooks,
 	wrapper: HTMLElement,
-	findOriginal: (wrapper: HTMLElement) => HTMLElement | null,
+	findOriginal: (wrapper: HTMLElement) => HTMLElement | null
 ) {
-	runPopupCleanup(wrapper);
+	runPopupCleanup(wrapper)
 
-	const originalEl = findOriginal(wrapper);
+	const originalEl = findOriginal(wrapper)
 
-	const margin = wrapper.querySelector<HTMLElement>("small.sidenote-margin");
+	const margin = wrapper.querySelector<HTMLElement>(
+		'small.sidenote-margin'
+	)
 	if (margin) {
-		const snMargin = margin as SidenoteMarginElement;
+		const snMargin = margin as SidenoteMarginElement
 		if (snMargin._sidenoteCleanup) {
-			snMargin._sidenoteCleanup();
-			delete snMargin._sidenoteCleanup;
+			snMargin._sidenoteCleanup()
+			delete snMargin._sidenoteCleanup
 		}
-		hooks.unobserveSidenoteVisibility(margin);
-		margin.remove();
+		hooks.unobserveSidenoteVisibility(margin)
+		margin.remove()
 	}
 
 	if (originalEl && wrapper.parentNode) {
-		wrapper.parentNode.insertBefore(originalEl, wrapper);
+		wrapper.parentNode.insertBefore(originalEl, wrapper)
 	}
 
-	wrapper.remove();
+	wrapper.remove()
 }
 
 /**
@@ -83,47 +85,51 @@ function unwrapSidenoteWrapper(
  */
 export function removeReadingModeMarkup(
 	hooks: TeardownHooks,
-	root: HTMLElement,
+	root: HTMLElement
 ) {
-	const wrappers = root.querySelectorAll<HTMLElement>("span.sidenote-number");
+	const wrappers = root.querySelectorAll<HTMLElement>(
+		'span.sidenote-number'
+	)
 
 	for (const wrapper of Array.from(wrappers)) {
-		unwrapSidenoteWrapper(hooks, wrapper, (w) => {
-			const sidenoteSpan = w.querySelector<HTMLElement>("span.sidenote");
+		unwrapSidenoteWrapper(hooks, wrapper, w => {
+			const sidenoteSpan = w.querySelector<HTMLElement>('span.sidenote')
 			const footnoteSup = w.querySelector<HTMLElement>(
-				"sup.footnote-ref, sup[class*='footnote'], sup[data-footnote-id]",
-			);
+				"sup.footnote-ref, sup[class*='footnote'], sup[data-footnote-id]"
+			)
 
 			// Restore footnote link visibility if needed
 			if (footnoteSup) {
-				const link = footnoteSup.querySelector<HTMLElement>("a");
+				const link = footnoteSup.querySelector<HTMLElement>('a')
 				if (link) {
-					link.classList.remove("sidenote-fn-link-hidden");
+					link.classList.remove('sidenote-fn-link-hidden')
 				}
 			}
 
-			return sidenoteSpan ?? footnoteSup;
-		});
+			return sidenoteSpan ?? footnoteSup
+		})
 	}
 
 	// Also remove any print-only sidenote elements
-	root.querySelectorAll(".sidenote-print").forEach((el) => el.remove());
+	root.querySelectorAll('.sidenote-print').forEach(el => el.remove())
 	// …and un-hide anything print export hid
 	root
-		.querySelectorAll(".sidenote-print-hidden")
-		.forEach((el) => el.classList.remove("sidenote-print-hidden"));
+		.querySelectorAll('.sidenote-print-hidden')
+		.forEach(el => el.classList.remove('sidenote-print-hidden'))
 }
 
 /** Editing mode: HTML spans only — footnotes there are CM6 widgets. */
 export function removeEditingModeMarkup(
 	hooks: TeardownHooks,
-	root: HTMLElement,
+	root: HTMLElement
 ) {
-	const wrappers = root.querySelectorAll<HTMLElement>("span.sidenote-number");
+	const wrappers = root.querySelectorAll<HTMLElement>(
+		'span.sidenote-number'
+	)
 
 	for (const wrapper of Array.from(wrappers)) {
-		unwrapSidenoteWrapper(hooks, wrapper, (w) =>
-			w.querySelector<HTMLElement>("span.sidenote"),
-		);
+		unwrapSidenoteWrapper(hooks, wrapper, w =>
+			w.querySelector<HTMLElement>('span.sidenote')
+		)
 	}
 }

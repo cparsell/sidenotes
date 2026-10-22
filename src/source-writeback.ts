@@ -12,20 +12,20 @@
  * Everything here is a pure function of the source text.
  */
 
-import { SIDENOTE_SPAN_REGEX } from "./patterns";
+import { SIDENOTE_SPAN_REGEX } from './patterns'
 
 /** A replacement to make in the source, as character offsets. */
 export interface SourceEdit {
-	from: number;
-	to: number;
-	replacement: string;
+	from: number
+	to: number
+	replacement: string
 }
 
 /** Apply an edit to a string. */
 export function applyEdit(content: string, edit: SourceEdit): string {
 	return (
 		content.slice(0, edit.from) + edit.replacement + content.slice(edit.to)
-	);
+	)
 }
 
 /**
@@ -37,23 +37,23 @@ export function applyEdit(content: string, edit: SourceEdit): string {
 export function findHtmlSpanEdit(
 	content: string,
 	originalText: string,
-	newText: string,
+	newText: string
 ): SourceEdit | null {
-	const regex = SIDENOTE_SPAN_REGEX();
-	let match: RegExpExecArray | null;
+	const regex = SIDENOTE_SPAN_REGEX()
+	let match: RegExpExecArray | null
 
 	while ((match = regex.exec(content)) !== null) {
-		if (match[1] !== originalText) continue;
+		if (match[1] !== originalText) continue
 
-		const openingTag = match[0].substring(0, match[0].indexOf(">") + 1);
+		const openingTag = match[0].substring(0, match[0].indexOf('>') + 1)
 		return {
 			from: match.index,
 			to: match.index + match[0].length,
-			replacement: `${openingTag}${newText}</span>`,
-		};
+			replacement: `${openingTag}${newText}</span>`
+		}
 	}
 
-	return null;
+	return null
 }
 
 /**
@@ -65,26 +65,26 @@ export function findHtmlSpanEdit(
 export function findFootnoteDefinitionEdit(
 	content: string,
 	footnoteId: string,
-	newText: string,
+	newText: string
 ): SourceEdit | null {
-	const escapedId = footnoteId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	const escapedId = footnoteId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 	// `(?:\n[ \t]+.+)*` — the newline is INSIDE the repeated group, so every
 	// indented continuation line is consumed. Both older copies of this pattern
 	// wrote `(?:\n(?:[ \t]+.+)*)?`, which allows only one continuation line and
 	// silently stranded the rest of a three-line footnote on edit.
 	const regex = new RegExp(
 		`^(\\[\\^${escapedId}\\]:[ \\t]*)(.+(?:\\n[ \\t]+.+)*)$`,
-		"gm",
-	);
+		'gm'
+	)
 
-	const match = regex.exec(content);
-	if (!match || match.index === undefined) return null;
+	const match = regex.exec(content)
+	if (!match || match.index === undefined) return null
 
-	const prefix = match[1] ?? "";
+	const prefix = match[1] ?? ''
 	return {
 		// Keep the `[^id]: ` prefix; only the text after it is replaced.
 		from: match.index + prefix.length,
 		to: match.index + match[0].length,
-		replacement: newText,
-	};
+		replacement: newText
+	}
 }

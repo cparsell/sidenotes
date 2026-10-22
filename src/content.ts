@@ -1,68 +1,68 @@
-import type { App } from "obsidian";
-import type { SidenoteSettings } from "./settings";
-import { renderEmbed } from "./embeds";
+import type { App } from 'obsidian'
+import type { SidenoteSettings } from './settings'
+import { renderEmbed } from './embeds'
 
 // ==================== Number Formatting ====================
 
 export function formatNumber(
 	num: number,
-	style: SidenoteSettings["numberStyle"],
+	style: SidenoteSettings['numberStyle']
 ): string {
 	switch (style) {
-		case "roman":
-			return toRoman(num);
-		case "letters":
-			return toLetters(num);
-		case "arabic":
+		case 'roman':
+			return toRoman(num)
+		case 'letters':
+			return toLetters(num)
+		case 'arabic':
 		default:
-			return String(num);
+			return String(num)
 	}
 }
 
 function toRoman(num: number): string {
 	const romanNumerals: [number, string][] = [
-		[1000, "m"],
-		[900, "cm"],
-		[500, "d"],
-		[400, "cd"],
-		[100, "c"],
-		[90, "xc"],
-		[50, "l"],
-		[40, "xl"],
-		[10, "x"],
-		[9, "ix"],
-		[5, "v"],
-		[4, "iv"],
-		[1, "i"],
-	];
-	let result = "";
+		[1000, 'm'],
+		[900, 'cm'],
+		[500, 'd'],
+		[400, 'cd'],
+		[100, 'c'],
+		[90, 'xc'],
+		[50, 'l'],
+		[40, 'xl'],
+		[10, 'x'],
+		[9, 'ix'],
+		[5, 'v'],
+		[4, 'iv'],
+		[1, 'i']
+	]
+	let result = ''
 	for (const [value, numeral] of romanNumerals) {
 		while (num >= value) {
-			result += numeral;
-			num -= value;
+			result += numeral
+			num -= value
 		}
 	}
-	return result || "i";
+	return result || 'i'
 }
 
 function toLetters(num: number): string {
-	if (num <= 0) return "a"; // Handle edge case
-	let result = "";
+	if (num <= 0) return 'a' // Handle edge case
+	let result = ''
 	while (num > 0) {
-		num--;
-		result = String.fromCharCode(97 + (num % 26)) + result;
-		num = Math.floor(num / 26);
+		num--
+		result = String.fromCharCode(97 + (num % 26)) + result
+		num = Math.floor(num / 26)
 	}
-	return result;
+	return result
 }
 
 // ==================== Text Normalization ====================
 
 export function normalizeText(s: string): string {
-	return (s ?? "")
-		.replace(/<br\s*\/?>/gi, "\n") // Preserve <br> as newlines
-		.replace(/[ \t]+/g, " ") // Collapse spaces/tabs (but not \n)
-		.trim();
+	return (s ?? '')
+		.replace(/<br\s*\/?>/gi, '\n') // Preserve <br> as newlines
+		.replace(/[ \t]+/g, ' ') // Collapse spaces/tabs (but not \n)
+		.trim()
 }
 
 /**
@@ -70,24 +70,24 @@ export function normalizeText(s: string): string {
  */
 function appendTextWithBreaks(
 	frag: DocumentFragment | HTMLElement,
-	text: string,
+	text: string
 ) {
-	const parts = text.split("\n");
+	const parts = text.split('\n')
 	for (let i = 0; i < parts.length; i++) {
-		const part = parts[i] ?? "";
+		const part = parts[i] ?? ''
 
 		if (part) {
-			frag.appendChild(document.createTextNode(part));
+			frag.appendChild(document.createTextNode(part))
 		}
 		if (i < parts.length - 1) {
-			frag.appendChild(createEl("br"));
+			frag.appendChild(createEl('br'))
 		}
 	}
 }
 
 /** True when the text contains an embed (`![[file]]` or `![alt](path)`). */
 export function containsEmbed(text: string): boolean {
-	return /!\[\[[^\]]+\]\]|!\[[^\]]*\]\([^)\s]+\)/.test(text);
+	return /!\[\[[^\]]+\]\]|!\[[^\]]*\]\([^)\s]+\)/.test(text)
 }
 
 /**
@@ -101,9 +101,9 @@ export function containsEmbed(text: string): boolean {
 export function renderLinksToFragment(
 	text: string,
 	app: App,
-	sourcePath = app.workspace.getActiveFile()?.path ?? "",
+	sourcePath = app.workspace.getActiveFile()?.path ?? ''
 ): DocumentFragment {
-	const frag = createFragment();
+	const frag = createFragment()
 
 	// Combined regex for all supported formats:
 	// - Bold: **text** or __text__
@@ -113,108 +113,108 @@ export function renderLinksToFragment(
 	// - Markdown links: [text](url)
 	// - Wiki links: [[target]] or [[target|display]]
 	const combinedRe =
-		/\*\*(.+?)\*\*|__(.+?)__|\*([^*]+?)\*|!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]|!\[([^\]]*)\]\(([^)\s]+)\)|(?<![*_])_([^_]+?)_(?![*_])|`([^`]+)`|\[([^\]]+)\]\(([^)\s]+)\)|\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
+		/\*\*(.+?)\*\*|__(.+?)__|\*([^*]+?)\*|!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]|!\[([^\]]*)\]\(([^)\s]+)\)|(?<![*_])_([^_]+?)_(?![*_])|`([^`]+)`|\[([^\]]+)\]\(([^)\s]+)\)|\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g
 
-	let last = 0;
-	let m: RegExpExecArray | null;
+	let last = 0
+	let m: RegExpExecArray | null
 
 	while ((m = combinedRe.exec(text)) !== null) {
-		const start = m.index;
-		const fullMatch = m[0];
+		const start = m.index
+		const fullMatch = m[0]
 
 		// Add text before the match
 		if (start > last) {
-			appendTextWithBreaks(frag, text.slice(last, start));
+			appendTextWithBreaks(frag, text.slice(last, start))
 		}
 
 		if (m[1] !== undefined) {
 			// Bold: **text**
-			const strong = createEl("strong");
-			strong.textContent = m[1];
-			frag.appendChild(strong);
+			const strong = createEl('strong')
+			strong.textContent = m[1]
+			frag.appendChild(strong)
 		} else if (m[2] !== undefined) {
 			// Bold: __text__
-			const strong = createEl("strong");
-			strong.textContent = m[2];
-			frag.appendChild(strong);
+			const strong = createEl('strong')
+			strong.textContent = m[2]
+			frag.appendChild(strong)
 		} else if (m[3] !== undefined) {
 			// Italic: *text*
-			const em = createEl("em");
-			em.textContent = m[3];
-			frag.appendChild(em);
+			const em = createEl('em')
+			em.textContent = m[3]
+			frag.appendChild(em)
 		} else if (m[4] !== undefined || m[7] !== undefined) {
 			// Embed: ![[file|size]] or ![alt](path)
-			const isWiki = m[4] !== undefined;
-			const target = (isWiki ? m[4] : m[7])?.trim() ?? "";
-			const alias = isWiki ? m[5]?.trim() : m[6]?.trim();
+			const isWiki = m[4] !== undefined
+			const target = (isWiki ? m[4] : m[7])?.trim() ?? ''
+			const alias = isWiki ? m[5]?.trim() : m[6]?.trim()
 			frag.appendChild(
-				renderEmbed(app, target, alias, sourcePath, fullMatch),
-			);
+				renderEmbed(app, target, alias, sourcePath, fullMatch)
+			)
 		} else if (m[8] !== undefined) {
 			// Italic: _text_
-			const em = createEl("em");
-			em.textContent = m[8];
-			frag.appendChild(em);
+			const em = createEl('em')
+			em.textContent = m[8]
+			frag.appendChild(em)
 		} else if (m[9] !== undefined) {
 			// Code: `text`
-			const code = createEl("code");
-			code.textContent = m[9];
-			frag.appendChild(code);
+			const code = createEl('code')
+			code.textContent = m[9]
+			frag.appendChild(code)
 		} else if (m[10] !== undefined && m[11] !== undefined) {
 			// Markdown link: [text](url)
-			const label = m[10];
-			const url = m[11].trim();
+			const label = m[10]
+			const url = m[11].trim()
 
 			const isExternal =
-				url.startsWith("http://") ||
-				url.startsWith("https://") ||
-				url.startsWith("mailto:");
+				url.startsWith('http://') ||
+				url.startsWith('https://') ||
+				url.startsWith('mailto:')
 
-			const a = createEl("a");
-			a.textContent = label;
+			const a = createEl('a')
+			a.textContent = label
 
 			if (isExternal) {
-				a.href = url;
-				a.className = "external-link";
-				a.rel = "noopener noreferrer";
-				a.target = "_blank";
+				a.href = url
+				a.className = 'external-link'
+				a.rel = 'noopener noreferrer'
+				a.target = '_blank'
 			} else {
 				// Treat as internal link
-				a.className = "internal-link";
-				a.setAttribute("data-href", url);
-				a.addEventListener("click", (e) => {
-					e.preventDefault();
-					e.stopPropagation();
-					void app.workspace.openLinkText(url, "", false);
-				});
+				a.className = 'internal-link'
+				a.setAttribute('data-href', url)
+				a.addEventListener('click', e => {
+					e.preventDefault()
+					e.stopPropagation()
+					void app.workspace.openLinkText(url, '', false)
+				})
 			}
-			frag.appendChild(a);
+			frag.appendChild(a)
 		} else if (m[12] !== undefined) {
 			// Wiki link: [[target]] or [[target|display]]
-			const target = m[12].trim();
-			const display = m[13]?.trim() || target;
+			const target = m[12].trim()
+			const display = m[13]?.trim() || target
 
-			const a = createEl("a");
-			a.textContent = display;
-			a.className = "internal-link";
-			a.setAttribute("data-href", target);
-			a.addEventListener("click", (e) => {
-				e.preventDefault();
-				e.stopPropagation();
-				void app.workspace.openLinkText(target, "", false);
-			});
-			frag.appendChild(a);
+			const a = createEl('a')
+			a.textContent = display
+			a.className = 'internal-link'
+			a.setAttribute('data-href', target)
+			a.addEventListener('click', e => {
+				e.preventDefault()
+				e.stopPropagation()
+				void app.workspace.openLinkText(target, '', false)
+			})
+			frag.appendChild(a)
 		}
 
-		last = start + fullMatch.length;
+		last = start + fullMatch.length
 	}
 
 	// Add remaining text
 	if (last < text.length) {
-		appendTextWithBreaks(frag, text.slice(last));
+		appendTextWithBreaks(frag, text.slice(last))
 	}
 
-	return frag;
+	return frag
 }
 
 // ==================== Footnote Parsing ====================
@@ -226,15 +226,15 @@ export function renderLinksToFragment(
  * - Footnote format: [^mn-...]
  */
 export function isMarginNote(elOrId: HTMLElement | string): boolean {
-	if (typeof elOrId === "string") {
+	if (typeof elOrId === 'string') {
 		// Footnote ID — margin note if it starts with "mn-"
-		return elOrId.startsWith("mn-");
+		return elOrId.startsWith('mn-')
 	}
 	// HTML element — margin note if it has the "margin-note" class
-	return elOrId.classList.contains("margin-note");
+	return elOrId.classList.contains('margin-note')
 }
 
-export type SidenoteSide = "left" | "right";
+export type SidenoteSide = 'left' | 'right'
 
 /**
  * Resolve the text-align value for a sidenote physically rendered on the
@@ -253,17 +253,17 @@ export type SidenoteSide = "left" | "right";
  * right, and the mirror for the right margin.
  */
 export function resolveSidenoteTextAlign(
-	textAlignment: SidenoteSettings["textAlignment"],
-	side: SidenoteSide,
-): "left" | "right" | "justify" {
+	textAlignment: SidenoteSettings['textAlignment'],
+	side: SidenoteSide
+): 'left' | 'right' | 'justify' {
 	if (
-		textAlignment === "left" ||
-		textAlignment === "right" ||
-		textAlignment === "justify"
+		textAlignment === 'left' ||
+		textAlignment === 'right' ||
+		textAlignment === 'justify'
 	) {
-		return textAlignment;
+		return textAlignment
 	}
-	return side === "left" ? "right" : "left";
+	return side === 'left' ? 'right' : 'left'
 }
 
 /**
@@ -276,16 +276,16 @@ export function resolveSidenoteTextAlign(
  * setting.
  */
 export function getSidenoteSideOverride(
-	elOrId: HTMLElement | string,
+	elOrId: HTMLElement | string
 ): SidenoteSide | null {
-	if (typeof elOrId === "string") {
-		if (/-r$/i.test(elOrId)) return "right";
-		if (/-l$/i.test(elOrId)) return "left";
-		return null;
+	if (typeof elOrId === 'string') {
+		if (/-r$/i.test(elOrId)) return 'right'
+		if (/-l$/i.test(elOrId)) return 'left'
+		return null
 	}
-	if (elOrId.classList.contains("right")) return "right";
-	if (elOrId.classList.contains("left")) return "left";
-	return null;
+	if (elOrId.classList.contains('right')) return 'right'
+	if (elOrId.classList.contains('left')) return 'left'
+	return null
 }
 
 /**
@@ -294,57 +294,57 @@ export function getSidenoteSideOverride(
  * suffix are returned unchanged.
  */
 export function stripSideSuffix(id: string): string {
-	return id.replace(/-[rl]$/i, "");
+	return id.replace(/-[rl]$/i, '')
 }
 
 export function parseFootnoteDefinitions(
-	content: string,
+	content: string
 ): Map<string, string> {
-	const definitions = new Map<string, string>();
+	const definitions = new Map<string, string>()
 
 	// Match footnote definitions: [^id]: text
 	// The text can span multiple lines if indented
-	const lines = content.split("\n");
-	let currentId: string | null = null;
-	let currentText: string[] = [];
+	const lines = content.split('\n')
+	let currentId: string | null = null
+	let currentText: string[] = []
 
 	for (const line of lines) {
 		// Check for new footnote definition
-		const defMatch = line.match(/^\[\^([^\]]+)\]:\s*(.*)$/);
+		const defMatch = line.match(/^\[\^([^\]]+)\]:\s*(.*)$/)
 
 		if (defMatch) {
 			// Save previous footnote if exists
 			if (currentId !== null) {
-				definitions.set(currentId, currentText.join(" ").trim());
+				definitions.set(currentId, currentText.join(' ').trim())
 			}
 
-			currentId = defMatch[1] || null;
-			currentText = defMatch[2] ? [defMatch[2]] : [];
+			currentId = defMatch[1] || null
+			currentText = defMatch[2] ? [defMatch[2]] : []
 		} else if (currentId !== null) {
 			// Check for continuation line (indented)
 			if (line.match(/^[ \t]+\S/)) {
-				currentText.push(line.trim());
-			} else if (line.trim() === "") {
+				currentText.push(line.trim())
+			} else if (line.trim() === '') {
 				// Empty line might end the footnote or be part of it
 				// We'll be conservative and end it
-				definitions.set(currentId, currentText.join(" ").trim());
-				currentId = null;
-				currentText = [];
+				definitions.set(currentId, currentText.join(' ').trim())
+				currentId = null
+				currentText = []
 			} else {
 				// Non-indented, non-empty line ends the footnote
-				definitions.set(currentId, currentText.join(" ").trim());
-				currentId = null;
-				currentText = [];
+				definitions.set(currentId, currentText.join(' ').trim())
+				currentId = null
+				currentText = []
 			}
 		}
 	}
 
 	// Don't forget the last footnote
 	if (currentId !== null) {
-		definitions.set(currentId, currentText.join(" ").trim());
+		definitions.set(currentId, currentText.join(' ').trim())
 	}
 
-	return definitions;
+	return definitions
 }
 
 /**
@@ -352,18 +352,18 @@ export function parseFootnoteDefinitions(
  * the order Obsidian numbers them when rendering.
  */
 export function buildSourceRefOrder(content: string): string[] {
-	const order: string[] = [];
-	if (!content) return order;
+	const order: string[] = []
+	if (!content) return order
 
-	const refOrderRegex = /\[\^([^\]]+)\](?!:)/g;
-	let match: RegExpExecArray | null;
+	const refOrderRegex = /\[\^([^\]]+)\](?!:)/g
+	let match: RegExpExecArray | null
 	while ((match = refOrderRegex.exec(content)) !== null) {
-		const id = match[1];
+		const id = match[1]
 		if (id && !order.includes(id)) {
-			order.push(id);
+			order.push(id)
 		}
 	}
-	return order;
+	return order
 }
 
 /**
@@ -372,17 +372,17 @@ export function buildSourceRefOrder(content: string): string[] {
  */
 export function parseFootnoteIdString(
 	raw: string,
-	prefix: "fn" | "fnref",
+	prefix: 'fn' | 'fnref'
 ): string | null {
-	if (!raw) return null;
+	if (!raw) return null
 
 	const hashMatch = raw.match(
-		new RegExp(`^${prefix}-(.+?)-[a-f0-9]+$`, "i"),
-	);
-	if (hashMatch?.[1]) return hashMatch[1];
+		new RegExp(`^${prefix}-(.+?)-[a-f0-9]+$`, 'i')
+	)
+	if (hashMatch?.[1]) return hashMatch[1]
 
-	const simpleMatch = raw.match(new RegExp(`^${prefix}-(.+)$`, "i"));
-	return simpleMatch?.[1] ?? null;
+	const simpleMatch = raw.match(new RegExp(`^${prefix}-(.+)$`, 'i'))
+	return simpleMatch?.[1] ?? null
 }
 
 /**
@@ -391,26 +391,26 @@ export function parseFootnoteIdString(
  * displayed number when the markup carries no usable ID.
  */
 export function resolveFootnoteBaseId(el: HTMLElement): string | null {
-	const sup = el.tagName === "SUP" ? el : (el.closest("sup") ?? el);
-	const anchor = el.tagName === "A" ? el : sup.querySelector("a");
+	const sup = el.tagName === 'SUP' ? el : (el.closest('sup') ?? el)
+	const anchor = el.tagName === 'A' ? el : sup.querySelector('a')
 
 	const candidates = [
-		sup.dataset.footnoteId || "",
-		sup.id || "",
-		anchor?.id || "",
-	];
+		sup.dataset.footnoteId || '',
+		sup.id || '',
+		anchor?.id || ''
+	]
 	for (const raw of candidates) {
-		const id = parseFootnoteIdString(raw, "fnref");
-		if (id) return id;
+		const id = parseFootnoteIdString(raw, 'fnref')
+		if (id) return id
 	}
 
-	const href = anchor?.getAttribute("href") ?? "";
-	if (href.startsWith("#")) {
-		const id = parseFootnoteIdString(href.slice(1), "fn");
-		if (id) return id;
+	const href = anchor?.getAttribute('href') ?? ''
+	if (href.startsWith('#')) {
+		const id = parseFootnoteIdString(href.slice(1), 'fn')
+		if (id) return id
 	}
 
 	// Last resort: the displayed number, e.g. "[1]"
-	const numMatch = (sup.textContent ?? "").trim().match(/^\[?(\d+)\]?$/);
-	return numMatch?.[1] ?? null;
+	const numMatch = (sup.textContent ?? '').trim().match(/^\[?(\d+)\]?$/)
+	return numMatch?.[1] ?? null
 }

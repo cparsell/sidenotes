@@ -7,9 +7,9 @@
  * positioning logic possible to reason about in isolation.
  */
 
-import type { SidenoteSettings } from "./settings";
-import type { SidenoteSide } from "./content";
-import { setCssProps } from "./dom-utils";
+import type { SidenoteSettings } from './settings'
+import type { SidenoteSide } from './content'
+import { setCssProps } from './dom-utils'
 
 /**
  * Offsets are rewritten on every positioning pass, and `--sn-transition`
@@ -20,10 +20,10 @@ import { setCssProps } from "./dom-utils";
  * writing an identical string is what stops the transition from firing.
  */
 function pxRounded(value: number): string {
-	return `${Math.round(value)}px`;
+	return `${Math.round(value)}px`
 }
 
-export type SidenoteMode = "hidden" | "compact" | "normal" | "full";
+export type SidenoteMode = 'hidden' | 'compact' | 'normal' | 'full'
 
 /**
  * A visible top-level block whose left/right edges mark the body text column.
@@ -41,21 +41,21 @@ export type SidenoteMode = "hidden" | "compact" | "normal" | "full";
  * `correctIndentedSidenotePositions`, for why that goes wrong.
  */
 function findReadingRefElement(root: HTMLElement): HTMLElement | null {
-	const sizer = root.querySelector<HTMLElement>(".markdown-preview-sizer");
-	if (!sizer) return null;
+	const sizer = root.querySelector<HTMLElement>('.markdown-preview-sizer')
+	if (!sizer) return null
 
-	const sections = sizer.querySelectorAll<HTMLElement>(":scope > div");
+	const sections = sizer.querySelectorAll<HTMLElement>(':scope > div')
 	for (const section of Array.from(sections)) {
-		if (section.offsetHeight === 0) continue;
+		if (section.offsetHeight === 0) continue
 		const candidate = section.querySelector<HTMLElement>(
-			":scope > p, :scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > h6",
-		);
+			':scope > p, :scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > h6'
+		)
 		if (candidate && candidate.offsetHeight > 0) {
-			return candidate;
+			return candidate
 		}
 	}
 
-	return sizer;
+	return sizer
 }
 
 /**
@@ -70,39 +70,39 @@ function findReadingRefElement(root: HTMLElement): HTMLElement | null {
 export function applyRootMetrics(
 	settings: SidenoteSettings,
 	root: HTMLElement,
-	width: number,
+	width: number
 ): SidenoteMode {
-	root.style.setProperty("--editor-width", `${width}px`);
+	root.style.setProperty('--editor-width', `${width}px`)
 
-	const mode = calculateMode(settings, width);
-	root.dataset.sidenoteMode = mode;
-	root.dataset.sidenotePosition = settings.sidenotePosition;
-	root.dataset.sidenoteAnchor = settings.sidenoteAnchor;
+	const mode = calculateMode(settings, width)
+	root.dataset.sidenoteMode = mode
+	root.dataset.sidenotePosition = settings.sidenotePosition
+	root.dataset.sidenoteAnchor = settings.sidenoteAnchor
 	// Gates the --page-offset padding rules in styles.css: at 0, those rules
 	// should not apply at all (see the comment there), not apply and resolve
 	// to a padding of literal 0.
 	root.dataset.sidenotePageOffset =
-		settings.pageOffsetFactor > 0 ? "true" : "false";
+		settings.pageOffsetFactor > 0 ? 'true' : 'false'
 
 	root.style.setProperty(
-		"--sidenote-scale",
-		calculateScaleFactor(settings, width).toFixed(3),
-	);
+		'--sidenote-scale',
+		calculateScaleFactor(settings, width).toFixed(3)
+	)
 
-	return mode;
+	return mode
 }
 
 /** Inverse of `applyRootMetrics`, plus the flags set elsewhere during layout. */
 export function clearRootMetrics(root: HTMLElement) {
-	root.style.removeProperty("--editor-width");
-	root.style.removeProperty("--sidenote-scale");
-	root.style.removeProperty("--sidenote-width");
-	root.dataset.sidenoteMode = "";
-	root.dataset.hasSidenotes = "";
-	root.dataset.sidenotePosition = "";
-	root.dataset.sidenoteHasOpposite = "";
-	root.dataset.sidenotePageOffset = "";
-	root.dataset.sidenoteNoRoom = "";
+	root.style.removeProperty('--editor-width')
+	root.style.removeProperty('--sidenote-scale')
+	root.style.removeProperty('--sidenote-width')
+	root.dataset.sidenoteMode = ''
+	root.dataset.hasSidenotes = ''
+	root.dataset.sidenotePosition = ''
+	root.dataset.sidenoteHasOpposite = ''
+	root.dataset.sidenotePageOffset = ''
+	root.dataset.sidenoteNoRoom = ''
 }
 
 /**
@@ -133,11 +133,11 @@ export function updateSidenotePositioning(
 	settings: SidenoteSettings,
 	sides: Record<SidenoteSide, boolean>,
 	root: HTMLElement,
-	isReadingMode: boolean,
+	isReadingMode: boolean
 ) {
-	const s = settings;
-	const position = s.sidenotePosition;
-	const anchorMode = s.sidenoteAnchor;
+	const s = settings
+	const position = s.sidenotePosition
+	const anchorMode = s.sidenoteAnchor
 
 	// Whenever a per-sidenote override actually places a note on the
 	// non-default margin, reserve page-offset space there too (see the
@@ -151,16 +151,11 @@ export function updateSidenotePositioning(
 	// elements returns null as soon as you scroll past the last override.
 	// That toggled the mirrored padding off mid-scroll and visibly shifted
 	// the body text sideways.
-	const oppositeSide: SidenoteSide =
-		position === "left" ? "right" : "left";
-	root.dataset.sidenoteHasOpposite = sides[
-		oppositeSide
-	]
-		? "true"
-		: "false";
+	const oppositeSide: SidenoteSide = position === 'left' ? 'right' : 'left'
+	root.dataset.sidenoteHasOpposite = sides[oppositeSide] ? 'true' : 'false'
 
 	// Get root element rect
-	const rootRect = root.getBoundingClientRect();
+	const rootRect = root.getBoundingClientRect()
 
 	// console.log("[Sidenotes] updateSidenotePositioning:", {
 	// 	rootWidth: rootRect.width,
@@ -170,20 +165,19 @@ export function updateSidenotePositioning(
 
 	// Get rem to px conversion
 	const remToPx =
-		parseFloat(getComputedStyle(document.documentElement).fontSize) ||
-		16;
+		parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
 	// Base gaps (minimums)
-	const baseGap1 = s.sidenoteGap * remToPx; // gap between sidenote and text
-	const baseGap2 = s.sidenoteGap2 * remToPx; // gap between sidenote and edge
+	const baseGap1 = s.sidenoteGap * remToPx // gap between sidenote and text
+	const baseGap2 = s.sidenoteGap2 * remToPx // gap between sidenote and edge
 
 	// Scale gaps proportionally as editor grows.
 	// Use the sidenoteGapDrift setting to control growth rate.
 	// At hideBelow width, gaps are at their minimum.
 	// As width increases, gaps grow by a fraction of the extra available space.
-	const editorWidth = rootRect.width;
-	const growthFactor = s.sidenoteGapDrift; // 0 = no growth, 1 = maximum growth
-	const extraSpace = Math.max(0, editorWidth - s.hideBelow);
-	const gapGrowth = extraSpace * growthFactor * 0.25; // subtle growth
+	const editorWidth = rootRect.width
+	const growthFactor = s.sidenoteGapDrift // 0 = no growth, 1 = maximum growth
+	const extraSpace = Math.max(0, editorWidth - s.hideBelow)
+	const gapGrowth = extraSpace * growthFactor * 0.25 // subtle growth
 
 	// Drift widens gap1 (the text-side gap) as the editor grows — it never
 	// touches gap2 (see below): sidenoteGap2 is a fixed distance from the
@@ -192,7 +186,7 @@ export function updateSidenotePositioning(
 	// position is built from, so drift moves the note; in edge-anchor mode
 	// gap1 only feeds the width cap below, so drift there can only shrink
 	// the note, never move it.
-	const gap1 = Math.max(0, baseGap1 + gapGrowth);
+	const gap1 = Math.max(0, baseGap1 + gapGrowth)
 
 	// Find a representative line/paragraph to measure the text column edge.
 	// In reading mode, Obsidian virtualises content so the first <p> may
@@ -201,18 +195,18 @@ export function updateSidenotePositioning(
 	// visible block-level element at the top level of the content flow.
 	const refLine: HTMLElement | null = isReadingMode
 		? findReadingRefElement(root)
-		: findStableCmRefLine(root);
+		: findStableCmRefLine(root)
 
-	if (!refLine) return;
+	if (!refLine) return
 
-	const refRect = refLine.getBoundingClientRect();
+	const refRect = refLine.getBoundingClientRect()
 
 	// Clear any width clamp a PREVIOUS pass left in place before measuring,
 	// so "natural" below reflects the current settings-driven cascade (base
 	// width + editor-width-driven scale) rather than last frame's shrink —
 	// otherwise a note that once shrank could never grow back.
-	root.style.removeProperty("--sidenote-width");
-	const naturalWidth = getSidenoteWidthPx(settings, root);
+	root.style.removeProperty('--sidenote-width')
+	const naturalWidth = getSidenoteWidthPx(settings, root)
 
 	// Compute both sides unconditionally so a per-sidenote override can
 	// place an individual note in the margin opposite the document-wide
@@ -243,27 +237,26 @@ export function updateSidenotePositioning(
 	// so strip that padding to land on the same edges a <p> inside it would
 	// have had.
 	const sizerFallbackEdges =
-		isReadingMode &&
-		refLine.classList.contains("markdown-preview-sizer")
+		isReadingMode && refLine.classList.contains('markdown-preview-sizer')
 			? getReadingTextEdges(root)
-			: null;
-	const textLeft = sizerFallbackEdges?.left ?? refRect.left;
-	const textRight = sizerFallbackEdges?.right ?? refRect.right;
+			: null
+	const textLeft = sizerFallbackEdges?.left ?? refRect.left
+	const textRight = sizerFallbackEdges?.right ?? refRect.right
 
 	// The real editor edge (scroller/view), not rootRect.left, which may
 	// already carry the page-offset padding.
 	const editorEdgeLeft = (() => {
-		if (isReadingMode) return root.getBoundingClientRect().left;
-		const scroller = root.querySelector<HTMLElement>(".cm-scroller");
-		return (scroller ?? root).getBoundingClientRect().left;
-	})();
+		if (isReadingMode) return root.getBoundingClientRect().left
+		const scroller = root.querySelector<HTMLElement>('.cm-scroller')
+		return (scroller ?? root).getBoundingClientRect().left
+	})()
 
 	const editorEdgeRight = (() => {
-		if (isReadingMode) return root.getBoundingClientRect().right;
+		if (isReadingMode) return root.getBoundingClientRect().right
 
-		const scroller = root.querySelector<HTMLElement>(".cm-scroller");
-		return (scroller ?? root).getBoundingClientRect().right;
-	})();
+		const scroller = root.querySelector<HTMLElement>('.cm-scroller')
+		return (scroller ?? root).getBoundingClientRect().right
+	})()
 
 	// In edge-anchor mode, shrink the (single, shared-between-sides) width
 	// instead of moving the note when sidenoteGap2 (position) and
@@ -275,32 +268,32 @@ export function updateSidenotePositioning(
 	// sidenote regardless of side (see its CSS definition), so a single
 	// shared cap here matches that existing granularity rather than adding
 	// finer-grained control the rest of the system doesn't have.
-	let sidenoteWidth = naturalWidth;
-	let noRoom = false;
-	if (anchorMode === "edge") {
-		let widthCap = Infinity;
+	let sidenoteWidth = naturalWidth
+	let noRoom = false
+	if (anchorMode === 'edge') {
+		let widthCap = Infinity
 		if (sides.left) {
 			widthCap = Math.min(
 				widthCap,
-				textLeft - editorEdgeLeft - baseGap2 - gap1,
-			);
+				textLeft - editorEdgeLeft - baseGap2 - gap1
+			)
 		}
 		if (sides.right) {
 			widthCap = Math.min(
 				widthCap,
-				editorEdgeRight - textRight - baseGap2 - gap1,
-			);
+				editorEdgeRight - textRight - baseGap2 - gap1
+			)
 		}
 		if (widthCap !== Infinity) {
-			sidenoteWidth = Math.max(0, Math.min(naturalWidth, widthCap));
+			sidenoteWidth = Math.max(0, Math.min(naturalWidth, widthCap))
 			if (sidenoteWidth < s.minSidenoteWidth * remToPx) {
-				noRoom = true;
+				noRoom = true
 			}
 			if (sidenoteWidth !== naturalWidth) {
 				root.style.setProperty(
-					"--sidenote-width",
-					pxRounded(sidenoteWidth),
-				);
+					'--sidenote-width',
+					pxRounded(sidenoteWidth)
+				)
 			}
 		}
 	}
@@ -309,7 +302,7 @@ export function updateSidenotePositioning(
 	// case), which also switches off `--page-offset`. This is a lateral-room
 	// problem only: the text shift "Page offset factor" already reserved is
 	// still exactly as valid as it was, so it must stay in effect.
-	root.dataset.sidenoteNoRoom = noRoom ? "true" : "false";
+	root.dataset.sidenoteNoRoom = noRoom ? 'true' : 'false'
 
 	// The edge-anchored position for each side: the note's outer edge exactly
 	// sidenoteGap2 in from the pane's physical edge.
@@ -322,13 +315,13 @@ export function updateSidenotePositioning(
 	// (`editorEdgeRight - gap2 - textRight`) is the negation of the correct
 	// value: it put the note's right edge at 2*textRight - editorEdgeRight +
 	// gap2, i.e. deep inside the body text instead of out in the margin.
-	const edgeAnchoredLeft = editorEdgeLeft + baseGap2 - textLeft;
-	const edgeAnchoredRight = textRight - editorEdgeRight + baseGap2;
+	const edgeAnchoredLeft = editorEdgeLeft + baseGap2 - textLeft
+	const edgeAnchoredRight = textRight - editorEdgeRight + baseGap2
 
 	// Text-anchored: the note's near edge sits gap1 from the text. One value
 	// for both sides — each side's sign convention already points its offset
 	// outward, away from the text.
-	const textAnchored = -(gap1 + sidenoteWidth);
+	const textAnchored = -(gap1 + sidenoteWidth)
 
 	// In text-anchor mode the note holds its gap to the text right up until
 	// that would carry it past sidenoteGap2 from the pane edge, and then it
@@ -339,53 +332,49 @@ export function updateSidenotePositioning(
 	// to yield; what it buys is a note that stays in the margin instead of
 	// sliding out to sit flush against (or past) the pane's edge.
 	const cssLeft =
-		anchorMode === "text"
+		anchorMode === 'text'
 			? Math.max(textAnchored, edgeAnchoredLeft)
-			: edgeAnchoredLeft;
+			: edgeAnchoredLeft
 	const cssRight =
-		anchorMode === "text"
+		anchorMode === 'text'
 			? Math.max(textAnchored, edgeAnchoredRight)
-			: edgeAnchoredRight;
+			: edgeAnchoredRight
 
-	root.style.setProperty("--sidenote-offset-left", pxRounded(cssLeft));
-	root.style.setProperty("--sidenote-offset-right", pxRounded(cssRight));
+	root.style.setProperty('--sidenote-offset-left', pxRounded(cssLeft))
+	root.style.setProperty('--sidenote-offset-right', pxRounded(cssRight))
 	root.style.setProperty(
-		"--sidenote-offset",
-		pxRounded(position === "left" ? cssLeft : cssRight),
-	);
+		'--sidenote-offset',
+		pxRounded(position === 'left' ? cssLeft : cssRight)
+	)
 }
-
 
 export function measureCssLengthPx(
 	host: HTMLElement,
-	cssLengthExpr: string,
+	cssLengthExpr: string
 ): number {
-	const probe = createDiv();
-	probe.classList.add("sidenote-measure-probe");
-	probe.style.width = cssLengthExpr;
-	host.appendChild(probe);
-	const w = probe.getBoundingClientRect().width;
-	probe.remove();
-	return w;
+	const probe = createDiv()
+	probe.classList.add('sidenote-measure-probe')
+	probe.style.width = cssLengthExpr
+	host.appendChild(probe)
+	const w = probe.getBoundingClientRect().width
+	probe.remove()
+	return w
 }
-
 
 export function getSidenoteWidthPx(
 	settings: SidenoteSettings,
-	root: HTMLElement,
+	root: HTMLElement
 ): number {
 	// Root here should be the element that has --sidenote-width in scope
-	const cs = getComputedStyle(root);
-	const expr = cs.getPropertyValue("--sidenote-width").trim();
-	if (expr) return measureCssLengthPx(root, expr);
+	const cs = getComputedStyle(root)
+	const expr = cs.getPropertyValue('--sidenote-width').trim()
+	if (expr) return measureCssLengthPx(root, expr)
 
 	// fallback
 	const remToPx =
-		parseFloat(getComputedStyle(document.documentElement).fontSize) ||
-		16;
-	return settings.minSidenoteWidth * remToPx;
+		parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+	return settings.minSidenoteWidth * remToPx
 }
-
 
 /**
  * The body text column edges in reading mode: the preview sizer's CONTENT
@@ -398,21 +387,18 @@ export function getSidenoteWidthPx(
  * measurement by that padding.
  */
 export function getReadingTextEdges(
-	root: HTMLElement,
+	root: HTMLElement
 ): { left: number; right: number } | null {
-	const sizer = root.querySelector<HTMLElement>(
-		".markdown-preview-sizer",
-	);
-	if (!sizer) return null;
-	const r = sizer.getBoundingClientRect();
-	const cs = getComputedStyle(sizer);
+	const sizer = root.querySelector<HTMLElement>('.markdown-preview-sizer')
+	if (!sizer) return null
+	const r = sizer.getBoundingClientRect()
+	const cs = getComputedStyle(sizer)
 	return {
 		left: r.left + (parseFloat(cs.paddingLeft) || 0),
-		right: r.right - (parseFloat(cs.paddingRight) || 0),
-	};
+		right: r.right - (parseFloat(cs.paddingRight) || 0)
+	}
 }
 
-
 /**
  * Helper for updateSidenotePositioning to find a stable reference line
  * This helps to establish reliable positioning even when the first lines are empty or virtualized.
@@ -426,37 +412,37 @@ export function getReadingTextEdges(
  * @param root
  * @returns
  */
-export function findStableCmRefLine(root: HTMLElement): HTMLElement | null {
-	const rootRect = root.getBoundingClientRect();
-	const lines = Array.from(
-		root.querySelectorAll<HTMLElement>(".cm-line"),
-	);
+export function findStableCmRefLine(
+	root: HTMLElement
+): HTMLElement | null {
+	const rootRect = root.getBoundingClientRect()
+	const lines = Array.from(root.querySelectorAll<HTMLElement>('.cm-line'))
 
 	// Prefer a line that is:
 	// - visible (height > 0)
 	// - not collapsed to left edge (left significantly inside the root)
 	// - has non-trivial width
 	for (const el of lines) {
-		if (!el.isConnected) continue;
-		const r = el.getBoundingClientRect();
-		if (r.height < 8) continue;
-		if (r.width < 40) continue;
+		if (!el.isConnected) continue
+		const r = el.getBoundingClientRect()
+		if (r.height < 8) continue
+		if (r.width < 40) continue
 
-		const inset = r.left - rootRect.left;
+		const inset = r.left - rootRect.left
 
 		// Heuristic: text column is usually inset by padding/gutter; reject 0–2px.
-		if (inset <= 2) continue;
+		if (inset <= 2) continue
 
-		return el;
+		return el
 	}
 
 	// Fallback: first line with height
 	for (const el of lines) {
-		const r = el.getBoundingClientRect();
-		if (r.height > 0) return el;
+		const r = el.getBoundingClientRect()
+		if (r.height > 0) return el
 	}
 
-	return null;
+	return null
 }
 
 /**
@@ -499,30 +485,28 @@ export function findStableCmRefLine(root: HTMLElement): HTMLElement | null {
  * which get the identical `<p>`-wrapped treatment.
  */
 function findPositionedAncestor(el: HTMLElement): HTMLElement | null {
-	let node = el.parentElement;
+	let node = el.parentElement
 	while (node) {
-		if (getComputedStyle(node).position !== "static") return node;
-		node = node.parentElement;
+		if (getComputedStyle(node).position !== 'static') return node
+		node = node.parentElement
 	}
-	return null;
+	return null
 }
 
 export function correctIndentedSidenotePositions(
 	settings: SidenoteSettings,
 	root: HTMLElement,
-	isReadingMode: boolean,
+	isReadingMode: boolean
 ) {
-	const position = settings.sidenotePosition;
+	const position = settings.sidenotePosition
 
 	// Read the global offsets that updateSidenotePositioning just set
 	const globalOffset =
-		parseFloat(root.style.getPropertyValue("--sidenote-offset")) || 0;
+		parseFloat(root.style.getPropertyValue('--sidenote-offset')) || 0
 	const globalOffsetLeft =
-		parseFloat(root.style.getPropertyValue("--sidenote-offset-left")) ||
-		0;
+		parseFloat(root.style.getPropertyValue('--sidenote-offset-left')) || 0
 	const globalOffsetRight =
-		parseFloat(root.style.getPropertyValue("--sidenote-offset-right")) ||
-		0;
+		parseFloat(root.style.getPropertyValue('--sidenote-offset-right')) || 0
 
 	// Editing mode has no .markdown-preview-sizer to look a per-wrapper
 	// baseline up in (see the section lookup below) — CM6 is its own
@@ -530,21 +514,21 @@ export function correctIndentedSidenotePositions(
 	// the same single reference line updateSidenotePositioning already used
 	// to compute the global offsets read above, so reusing it here keeps the
 	// correction measured against the exact baseline it's correcting.
-	const editingRefLine = isReadingMode ? null : findStableCmRefLine(root);
+	const editingRefLine = isReadingMode ? null : findStableCmRefLine(root)
 
 	const wrappers = root.querySelectorAll<HTMLElement>(
-		"span.sidenote-number",
-	);
+		'span.sidenote-number'
+	)
 
 	for (const wrapper of Array.from(wrappers)) {
-		const indentedParent = findPositionedAncestor(wrapper);
+		const indentedParent = findPositionedAncestor(wrapper)
 
 		if (!indentedParent) {
 			// Not indented — inherit the global offsets
-			wrapper.style.removeProperty("--sidenote-offset");
-			wrapper.style.removeProperty("--sidenote-offset-left");
-			wrapper.style.removeProperty("--sidenote-offset-right");
-			continue;
+			wrapper.style.removeProperty('--sidenote-offset')
+			wrapper.style.removeProperty('--sidenote-offset-left')
+			wrapper.style.removeProperty('--sidenote-offset-right')
+			continue
 		}
 
 		// Baseline this wrapper's shift is measured against.
@@ -564,35 +548,35 @@ export function correctIndentedSidenotePositions(
 		// .markdown-preview-sizer), so this reuses editingRefLine — the same
 		// single reference line the global offset was already computed from.
 		const section = isReadingMode
-			? wrapper.closest<HTMLElement>(".markdown-preview-sizer > div")
-			: editingRefLine;
-		if (!section) continue;
+			? wrapper.closest<HTMLElement>('.markdown-preview-sizer > div')
+			: editingRefLine
+		if (!section) continue
 
-		const refRect = section.getBoundingClientRect();
-		const parentRect = indentedParent.getBoundingClientRect();
+		const refRect = section.getBoundingClientRect()
+		const parentRect = indentedParent.getBoundingClientRect()
 
 		// Left-margin offset is relative to refEl's left edge; this wrapper
 		// resolves position:absolute against indentedParent, so shift by how
 		// much further right the parent is vs refEl.
-		const shiftLeft = parentRect.left - refRect.left;
+		const shiftLeft = parentRect.left - refRect.left
 		// Right-margin offset is relative to refEl's right edge; shift by how
 		// much further left the parent's right edge is vs refEl.
-		const shiftRight = refRect.right - parentRect.right;
+		const shiftRight = refRect.right - parentRect.right
 
 		wrapper.style.setProperty(
-			"--sidenote-offset-left",
-			pxRounded(globalOffsetLeft - shiftLeft),
-		);
+			'--sidenote-offset-left',
+			pxRounded(globalOffsetLeft - shiftLeft)
+		)
 		wrapper.style.setProperty(
-			"--sidenote-offset-right",
-			pxRounded(globalOffsetRight - shiftRight),
-		);
+			'--sidenote-offset-right',
+			pxRounded(globalOffsetRight - shiftRight)
+		)
 		wrapper.style.setProperty(
-			"--sidenote-offset",
+			'--sidenote-offset',
 			pxRounded(
-				globalOffset - (position === "left" ? shiftLeft : shiftRight),
-			),
-		);
+				globalOffset - (position === 'left' ? shiftLeft : shiftRight)
+			)
+		)
 	}
 }
 
@@ -608,7 +592,7 @@ export function correctIndentedSidenotePositions(
 export function applyLineOffset(
 	wrapper: HTMLElement,
 	margin: HTMLElement,
-	isEditingMode: boolean = false,
+	isEditingMode: boolean = false
 ) {
 	if (isEditingMode) {
 		// In editing mode, sidenotes are normally inside .cm-line, which
@@ -621,36 +605,33 @@ export function applyLineOffset(
 		// Without it this returned early and --sidenote-line-offset was
 		// simply never set for a callout-nested sidenote.
 		const line =
-			wrapper.closest<HTMLElement>(".cm-line") ??
-			findPositionedAncestor(wrapper);
-		if (!line) return;
+			wrapper.closest<HTMLElement>('.cm-line') ??
+			findPositionedAncestor(wrapper)
+		if (!line) return
 
 		// Get positions
-		const wrapperRect = wrapper.getBoundingClientRect();
-		const lineRect = line.getBoundingClientRect();
+		const wrapperRect = wrapper.getBoundingClientRect()
+		const lineRect = line.getBoundingClientRect()
 
 		// The offset is how far down the wrapper is from the top of the line
 		// For single-line content this is ~0, for wrapped text it could be more
-		const lineOffset = wrapperRect.top - lineRect.top;
+		const lineOffset = wrapperRect.top - lineRect.top
 
-		margin.style.setProperty(
-			"--sidenote-line-offset",
-			`${lineOffset}px`,
-		);
+		margin.style.setProperty('--sidenote-line-offset', `${lineOffset}px`)
 	} else {
 		// Reading mode: anchor to the nearest positioning context that *you* define in CSS
 		const positionedParent =
 			wrapper.closest(
-				"p, li, h1, h2, h3, h4, h5, h6, blockquote, .callout",
-			) ?? wrapper.parentElement;
+				'p, li, h1, h2, h3, h4, h5, h6, blockquote, .callout'
+			) ?? wrapper.parentElement
 
-		if (!positionedParent) return;
+		if (!positionedParent) return
 
 		// For inline content, prefer the first line box rect (more stable than getBoundingClientRect)
-		const rects = wrapper.getClientRects();
-		const wrapperRect = rects.length > 0 ? rects.item(0) : null;
+		const rects = wrapper.getClientRects()
+		const wrapperRect = rects.length > 0 ? rects.item(0) : null
 		const effectiveWrapperRect =
-			wrapperRect ?? wrapper.getBoundingClientRect();
+			wrapperRect ?? wrapper.getBoundingClientRect()
 
 		// An inline element with no in-flow content produces no client rects,
 		// and getBoundingClientRect then returns all zeros. Subtracting the
@@ -662,20 +643,17 @@ export function applyLineOffset(
 			effectiveWrapperRect.top === 0 &&
 			effectiveWrapperRect.left === 0 &&
 			effectiveWrapperRect.width === 0 &&
-			effectiveWrapperRect.height === 0;
+			effectiveWrapperRect.height === 0
 
 		if (isDegenerate) {
-			setCssProps(margin, { "--sidenote-line-offset": "0px" });
-			return;
+			setCssProps(margin, { '--sidenote-line-offset': '0px' })
+			return
 		}
 
-		const parentRect = positionedParent.getBoundingClientRect();
-		const lineOffset = effectiveWrapperRect.top - parentRect.top;
+		const parentRect = positionedParent.getBoundingClientRect()
+		const lineOffset = effectiveWrapperRect.top - parentRect.top
 
-		margin.style.setProperty(
-			"--sidenote-line-offset",
-			`${lineOffset}px`,
-		);
+		margin.style.setProperty('--sidenote-line-offset', `${lineOffset}px`)
 	}
 }
 
@@ -685,36 +663,31 @@ export function applyLineOffset(
 
 export function calculateMode(
 	settings: SidenoteSettings,
-	width: number,
-): "hidden" | "compact" | "normal" | "full" {
-	const s = settings;
+	width: number
+): 'hidden' | 'compact' | 'normal' | 'full' {
+	const s = settings
 	// Sanity check: if width is 0 or unreasonably small, hide
 	if (width <= 0 || width < 200) {
-		return "hidden";
+		return 'hidden'
 	}
 	if (width < s.hideBelow) {
-		return "hidden";
+		return 'hidden'
 	} else if (width < s.compactBelow) {
-		return "compact";
+		return 'compact'
 	} else if (width < s.fullAbove) {
-		return "normal";
+		return 'normal'
 	} else {
-		return "full";
+		return 'full'
 	}
 }
-
 
 export function calculateScaleFactor(
 	settings: SidenoteSettings,
-	width: number,
+	width: number
 ): number {
-	const s = settings;
+	const s = settings
 	if (width < s.hideBelow) {
-		return 0;
+		return 0
 	}
-	return Math.min(
-		1,
-		(width - s.hideBelow) / (s.fullAbove - s.hideBelow),
-	);
+	return Math.min(1, (width - s.hideBelow) / (s.fullAbove - s.hideBelow))
 }
-

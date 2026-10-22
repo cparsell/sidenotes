@@ -1,5 +1,5 @@
-import type { App, PluginManifest } from "obsidian";
-import type { SidenoteSettings } from "./settings";
+import type { App, PluginManifest } from 'obsidian'
+import type { SidenoteSettings } from './settings'
 
 /**
  * The plugin surface the CM6 widgets in `widgets.ts` are allowed to touch.
@@ -16,29 +16,29 @@ import type { SidenoteSettings } from "./settings";
  * explicitly, which is what stops the `*Public` shim layer from regrowing.
  */
 export interface SidenoteWidgetHost {
-	readonly app: App;
-	readonly manifest: PluginManifest;
-	readonly settings: SidenoteSettings;
+	readonly app: App
+	readonly manifest: PluginManifest
+	readonly settings: SidenoteSettings
 
 	/** Bumped on every settings save to signal that decorations must rebuild. */
-	readonly settingsVersion: number;
+	readonly settingsVersion: number
 
 	/** Set when an edit in one mode invalidates the other mode's render. */
-	needsReadingModeRefresh: boolean;
+	needsReadingModeRefresh: boolean
 
 	/** Footnote-edit arbitration — only one inline editor may be open. */
-	setActiveFootnoteEdit(footnoteId: string | null): void;
-	isFootnoteBeingEdited(): boolean;
+	setActiveFootnoteEdit(footnoteId: string | null): void
+	isFootnoteBeingEdited(): boolean
 
 	/** Register/unregister a margin with the visibility and resize observers. */
-	observeSidenoteVisibility(margin: HTMLElement): void;
-	unobserveSidenoteVisibility(margin: HTMLElement): void;
+	observeSidenoteVisibility(margin: HTMLElement): void
+	unobserveSidenoteVisibility(margin: HTMLElement): void
 
 	/** Re-stack margins after one changes height. */
-	scheduleCollisionUpdate(): void;
+	scheduleCollisionUpdate(): void
 
 	/** Re-read the source text into the cache after a write-back. */
-	refreshCachedSourceContent(): void;
+	refreshCachedSourceContent(): void
 
 	/** Convert a margin note into an inline icon plus a click-to-open popup. */
 	setupMarginNotePopup(
@@ -46,6 +46,6 @@ export interface SidenoteWidgetHost {
 		margin: HTMLElement,
 		contentText: string,
 		editable?: boolean,
-		footnoteId?: string,
-	): void;
+		footnoteId?: string
+	): void
 }
