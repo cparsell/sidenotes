@@ -1410,11 +1410,6 @@
 	display: none;
 }
 
-/* Optionally: remove any badge padding/spacing for margin notes */
-small.sidenote-margin.margin-note {
-	/* No top offset for the badge */
-}
-
 .sidenote-margin.margin-note::before {
 	display: none;
 	content: none;
