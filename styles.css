@@ -742,6 +742,11 @@
 	display: inline-block;
 	width: 0;
 	max-width: 0;
+	/* Without a height clamp, an embedded image in the original content
+	   gives this inline-block the image's height, which stretches the line
+	   box it sits in and opens a gap in the surrounding text. */
+	height: 0;
+	max-height: 0;
 	overflow: hidden;
 	white-space: nowrap;
 	vertical-align: baseline;

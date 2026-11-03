@@ -45,16 +45,34 @@ export function captureMainEditorCursor(app: App): EditorPosition | null {
 	return editor?.getCursor() ?? null
 }
 
-/** Return focus and the cursor to the main document editor after a nested editor closes. */
+/**
+ * Return focus and the cursor to the main document editor after a nested
+ * editor closes. The scroll position is kept: the saved cursor is often far
+ * from the sidenote that was just edited, and moving it would otherwise
+ * scroll the view away from the user's place.
+ */
 export function restoreMainEditorCursor(
 	app: App,
 	pos: EditorPosition | null
 ) {
 	if (!pos) return
-	const editor = app.workspace.getActiveViewOfType(MarkdownView)?.editor
-	if (!editor) return
+	const view = app.workspace.getActiveViewOfType(MarkdownView)
+	const editor = view?.editor
+	if (!view || !editor) return
+
+	const scroller = view.containerEl.querySelector<HTMLElement>(
+		'.cm-scroller'
+	)
+	const scrollTop = scroller?.scrollTop ?? 0
+	const restoreScroll = () => {
+		if (scroller) scroller.scrollTop = scrollTop
+	}
+
 	editor.setCursor(pos)
 	editor.focus()
+	restoreScroll()
+	// CM6 can apply its scroll-into-view in a later measure pass.
+	window.requestAnimationFrame(restoreScroll)
 }
 
 function cmToPos(view: EditorView, offset: number): EditorPosition {
