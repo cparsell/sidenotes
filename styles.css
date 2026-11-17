@@ -1044,6 +1044,27 @@
 	cursor: pointer;
 }
 
+/* === Pandoc citations in sidenotes === */
+/* Resolved citations get a faint chip; the full reference is the tooltip. */
+.sidenote-citation {
+	cursor: help;
+	background: var(--background-modifier-hover);
+	border-radius: 3px;
+	padding: 0 0.25em;
+}
+
+.sidenote-citation:hover {
+	background: var(--background-modifier-active-hover);
+}
+
+/* A key with no bibliography entry stays as typed, with a subtle marker. */
+.sidenote-citation.is-unresolved {
+	background: none;
+	padding: 0;
+	text-decoration: underline dotted var(--text-error);
+	text-underline-offset: 2px;
+}
+
 /* === Sidenote margin while an inline editor is open === */
 .sidenote-margin[data-editing='true'] {
 	background: var(--background-modifier-form-field);

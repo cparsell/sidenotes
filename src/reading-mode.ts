@@ -163,8 +163,11 @@ function matchSpansToSource(
 ): number[] {
 	const rendered = sourceSpans.map(s =>
 		normalizeText(
-			renderLinksToFragment(normalizeText(s.text), ctx.app).textContent ??
-				''
+			renderLinksToFragment(normalizeText(s.text), ctx.app, undefined, {
+				// The DOM text is what Obsidian rendered, which leaves
+				// citations as written.
+				citations: false
+			}).textContent ?? ''
 		)
 	)
 

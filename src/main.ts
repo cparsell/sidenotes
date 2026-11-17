@@ -28,6 +28,7 @@ import type { SidenoteWidgetHost } from './widget-host'
 import { registerSidenoteCommands } from './commands'
 import { setupMarginNotePopup } from './margin-note-popup'
 import { NOTE_EMBED_CLASS, setEmbedOwner } from './embeds'
+import { checkBibliographyChanges, setCitationOwner } from './citations'
 import {
 	type SourceEdit,
 	applyEdit,
@@ -168,6 +169,7 @@ export default class SidenotePlugin
 		this.addSettingTab(new SidenoteSettingTab(this.app, this))
 		applyCssVariables(this.settings)
 		setEmbedOwner(this)
+		setCitationOwner(this)
 
 		// Register the CM6 extension for footnote sidenotes in editing mode
 		this.registerEditorExtension([createFootnoteSidenotePlugin(this)])
@@ -222,6 +224,7 @@ export default class SidenotePlugin
 
 		this.registerEvent(
 			this.app.workspace.on('active-leaf-change', () => {
+				void checkBibliographyChanges()
 				this.resetRegistry()
 				this.invalidateLayoutCache()
 				this.needsReadingModeRefresh = true
@@ -245,6 +248,7 @@ export default class SidenotePlugin
 
 		this.registerEvent(
 			this.app.workspace.on('file-open', (_file: TFile | null) => {
+				void checkBibliographyChanges()
 				this.resetRegistry()
 				this.invalidateLayoutCache()
 				this.needsReadingModeRefresh = true
@@ -300,6 +304,7 @@ export default class SidenotePlugin
 
 	onunload() {
 		setEmbedOwner(null)
+		setCitationOwner(null)
 		this.scheduler.dispose()
 		this.cleanups.forEach(fn => fn())
 		this.cleanups = []
@@ -471,11 +476,27 @@ export default class SidenotePlugin
 
 			await this.saveData(this.settings)
 
-			// Bump the settings version so the CM6 ViewPlugin rebuilds
-			this._settingsVersion++
-
 			// Apply new CSS variables
 			applyCssVariables(this.settings)
+
+			this.rerenderSidenotes()
+		} catch (error) {
+			console.error('Sidenote plugin: Failed to save settings', error)
+		}
+	}
+
+	/**
+	 * Rebuild every sidenote from scratch in both modes. Used when settings
+	 * change, and when a bibliography finishes loading or changes on disk.
+	 */
+	public refreshCitations() {
+		this.rerenderSidenotes()
+	}
+
+	private rerenderSidenotes() {
+		try {
+			// Bump the settings version so the CM6 ViewPlugin rebuilds
+			this._settingsVersion++
 
 			// Reset numbering state
 			this.resetRegistry()
@@ -502,7 +523,10 @@ export default class SidenotePlugin
 			// Re-bind scroll/resize/mutation observers and schedule layout
 			this.rebindAndSchedule()
 		} catch (error) {
-			console.error('Sidenote plugin: Failed to save settings', error)
+			console.error(
+				'Sidenote plugin: Failed to re-render sidenotes',
+				error
+			)
 		}
 	}
 

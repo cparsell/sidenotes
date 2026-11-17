@@ -57,14 +57,23 @@ Un-numbered notes in the margin, for asides that don't need a reference number. 
 
 Works with both HTML sidenotes and footnotes (experimental). Notes are laid out in the margin rather than inline, and margin notes are dropped from the endnote list at the end of the document.
 
-## Goal Features
+### Citations
 
-- [ ] Optional background color to sidenotes
-- [x] Command: Re-sequence footnote numbers. They have a habit of getting out of order once you insert new ones. ✅ 2026-02-27
-- [x] Option to have non-numbered sidenotes - aka "margin notes" ✅ 2026-02-26
-- [x] Add scaling option for margin note icon in text and in margin ✅ 2026-03-02
-- [x] Option for hidden margin notes: ✅ 2026-03-02
-- [x] Per-note override to place an individual sidenote/margin note in the margin opposite the global setting ✅ 2026-08-01
+Pandoc citations inside a sidenote are shown as short, readable author–year citations. Display only: the note's text is never changed, and click-to-edit shows the raw keys.
+
+| You write                         | Shown as                            |
+| --------------------------------- | ----------------------------------- |
+| `[@zhuqianzhi_dao_2000, 6.25–26]` | Zhu Qianzhi 2000, 6.25–26           |
+| `[@a; @b]`                        | Smith 1999; Lee et al. 2004         |
+| `[see @a, pp. 3-5]`               | see Smith 1999, pp. 3–5             |
+| `[-@a]`                           | 1999                                |
+| `@a` or `@a [p. 33]`              | Smith (1999) or Smith (1999, p. 33) |
+| `@{key with 'odd' chars}`         | braced keys work in every form      |
+
+- Hover a citation to see the full reference. A key with no entry in the bibliography stays as typed, with a dotted underline.
+- Set the bibliography (BibTeX `.bib` or CSL JSON `.json`) under **Settings → Side-Notes → Citations**, as a path in your vault. A note can override it with a `bibliography` property (text or list; vault-relative or relative to the note).
+- Citations are only rendered inside sidenotes and margin notes, not in the main text. Without a bibliography file nothing changes.
+- Formatting is deliberately simple (author–year plus locator). Pandoc still does the real formatting on export.
 
 ## Maybe Features
 

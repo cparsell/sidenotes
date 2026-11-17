@@ -1,6 +1,12 @@
 import type { App } from 'obsidian'
 import type { SidenoteSettings } from './settings'
 import { renderEmbed } from './embeds'
+import {
+	BARE_CITATION_SOURCE,
+	BRACKET_CITATION_SOURCE,
+	renderBareCitation,
+	renderBracketCitation
+} from './citations'
 
 // ==================== Number Formatting ====================
 
@@ -90,19 +96,28 @@ export function containsEmbed(text: string): boolean {
 	return /!\[\[[^\]]+\]\]|!\[[^\]]*\]\([^)\s]+\)/.test(text)
 }
 
+/** Inline formats shared by every sidenote render; groups 1-13. */
+const INLINE_FORMATS_SOURCE =
+	String.raw`\*\*(.+?)\*\*|__(.+?)__|\*([^*]+?)\*|!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]|!\[([^\]]*)\]\(([^)\s]+)\)|(?<![*_])_([^_]+?)_(?![*_])|\x60([^\x60]+)\x60|\[([^\]]+)\]\(([^)\s]+)\)|\[\[([^\]|]+)(?:\|([^\]]+))?\]\]`
+
 /**
  * Render markdown-formatted text to a DocumentFragment.
  * Supports: **bold**, *italic*, _italic_, `code`, [links](url), and [[wiki links]]
  * @param text The markdown-formatted text to render
  * @param app Obsidian's App instance, used to resolve internal-link clicks
  * @param sourcePath Path of the note containing the text, used to resolve embeds
- *   (defaults to the active file)
+ *   and the note's `bibliography` property (defaults to the active file)
+ * @param opts.citations Render Pandoc citations (default true). Pass false when
+ *   the result is compared against text Obsidian rendered itself, which leaves
+ *   citations as written.
  */
 export function renderLinksToFragment(
 	text: string,
 	app: App,
-	sourcePath = app.workspace.getActiveFile()?.path ?? ''
+	sourcePath = app.workspace.getActiveFile()?.path ?? '',
+	opts: { citations?: boolean } = {}
 ): DocumentFragment {
+	const withCitations = opts.citations !== false
 	const frag = createFragment()
 
 	// Combined regex for all supported formats:
@@ -112,8 +127,15 @@ export function renderLinksToFragment(
 	// - Embeds: ![[file|size]] and ![alt](path)
 	// - Markdown links: [text](url)
 	// - Wiki links: [[target]] or [[target|display]]
-	const combinedRe =
-		/\*\*(.+?)\*\*|__(.+?)__|\*([^*]+?)\*|!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]|!\[([^\]]*)\]\(([^)\s]+)\)|(?<![*_])_([^_]+?)_(?![*_])|`([^`]+)`|\[([^\]]+)\]\(([^)\s]+)\)|\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g
+	// - Citations: [@key, 42] (group 14) and @key [loc] (groups 15-16), last so
+	//   every other form takes precedence at the same position
+	const combinedRe = new RegExp(
+		INLINE_FORMATS_SOURCE +
+			(withCitations
+				? `|${BRACKET_CITATION_SOURCE}|${BARE_CITATION_SOURCE}`
+				: ''),
+		'g'
+	)
 
 	let last = 0
 	let m: RegExpExecArray | null
@@ -204,6 +226,15 @@ export function renderLinksToFragment(
 				void app.workspace.openLinkText(target, '', false)
 			})
 			frag.appendChild(a)
+		} else if (m[14] !== undefined || m[15] !== undefined) {
+			// Pandoc citation. Falls back to the text as written when there is
+			// no bibliography, it is still loading, or the text is not one.
+			const node =
+				m[14] !== undefined
+					? renderBracketCitation(m[14], fullMatch, sourcePath)
+					: renderBareCitation(m[15] ?? '', m[16], fullMatch, sourcePath)
+			if (node) frag.appendChild(node)
+			else appendTextWithBreaks(frag, fullMatch)
 		}
 
 		last = start + fullMatch.length

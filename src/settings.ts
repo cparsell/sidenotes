@@ -84,6 +84,10 @@ export interface SidenoteSettings {
 	popupIcon: string
 	marginNoteScaleFactor: number
 	popupIconScaleFactor: number
+
+	// Citations
+	/** Vault path of .bib / CSL JSON file; empty turns citation rendering off. */
+	bibliographyPath: string
 }
 
 export const DEFAULT_SETTINGS: SidenoteSettings = {
@@ -131,17 +135,23 @@ export const DEFAULT_SETTINGS: SidenoteSettings = {
 	marginNoteDisplay: 'margin',
 	popupIcon: 'ⓘ',
 	marginNoteScaleFactor: 1,
-	popupIconScaleFactor: 1
+	popupIconScaleFactor: 1,
+
+	// Citations
+	bibliographyPath: ''
 }
 
 // ======================================================
 // ==================== Settings Tab ====================
 // ======================================================
 
+const BIBLIOGRAPHY_DESC =
+	'Path to a BibTeX (.bib) or CSL JSON (.json) file in your vault. Pandoc citations in sidenotes, such as [@key, 42], are shown as short author–year citations. A note can override this with a "bibliography" property. Leave empty to show citations as written.'
+
 /** Static "how the Markdown shorthand maps to output" reference block. */
 function renderFormattingHelp(container: HTMLElement): void {
 	container.createEl('p', {
-		text: 'Sidenotes support basic Markdown formatting:'
+		text: 'Side-notes support basic Markdown formatting:'
 	})
 
 	const list = container.createEl('ul')
@@ -178,6 +188,13 @@ function renderFormattingHelp(container: HTMLElement): void {
 		li.appendText(' or ')
 		li.createEl('code', { text: '[[Note|display]]' })
 		li.appendText(' → internal link')
+	})
+
+	item(li => {
+		li.createEl('code', { text: '[@key, 42]' })
+		li.appendText(' or ')
+		li.createEl('code', { text: '@key' })
+		li.appendText(' → short citation (needs a bibliography file)')
 	})
 
 	container.createEl('p', {
@@ -713,6 +730,20 @@ export class SidenoteSettingTab extends PluginSettingTab {
 					})
 			)
 
+		new Setting(containerEl).setName('Citations').setHeading()
+		new Setting(containerEl)
+			.setName('Bibliography file')
+			.setDesc(BIBLIOGRAPHY_DESC)
+			.addText(text =>
+				text
+					.setPlaceholder('E.g. references/library.bib')
+					.setValue(this.plugin.settings.bibliographyPath)
+					.onChange(async value => {
+						this.plugin.settings.bibliographyPath = value.trim()
+						await this.plugin.saveSettings()
+					})
+			)
+
 		// Help section
 		new Setting(containerEl).setName('Formatting help').setHeading()
 
@@ -1157,6 +1188,22 @@ export class SidenoteSettingTab extends PluginSettingTab {
 							min: 0.1,
 							max: 3,
 							step: 0.1
+						}
+					}
+				]
+			},
+			{
+				type: 'group',
+				heading: 'Citations',
+				items: [
+					{
+						name: 'Bibliography file',
+						desc: BIBLIOGRAPHY_DESC,
+						control: {
+							type: 'text',
+							key: 'bibliographyPath',
+							defaultValue: s.bibliographyPath,
+							placeholder: 'E.g. references/library.bib'
 						}
 					}
 				]
