@@ -97,8 +97,7 @@ export function containsEmbed(text: string): boolean {
 }
 
 /** Inline formats shared by every sidenote render; groups 1-13. */
-const INLINE_FORMATS_SOURCE =
-	String.raw`\*\*(.+?)\*\*|__(.+?)__|\*([^*]+?)\*|!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]|!\[([^\]]*)\]\(([^)\s]+)\)|(?<![*_])_([^_]+?)_(?![*_])|\x60([^\x60]+)\x60|\[([^\]]+)\]\(([^)\s]+)\)|\[\[([^\]|]+)(?:\|([^\]]+))?\]\]`
+const INLINE_FORMATS_SOURCE = String.raw`\*\*(.+?)\*\*|__(.+?)__|\*([^*]+?)\*|!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]|!\[([^\]]*)\]\(([^)\s]+)\)|(?<![*_])_([^_]+?)_(?![*_])|\x60([^\x60]+)\x60|\[([^\]]+)\]\(([^)\s]+)\)|\[\[([^\]|]+)(?:\|([^\]]+))?\]\]`
 
 /**
  * Render markdown-formatted text to a DocumentFragment.
@@ -140,13 +139,25 @@ export function renderLinksToFragment(
 	let last = 0
 	let m: RegExpExecArray | null
 
+	// An embed is a block in the margin, so it already starts and ends on its
+	// own line. A line break typed next to one would add an empty line (and
+	// change the margin's height), so those are dropped.
+	let afterEmbed = false
+	const appendText = (segment: string, beforeEmbed: boolean) => {
+		let seg = segment
+		if (afterEmbed) seg = seg.replace(/^[ \t]*\n/, '')
+		if (beforeEmbed) seg = seg.replace(/\n[ \t]*$/, '')
+		if (seg) appendTextWithBreaks(frag, seg)
+	}
+
 	while ((m = combinedRe.exec(text)) !== null) {
 		const start = m.index
 		const fullMatch = m[0]
+		const isEmbed = m[4] !== undefined || m[7] !== undefined
 
 		// Add text before the match
 		if (start > last) {
-			appendTextWithBreaks(frag, text.slice(last, start))
+			appendText(text.slice(last, start), isEmbed)
 		}
 
 		if (m[1] !== undefined) {
@@ -238,11 +249,12 @@ export function renderLinksToFragment(
 		}
 
 		last = start + fullMatch.length
+		afterEmbed = isEmbed
 	}
 
 	// Add remaining text
 	if (last < text.length) {
-		appendTextWithBreaks(frag, text.slice(last))
+		appendText(text.slice(last), false)
 	}
 
 	return frag
@@ -346,7 +358,7 @@ export function parseFootnoteDefinitions(
 		if (defMatch) {
 			// Save previous footnote if exists
 			if (currentId !== null) {
-				definitions.set(currentId, currentText.join(' ').trim())
+				definitions.set(currentId, currentText.join('\n').trim())
 			}
 
 			currentId = defMatch[1] || null
@@ -358,12 +370,12 @@ export function parseFootnoteDefinitions(
 			} else if (line.trim() === '') {
 				// Empty line might end the footnote or be part of it
 				// We'll be conservative and end it
-				definitions.set(currentId, currentText.join(' ').trim())
+				definitions.set(currentId, currentText.join('\n').trim())
 				currentId = null
 				currentText = []
 			} else {
 				// Non-indented, non-empty line ends the footnote
-				definitions.set(currentId, currentText.join(' ').trim())
+				definitions.set(currentId, currentText.join('\n').trim())
 				currentId = null
 				currentText = []
 			}
@@ -372,7 +384,7 @@ export function parseFootnoteDefinitions(
 
 	// Don't forget the last footnote
 	if (currentId !== null) {
-		definitions.set(currentId, currentText.join(' ').trim())
+		definitions.set(currentId, currentText.join('\n').trim())
 	}
 
 	return definitions

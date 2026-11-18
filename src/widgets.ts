@@ -22,6 +22,7 @@ import {
 	renderLinksToFragment
 } from './content'
 import type { SidenoteWidgetHost } from './widget-host'
+import { findFootnoteDefinitionEdit } from './source-writeback'
 import {
 	type InlineEditorCloseResult,
 	type InlineEditorHandle,
@@ -210,23 +211,18 @@ class FootnoteSidenoteWidget extends WidgetType {
 		const editor = view.editor
 		const content = editor.getValue()
 
-		const escapedId = this.footnoteId.replace(
-			/[.*+?^${}()|[\]\\]/g,
-			'\\$&'
+		const edit = findFootnoteDefinitionEdit(
+			content,
+			this.footnoteId,
+			newText
 		)
-		const footnoteDefRegex = new RegExp(
-			`^(\\[\\^${escapedId}\\]:\\s*)(.+(?:\\n(?:[ \\t]+.+)*)?)$`,
-			'gm'
+		if (!edit) return
+
+		editor.replaceRange(
+			edit.replacement,
+			editor.offsetToPos(edit.from),
+			editor.offsetToPos(edit.to)
 		)
-
-		const match = footnoteDefRegex.exec(content)
-		if (!match) return
-
-		const prefix = match[1] ?? ''
-		const from = editor.offsetToPos(match.index + prefix.length)
-		const to = editor.offsetToPos(match.index + match[0].length)
-
-		editor.replaceRange(newText, from, to)
 	}
 
 	/**

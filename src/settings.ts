@@ -201,9 +201,9 @@ function renderFormattingHelp(container: HTMLElement): void {
 		text: 'Use the command palette to insert sidenotes quickly.'
 	})
 
-	container.createEl('p', {
-		text: "Pin an individual sidenote to the opposite margin from the 'Sidenote position' setting:"
-	})
+	// container.createEl('p', {
+	// 	text: "Pin an individual sidenote to the opposite margin from the 'Sidenote position' setting:"
+	// })
 
 	const sideList = container.createEl('ul')
 	const sideItem = (build: (li: HTMLLIElement) => void) => {

@@ -57,6 +57,16 @@ export function findHtmlSpanEdit(
 }
 
 /**
+ * A footnote only continues onto following lines that are indented, so a line
+ * break typed into the editor has to be written with an indent. Unindented, the
+ * second line is left outside the footnote: still in the file, but gone from
+ * the margin. Blank lines are dropped too, since one would end the footnote.
+ */
+export function indentContinuationLines(text: string): string {
+	return text.replace(/\r?\n[ \t]*(?:\r?\n[ \t]*)*/g, '\n    ')
+}
+
+/**
  * Locate a footnote definition's text by ID.
  *
  * The pattern spans continuation lines — an indented line following the
@@ -85,6 +95,6 @@ export function findFootnoteDefinitionEdit(
 		// Keep the `[^id]: ` prefix; only the text after it is replaced.
 		from: match.index + prefix.length,
 		to: match.index + match[0].length,
-		replacement: newText
+		replacement: indentContinuationLines(newText)
 	}
 }

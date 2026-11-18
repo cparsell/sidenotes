@@ -679,6 +679,19 @@
 	position: relative;
 }
 
+/* A sidenote margin can hold an <img>, which puts an image inside the
+   paragraph's DOM even though it is positioned out in the margin. Themes that
+   lay out "paragraphs with images" as a flex/grid row (image galleries) then
+   match this paragraph too, and its text splits into columns around the
+   sidenote. Keep a paragraph that carries a sidenote as ordinary inline flow. */
+.markdown-reading-view p:has(.sidenote-number) {
+	display: block !important;
+}
+
+.markdown-reading-view .sidenote-number {
+	display: inline !important;
+}
+
 /* Callouts clip their content — Obsidian sets overflow:hidden on .callout so
    the coloured background respects the rounded corners. A sidenote margin is
    absolutely positioned far outside its anchor's box, so anchored inside a
