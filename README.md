@@ -59,7 +59,7 @@ Works with both HTML sidenotes and footnotes (experimental). Notes are laid out 
 
 ### Citations
 
-Pandoc citations inside a sidenote are shown as short, readable author–year citations. Display only: the note's text is never changed, and click-to-edit shows the raw keys.
+Pandoc citations inside a sidenote are shown as short, readable author–year citations.
 
 | You write                         | Shown as                            |
 | --------------------------------- | ----------------------------------- |
@@ -70,8 +70,8 @@ Pandoc citations inside a sidenote are shown as short, readable author–year ci
 | `@a` or `@a [p. 33]`              | Smith (1999) or Smith (1999, p. 33) |
 | `@{key with 'odd' chars}`         | braced keys work in every form      |
 
+- **Setup:** Provide the bibliography (BibTeX `.bib` or CSL JSON `.json`) under **Settings → Side-Notes → Citations**, as a path in your vault. A note can override it with a `bibliography` property (text or list; vault-relative or relative to the note).
 - Hover a citation to see the full reference. A key with no entry in the bibliography stays as typed, with a dotted underline.
-- Set the bibliography (BibTeX `.bib` or CSL JSON `.json`) under **Settings → Side-Notes → Citations**, as a path in your vault. A note can override it with a `bibliography` property (text or list; vault-relative or relative to the note).
 - Citations are only rendered inside sidenotes and margin notes, not in the main text. Without a bibliography file nothing changes.
 - Formatting is deliberately simple (author–year plus locator). Pandoc still does the real formatting on export.
 
