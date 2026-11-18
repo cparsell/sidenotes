@@ -1,12 +1,11 @@
 import type { App } from 'obsidian'
 import type { SidenoteSettings } from './settings'
 import { renderEmbed } from './embeds'
+import { renderBareCitation, renderBracketCitation } from './citations'
 import {
 	BARE_CITATION_SOURCE,
-	BRACKET_CITATION_SOURCE,
-	renderBareCitation,
-	renderBracketCitation
-} from './citations'
+	BRACKET_CITATION_SOURCE
+} from './citations/parse'
 
 // ==================== Number Formatting ====================
 

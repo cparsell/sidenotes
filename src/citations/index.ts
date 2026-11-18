@@ -15,12 +15,12 @@ import type { SidenoteSettings } from '../settings'
 import { type BibEntry, parseBibliography } from './bibliography'
 import { formatFullReference, formatShortCitation } from './format'
 import {
+	BARE_CITATION_SOURCE,
+	BRACKET_CITATION_SOURCE,
 	type CitationItem,
 	parseBareCitation,
 	parseBracketCitation
 } from './parse'
-
-export { BARE_CITATION_SOURCE, BRACKET_CITATION_SOURCE } from './parse'
 
 export interface CitationOwner {
 	readonly app: App
@@ -216,6 +216,22 @@ export async function checkBibliographyChanges(): Promise<void> {
 }
 
 // ==================== Rendering ====================
+
+/**
+ * True when `text` holds citation syntax AND citations are switched on for
+ * this note. Lets a caller that would otherwise reuse Obsidian's own rendering
+ * (which leaves `[@key]` as typed) choose to render from source instead.
+ */
+export function containsCitation(
+	text: string,
+	sourcePath: string
+): boolean {
+	if (!text.includes('@')) return false
+	if (lookup(sourcePath).state === 'off') return false
+	return new RegExp(
+		`${BRACKET_CITATION_SOURCE}|${BARE_CITATION_SOURCE}`
+	).test(text)
+}
 
 function citationEl(
 	entry: BibEntry | undefined,

@@ -33,6 +33,7 @@ import {
 } from './layout-math'
 import { updateCollisionsIn } from './collision-runner'
 import { SIDENOTE_SPAN_REGEX } from './patterns'
+import { containsCitation } from './citations'
 
 /** A sidenote span or footnote reference in the reading view, ready to wrap. */
 export interface ReadingItem {
@@ -488,10 +489,17 @@ export function buildReadingMargins(
 		}
 
 		if (item.type === 'sidenote') {
-			if (item.rawText && containsEmbed(item.rawText)) {
+			const activePath = ctx.app.workspace.getActiveFile()?.path ?? ''
+			if (
+				item.rawText &&
+				(containsEmbed(item.rawText) ||
+					containsCitation(item.rawText, activePath))
+			) {
 				// Obsidian fills embeds in asynchronously, so a clone can
 				// capture an empty placeholder that never updates. Render the
 				// source text instead, which resolves the embed synchronously.
+				// The same goes for Pandoc citations, which Obsidian leaves as
+				// typed.
 				margin.appendChild(
 					renderLinksToFragment(normalizeText(item.rawText), ctx.app)
 				)
