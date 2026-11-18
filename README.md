@@ -63,12 +63,13 @@ Pandoc citations inside a sidenote are shown as short, readable author–year ci
 
 | You write                         | Shown as                            |
 | --------------------------------- | ----------------------------------- |
-| `[@zhuqianzhi_dao_2000, 6.25–26]` | Zhu Qianzhi 2000, 6.25–26           |
-| `[@a; @b]`                        | Smith 1999; Lee et al. 2004         |
-| `[see @a, pp. 3-5]`               | see Smith 1999, pp. 3–5             |
-| `[-@a]`                           | 1999                                |
-| `@a` or `@a [p. 33]`              | Smith (1999) or Smith (1999, p. 33) |
+| `[@zhuqianzhi_dao_2000, 6.25–26]` | `Zhu Qianzhi 2000, 6.25–26`         |
+| `[@a; @b]`                        | `Smith 1999`; `Lee et al. 2004`         |
+| `[see @a, pp. 3-5]`               | `see Smith 1999, pp. 3–5`             |
+| `[-@a]`                           | `1999`                                |
+| `@smith_1998` or `@smith_1998 [p. 33]`  | `Smith (1998)` or `Smith (1998, p. 33)` |
 | `@{key with 'odd' chars}`         | braced keys work in every form      |
+| `Blah blah [see @smith_jones_1999, pp. 33-35; @zhuqianzhi_dao_2000, chap. 1]` | Blah blah `see Smith and Jones 1999, pp.33-35`; `Zhu Qianzhi 2000, chap. 1` |
 
 - **Setup:** Provide the bibliography (BibTeX `.bib` or CSL JSON `.json`) under **Settings → Side-Notes → Citations**, as a path in your vault. A note can override it with a `bibliography` property (text or list; vault-relative or relative to the note).
 - Hover a citation to see the full reference. A key with no entry in the bibliography stays as typed, with a dotted underline.
