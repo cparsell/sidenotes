@@ -952,6 +952,7 @@ export default class SidenotePlugin
 
 	private scheduleReadingModeLayout() {
 		window.requestAnimationFrame(() => {
+			this.applyMetricsToOtherLeaves()
 			const view = this.getMarkdownView()
 			if (!view) return
 
@@ -1173,14 +1174,20 @@ export default class SidenotePlugin
 
 		// Handle resize events with a debounce to prevent thrashing
 		let resizeTimeout: number | null = null
-		let lastObservedWidth = 0
+		// Per target: several panes can be observed at once (split view), and
+		// a single shared value would make them mask each other's resizes.
+		const lastObservedWidths = new WeakMap<Element, number>()
 
 		this.resizeObserver = new ResizeObserver(entries => {
-			const entry = entries[0]
-			const currentWidth = entry?.contentRect?.width ?? 0
-
-			if (Math.abs(currentWidth - lastObservedWidth) < 1) return
-			lastObservedWidth = currentWidth
+			let changed = false
+			for (const entry of entries) {
+				const currentWidth = entry.contentRect.width
+				const last = lastObservedWidths.get(entry.target) ?? 0
+				if (Math.abs(currentWidth - last) < 1) continue
+				lastObservedWidths.set(entry.target, currentWidth)
+				changed = true
+			}
+			if (!changed) return
 
 			if (resizeTimeout !== null) {
 				window.clearTimeout(resizeTimeout)
@@ -1213,6 +1220,14 @@ export default class SidenotePlugin
 		} else {
 			// Reading-only leaf: don't keep pointing at another view's editor.
 			this.cmRoot = null
+		}
+
+		// Other visible panes (split view) need to react to their own width
+		// changes too.
+		for (const other of this.otherLeafViews(view)) {
+			for (const el of this.rootsOf(other)) {
+				this.resizeObserver.observe(el)
+			}
 		}
 
 		if (readingRoot) {
@@ -1383,6 +1398,75 @@ export default class SidenotePlugin
 		return pos * 10000 + Math.floor(offsetInLine)
 	}
 
+	// ==================== Split view ====================
+
+	/** Markdown views in every pane other than the one the plugin is bound to. */
+	private otherLeafViews(current: MarkdownView | null): MarkdownView[] {
+		const views: MarkdownView[] = []
+		for (const leaf of this.app.workspace.getLeavesOfType('markdown')) {
+			if (leaf.view instanceof MarkdownView && leaf.view !== current) {
+				views.push(leaf.view)
+			}
+		}
+		return views
+	}
+
+	private rootsOf(view: MarkdownView): HTMLElement[] {
+		return Array.from(
+			view.containerEl.querySelectorAll<HTMLElement>(
+				'.markdown-source-view.mod-cm6, .markdown-reading-view'
+			)
+		)
+	}
+
+	/**
+	 * Width-derived layout state (mode, scale, page offset) for panes other
+	 * than the active one. Each pane has its own width, so with a note open on
+	 * each side the settings must be resolved against each pane's own width
+	 * rather than only the active one's. Positioning and collisions are still
+	 * handled for the active pane alone.
+	 */
+	private applyMetricsToOtherLeaves() {
+		const current = this.getMarkdownView()
+		for (const view of this.otherLeafViews(current)) {
+			const text =
+				view.getMode() === 'preview'
+					? ((view as { data?: string }).data ??
+						view.editor?.getValue() ??
+						'')
+					: (view.editor?.getValue() ??
+						(view as { data?: string }).data ??
+						'')
+			let hasSidenotes: boolean
+			if (this.settings.sidenoteFormat === 'html') {
+				hasSidenotes = SIDENOTE_PATTERN().test(text)
+				SIDENOTE_PATTERN().lastIndex = 0
+			} else {
+				hasSidenotes = /\[\^[^\]]+\](?!:)/.test(text)
+			}
+
+			for (const root of this.rootsOf(view)) {
+				if (!root.isConnected) continue
+				const width = root.getBoundingClientRect().width
+				if (width === 0) continue
+				applyRootMetrics(this.settings, root, width)
+				const isSource =
+					root.classList.contains('mod-cm6') &&
+					!root.classList.contains('is-live-preview')
+				const editingHasNotes =
+					this.settings.sidenoteFormat === 'html' ||
+					this.settings.sidenoteFormat === 'footnote-edit'
+				root.dataset.hasSidenotes = (
+					root.classList.contains('mod-cm6')
+						? hasSidenotes && editingHasNotes && !isSource
+						: hasSidenotes
+				)
+					? 'true'
+					: 'false'
+			}
+		}
+	}
+
 	// ==================== Registry Management ====================
 
 	private resetRegistry() {
@@ -1392,6 +1476,8 @@ export default class SidenotePlugin
 	// ==================== Main Layout ====================
 
 	private layout() {
+		this.applyMetricsToOtherLeaves()
+
 		const cmRoot = this.cmRoot
 		if (!cmRoot) {
 			return
