@@ -177,7 +177,7 @@ export function updateSidenotePositioning(
 	const editorWidth = rootRect.width
 	const growthFactor = s.sidenoteGapDrift // 0 = no growth, 1 = maximum growth
 	const extraSpace = Math.max(0, editorWidth - s.hideBelow)
-	const gapGrowth = extraSpace * growthFactor * 0.25 // subtle growth
+	const gapGrowth = s.fixedSpacing ? 0 : extraSpace * growthFactor * 0.25 // subtle growth
 
 	// Drift widens gap1 (the text-side gap) as the editor grows — it never
 	// touches gap2 (see below): sidenoteGap2 is a fixed distance from the
@@ -672,7 +672,10 @@ export function calculateMode(
 	}
 	if (width < s.hideBelow) {
 		return 'hidden'
-	} else if (width < s.compactBelow) {
+	}
+	// Fixed spacing: one look at every width, so no compact/full variants.
+	if (s.fixedSpacing) return 'normal'
+	if (width < s.compactBelow) {
 		return 'compact'
 	} else if (width < s.fullAbove) {
 		return 'normal'
@@ -686,7 +689,7 @@ export function calculateScaleFactor(
 	width: number
 ): number {
 	const s = settings
-	if (width < s.hideBelow) {
+	if (width < s.hideBelow || s.fixedSpacing) {
 		return 0
 	}
 	return Math.min(1, (width - s.hideBelow) / (s.fullAbove - s.hideBelow))

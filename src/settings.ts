@@ -30,6 +30,12 @@ export interface SidenoteSettings {
 	sidenoteGap2: number
 	sidenoteGapDrift: number
 	/**
+	 * Keep spacing identical at every pane width: no width-driven growth of
+	 * the sidenote, no gap drift, and no compact/full mode switching (hiding
+	 * below `hideBelow` still applies).
+	 */
+	fixedSpacing: boolean
+	/**
 	 * Which of `sidenoteGap` / `sidenoteGap2` is a fixed position and which
 	 * is just a minimum the sidenote's WIDTH gives way to satisfy — see
 	 * layout-math.ts's `updateSidenotePositioning` doc comment for the full
@@ -110,6 +116,7 @@ export const DEFAULT_SETTINGS: SidenoteSettings = {
 	sidenoteGap: 2,
 	sidenoteGap2: 2,
 	sidenoteGapDrift: 0.1,
+	fixedSpacing: false,
 	pageOffsetFactor: 0.4,
 
 	// Breakpoints
@@ -386,6 +393,20 @@ export class SidenoteSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.sidenoteAnchor)
 					.onChange(async (value: 'text' | 'edge') => {
 						this.plugin.settings.sidenoteAnchor = value
+						await this.plugin.saveSettings()
+					})
+			)
+
+		new Setting(containerEl)
+			.setName('Fixed spacing')
+			.setDesc(
+				'Use the same sidenote width and gaps in every pane width, so single-pane and split-view layouts look alike. Turns off width scaling, gap drift, and compact/full modes. Sidenotes still hide below the hide breakpoint. Uses the minimum sidenote width.'
+			)
+			.addToggle(toggle =>
+				toggle
+					.setValue(this.plugin.settings.fixedSpacing)
+					.onChange(async value => {
+						this.plugin.settings.fixedSpacing = value
 						await this.plugin.saveSettings()
 					})
 			)
@@ -897,6 +918,15 @@ export class SidenoteSettingTab extends PluginSettingTab {
 								text: 'Anchor to text (traditional)',
 								edge: 'Anchor to editor edge'
 							}
+						}
+					},
+					{
+						name: 'Fixed spacing',
+						desc: 'Use the same sidenote width and gaps in every pane width, so single-pane and split-view layouts look alike. Turns off width scaling, gap drift, and compact/full modes. Sidenotes still hide below the hide breakpoint. Uses the minimum sidenote width.',
+						control: {
+							type: 'toggle',
+							key: 'fixedSpacing',
+							defaultValue: s.fixedSpacing
 						}
 					},
 					{
