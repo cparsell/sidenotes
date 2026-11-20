@@ -487,11 +487,11 @@
 }
 
 .markdown-reading-view[data-sidenote-position='left'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='compact']
-	.markdown-preview-sizer,
+	.markdown-preview-sizer:not(.markdown-embed *),
 .markdown-reading-view[data-sidenote-position='left'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='normal']
-	.markdown-preview-sizer,
+	.markdown-preview-sizer:not(.markdown-embed *),
 .markdown-reading-view[data-sidenote-position='left'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='full']
-	.markdown-preview-sizer {
+	.markdown-preview-sizer:not(.markdown-embed *) {
 	padding-left: var(--page-offset) !important;
 	padding-right: 0 !important;
 }
@@ -508,11 +508,11 @@
 }
 
 .markdown-reading-view[data-sidenote-position='right'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='compact']
-	.markdown-preview-sizer,
+	.markdown-preview-sizer:not(.markdown-embed *),
 .markdown-reading-view[data-sidenote-position='right'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='normal']
-	.markdown-preview-sizer,
+	.markdown-preview-sizer:not(.markdown-embed *),
 .markdown-reading-view[data-sidenote-position='right'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='full']
-	.markdown-preview-sizer {
+	.markdown-preview-sizer:not(.markdown-embed *) {
 	padding-right: var(--page-offset) !important;
 	padding-left: 0 !important;
 }
@@ -533,11 +533,11 @@
 }
 
 .markdown-reading-view[data-sidenote-position='left'][data-sidenote-has-opposite='true'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='compact']
-	.markdown-preview-sizer,
+	.markdown-preview-sizer:not(.markdown-embed *),
 .markdown-reading-view[data-sidenote-position='left'][data-sidenote-has-opposite='true'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='normal']
-	.markdown-preview-sizer,
+	.markdown-preview-sizer:not(.markdown-embed *),
 .markdown-reading-view[data-sidenote-position='left'][data-sidenote-has-opposite='true'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='full']
-	.markdown-preview-sizer {
+	.markdown-preview-sizer:not(.markdown-embed *) {
 	padding-right: var(--page-offset) !important;
 }
 
@@ -551,11 +551,11 @@
 }
 
 .markdown-reading-view[data-sidenote-position='right'][data-sidenote-has-opposite='true'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='compact']
-	.markdown-preview-sizer,
+	.markdown-preview-sizer:not(.markdown-embed *),
 .markdown-reading-view[data-sidenote-position='right'][data-sidenote-has-opposite='true'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='normal']
-	.markdown-preview-sizer,
+	.markdown-preview-sizer:not(.markdown-embed *),
 .markdown-reading-view[data-sidenote-position='right'][data-sidenote-has-opposite='true'][data-has-sidenotes='true'][data-sidenote-page-offset='true'][data-sidenote-mode='full']
-	.markdown-preview-sizer {
+	.markdown-preview-sizer:not(.markdown-embed *) {
 	padding-left: var(--page-offset) !important;
 }
 
