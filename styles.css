@@ -1595,3 +1595,40 @@ span.sidenote-number.margin-note {
 	cursor: pointer;
 	pointer-events: none;
 }
+
+/* LaTeX in sidenotes: display math is wider than a margin, so both the
+   wrapper and MathJax's own container are held to the margin's width and
+   scroll sideways instead of overflowing into the text. Obsidian's editing
+   view already makes mjx-container the scroller, so it needs the same
+   constraints. !important beats Obsidian's `overflow: visible` resets. */
+.sidenote-margin .math-block,
+.sidenote-print .math-block {
+	display: block;
+	width: 100%;
+	max-width: 100%;
+	min-width: 0;
+	box-sizing: border-box;
+	margin: 0.4em 0;
+	overflow-x: auto !important;
+	overflow-y: hidden !important;
+}
+
+.sidenote-margin mjx-container[display],
+.sidenote-print mjx-container[display] {
+	display: block;
+	max-width: 100%;
+	min-width: 0 !important;
+	margin: 0 !important;
+	padding: 0.2em 0 !important;
+	overflow-x: auto !important;
+	overflow-y: hidden !important;
+	/* "safe" keeps the start of an overflowing equation reachable instead of
+	   clipping it off the left edge */
+	text-align: left;
+}
+
+.sidenote-margin .math,
+.sidenote-print .math {
+	font-size: inherit;
+	max-width: 100%;
+}

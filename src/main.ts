@@ -29,6 +29,7 @@ import { registerSidenoteCommands } from './commands'
 import { setupMarginNotePopup } from './margin-note-popup'
 import { NOTE_EMBED_CLASS, setEmbedOwner } from './embeds'
 import { checkBibliographyChanges, setCitationOwner } from './citations'
+import { ensureMathLoaded, setMathEnabled } from './math'
 import {
 	type SourceEdit,
 	applyEdit,
@@ -41,10 +42,7 @@ import {
 	removeReadingModeMarkup,
 	runPopupCleanup
 } from './teardown'
-import {
-	applyRootMetrics,
-	clearRootMetrics
-} from './layout-math'
+import { applyRootMetrics, clearRootMetrics } from './layout-math'
 import {
 	getSidenoteSideOverride,
 	normalizeText,
@@ -174,6 +172,7 @@ export default class SidenotePlugin
 		applyCssVariables(this.settings)
 		setEmbedOwner(this)
 		setCitationOwner(this)
+		this.applyMathSetting()
 
 		// Register the CM6 extension for footnote sidenotes in editing mode
 		this.registerEditorExtension([createFootnoteSidenotePlugin(this)])
@@ -482,11 +481,18 @@ export default class SidenotePlugin
 
 			// Apply new CSS variables
 			applyCssVariables(this.settings)
+			this.applyMathSetting()
 
 			this.rerenderSidenotes()
 		} catch (error) {
 			console.error('Sidenote plugin: Failed to save settings', error)
 		}
+	}
+
+	/** Sync the math renderer with the setting, loading MathJax on first use. */
+	private applyMathSetting() {
+		setMathEnabled(this.settings.renderMath)
+		ensureMathLoaded(() => this.rerenderSidenotes())
 	}
 
 	/**

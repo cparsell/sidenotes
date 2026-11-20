@@ -17,6 +17,7 @@ export interface SidenoteSettings {
 	// Display
 	sidenotePosition: 'left' | 'right'
 	showSidenoteNumbers: boolean
+	renderMath: boolean
 	numberStyle: 'arabic' | 'roman' | 'letters'
 	numberBadgeStyle: 'plain' | 'neumorphic' | 'pill'
 	numberColor: string
@@ -105,6 +106,7 @@ export const DEFAULT_SETTINGS: SidenoteSettings = {
 	// Display
 	sidenotePosition: 'left',
 	showSidenoteNumbers: true,
+	renderMath: true,
 	numberStyle: 'arabic',
 	numberBadgeStyle: 'plain',
 	numberColor: '',
@@ -331,6 +333,20 @@ export class SidenoteSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.showSidenoteNumbers)
 					.onChange(async value => {
 						this.plugin.settings.showSidenoteNumbers = value
+						await this.plugin.saveSettings()
+					})
+			)
+
+		new Setting(containerEl)
+			.setName('Render LaTeX')
+			.setDesc(
+				"Render $inline$ and $$display$$ math in sidenotes using Obsidian's built-in math renderer"
+			)
+			.addToggle(toggle =>
+				toggle
+					.setValue(this.plugin.settings.renderMath)
+					.onChange(async value => {
+						this.plugin.settings.renderMath = value
 						await this.plugin.saveSettings()
 					})
 			)
@@ -861,6 +877,15 @@ export class SidenoteSettingTab extends PluginSettingTab {
 							type: 'toggle',
 							key: 'showSidenoteNumbers',
 							defaultValue: s.showSidenoteNumbers
+						}
+					},
+					{
+						name: 'Render LaTeX',
+						desc: "Render $inline$ and $$display$$ math in sidenotes using Obsidian's built-in math renderer",
+						control: {
+							type: 'toggle',
+							key: 'renderMath',
+							defaultValue: s.renderMath
 						}
 					},
 					{

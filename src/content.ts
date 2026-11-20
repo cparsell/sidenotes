@@ -2,6 +2,7 @@ import type { App } from 'obsidian'
 import type { SidenoteSettings } from './settings'
 import { renderEmbed } from './embeds'
 import { renderBareCitation, renderBracketCitation } from './citations'
+import { mathSource, renderMathNode } from './math'
 import {
 	BARE_CITATION_SOURCE,
 	BRACKET_CITATION_SOURCE
@@ -125,10 +126,13 @@ export function renderLinksToFragment(
 	// - Embeds: ![[file|size]] and ![alt](path)
 	// - Markdown links: [text](url)
 	// - Wiki links: [[target]] or [[target|display]]
-	// - Citations: [@key, 42] (group 14) and @key [loc] (groups 15-16), last so
+	// - Math: $$display$$ (group 14) and $inline$ (group 15)
+	// - Citations: [@key, 42] (group 16) and @key [loc] (groups 17-18), last so
 	//   every other form takes precedence at the same position
 	const combinedRe = new RegExp(
+		// Math is groups 14 (display) and 15 (inline), citations 16-18
 		INLINE_FORMATS_SOURCE +
+			`|${mathSource()}` +
 			(withCitations
 				? `|${BRACKET_CITATION_SOURCE}|${BARE_CITATION_SOURCE}`
 				: ''),
@@ -152,7 +156,8 @@ export function renderLinksToFragment(
 	while ((m = combinedRe.exec(text)) !== null) {
 		const start = m.index
 		const fullMatch = m[0]
-		const isEmbed = m[4] !== undefined || m[7] !== undefined
+		const isEmbed =
+			m[4] !== undefined || m[7] !== undefined || m[14] !== undefined
 
 		// Add text before the match
 		if (start > last) {
@@ -237,12 +242,20 @@ export function renderLinksToFragment(
 			})
 			frag.appendChild(a)
 		} else if (m[14] !== undefined || m[15] !== undefined) {
+			// LaTeX. Falls back to the text as written until MathJax is ready.
+			const node = renderMathNode(
+				(m[14] ?? m[15]) as string,
+				m[14] !== undefined
+			)
+			if (node) frag.appendChild(node)
+			else appendTextWithBreaks(frag, fullMatch)
+		} else if (m[16] !== undefined || m[17] !== undefined) {
 			// Pandoc citation. Falls back to the text as written when there is
 			// no bibliography, it is still loading, or the text is not one.
 			const node =
-				m[14] !== undefined
-					? renderBracketCitation(m[14], fullMatch, sourcePath)
-					: renderBareCitation(m[15] ?? '', m[16], fullMatch, sourcePath)
+				m[16] !== undefined
+					? renderBracketCitation(m[16], fullMatch, sourcePath)
+					: renderBareCitation(m[17] ?? '', m[18], fullMatch, sourcePath)
 			if (node) frag.appendChild(node)
 			else appendTextWithBreaks(frag, fullMatch)
 		}
