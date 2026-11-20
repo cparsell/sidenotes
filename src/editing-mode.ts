@@ -79,14 +79,18 @@ export interface EditingModeContext extends TeardownHooks {
  */
 export function positionEditingSidenotes(
 	ctx: EditingModeContext,
-	cmRoot: HTMLElement
+	cmRoot: HTMLElement,
+	sides: Record<SidenoteSide, boolean> = ctx.documentSidenoteSides
 ) {
+	// `sides` is captured now, not read from `ctx` inside the frames below:
+	// ctx's document state belongs to whichever pane was being laid out when
+	// this was called, and may have moved on by the time the frames run.
 	window.requestAnimationFrame(() => {
 		window.requestAnimationFrame(() => {
 			if (!cmRoot.isConnected) return
 			updateSidenotePositioning(
 				ctx.settings,
-				ctx.documentSidenoteSides,
+				sides,
 				cmRoot,
 				false
 			)

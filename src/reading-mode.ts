@@ -97,7 +97,11 @@ export interface ReadingModeContext {
 export function positionReadingSidenotes(
 	ctx: ReadingModeContext,
 	readingRoot: HTMLElement,
-	opts: { recomputeLineOffsets: boolean }
+	opts: {
+		recomputeLineOffsets: boolean
+		/** Defaults to `ctx.documentSidenoteSides`; pass it to pin the pane's own. */
+		sides?: Record<SidenoteSide, boolean>
+	}
 ) {
 	if (!readingRoot.isConnected) return
 
@@ -120,7 +124,7 @@ export function positionReadingSidenotes(
 
 	updateSidenotePositioning(
 		ctx.settings,
-		ctx.documentSidenoteSides,
+		opts.sides ?? ctx.documentSidenoteSides,
 		readingRoot,
 		true
 	)

@@ -43,7 +43,6 @@ import {
 } from './teardown'
 import {
 	applyRootMetrics,
-	calculateMode,
 	clearRootMetrics
 } from './layout-math'
 import {
@@ -83,10 +82,15 @@ export default class SidenotePlugin
 
 	private cleanups: CleanupFn[] = []
 	private cmRoot: HTMLElement | null = null
+	/** The pane `withLeaf` is currently laying out; null otherwise. */
+	private viewOverride: MarkdownView | null = null
 
 	/** Owns every rAF handle, timer and margin observer. */
 	private readonly scheduler = new LayoutScheduler({
-		layout: () => this.layout(),
+		layout: () => {
+			this.layout()
+			this.layoutOtherLeaves()
+		},
 		readingModeLayout: () => this.scheduleReadingModeLayout(),
 		collisions: () =>
 			updateAllCollisions(this.settings, {
@@ -546,6 +550,9 @@ export default class SidenotePlugin
 	}
 
 	public getMarkdownView(): MarkdownView | null {
+		// Set only while `withLeaf` lays out a non-active pane.
+		if (this.viewOverride) return this.viewOverride
+
 		// Try active view first
 		const active = this.app.workspace.getActiveViewOfType(MarkdownView)
 		if (active) return active
@@ -952,42 +959,60 @@ export default class SidenotePlugin
 
 	private scheduleReadingModeLayout() {
 		window.requestAnimationFrame(() => {
-			this.applyMetricsToOtherLeaves()
-			const view = this.getMarkdownView()
-			if (!view) return
-
-			const readingRoot = view.containerEl.querySelector<HTMLElement>(
-				'.markdown-reading-view'
-			)
-			if (!readingRoot) return
-
-			const width = readingRoot.getBoundingClientRect().width
-			const mode = applyRootMetrics(this.settings, readingRoot, width)
-
-			// Check if we have sidenotes
-			const hasMargins =
-				readingRoot.querySelectorAll('small.sidenote-margin').length > 0
-
-			// If no margins exist but we should have sidenotes, reprocess
-			if (!hasMargins && this.documentHasSidenotes && mode !== 'hidden') {
-				this.processReadingModeSidenotes(readingRoot)
-				return
-			}
-
-			// Update positioning and run collision avoidance
-			if (mode !== 'hidden' && hasMargins) {
-				window.requestAnimationFrame(() =>
-					positionReadingSidenotes(this, readingRoot, {
-						recomputeLineOffsets: false
-					})
-				)
-			}
+			this.layoutReadingRoot(this.getMarkdownView(), true)
+			this.layoutOtherLeaves()
 		})
+	}
+
+	/**
+	 * Metrics and positioning for one pane's reading view. Only the active
+	 * pane may (re)build its sidenotes (`allowProcessing`): that path still
+	 * works from the single shared document state.
+	 */
+	private layoutReadingRoot(
+		view: MarkdownView | null,
+		allowProcessing: boolean
+	) {
+		if (!view) return
+
+		const readingRoot = view.containerEl.querySelector<HTMLElement>(
+			'.markdown-reading-view'
+		)
+		if (!readingRoot) return
+
+		const width = readingRoot.getBoundingClientRect().width
+		const mode = applyRootMetrics(this.settings, readingRoot, width)
+
+		// Check if we have sidenotes
+		const hasMargins =
+			readingRoot.querySelectorAll('small.sidenote-margin').length > 0
+
+		// If no margins exist but we should have sidenotes, reprocess
+		if (
+			allowProcessing &&
+			!hasMargins &&
+			this.documentHasSidenotes &&
+			mode !== 'hidden'
+		) {
+			this.processReadingModeSidenotes(readingRoot)
+			return
+		}
+
+		// Update positioning and run collision avoidance
+		if (mode !== 'hidden' && hasMargins) {
+			const sides = this.documentSidenoteSides
+			window.requestAnimationFrame(() =>
+				positionReadingSidenotes(this, readingRoot, {
+					recomputeLineOffsets: false,
+					sides
+				})
+			)
+		}
 	}
 
 	// ==================== Document Scanning ====================
 
-	private scanDocumentForSidenotes() {
+	private scanDocumentForSidenotes(updateCache = true) {
 		const view = this.getMarkdownView()
 		if (!view) {
 			this.documentHasSidenotes = false
@@ -1005,7 +1030,7 @@ export default class SidenotePlugin
 		// post-processor for a section.
 		const content = this.getSourceText()
 
-		if (content) {
+		if (content && updateCache) {
 			this.setCachedSource(content, view.file?.path ?? null)
 		}
 
@@ -1420,50 +1445,47 @@ export default class SidenotePlugin
 	}
 
 	/**
-	 * Width-derived layout state (mode, scale, page offset) for panes other
-	 * than the active one. Each pane has its own width, so with a note open on
-	 * each side the settings must be resolved against each pane's own width
-	 * rather than only the active one's. Positioning and collisions are still
-	 * handled for the active pane alone.
+	 * Run `fn` with the plugin's "current document" state (view, editor root,
+	 * has-sidenotes, margin sides) pointed at `view` instead of the active
+	 * pane, then restore it. Everything the layout code reads from `this` is
+	 * single-document; this lets it lay out another pane without making all
+	 * of that per-pane. `fn` must be synchronous — anything it defers has to
+	 * capture the state it needs (see `positionEditingSidenotes`).
 	 */
-	private applyMetricsToOtherLeaves() {
-		const current = this.getMarkdownView()
-		for (const view of this.otherLeafViews(current)) {
-			const text =
-				view.getMode() === 'preview'
-					? ((view as { data?: string }).data ??
-						view.editor?.getValue() ??
-						'')
-					: (view.editor?.getValue() ??
-						(view as { data?: string }).data ??
-						'')
-			let hasSidenotes: boolean
-			if (this.settings.sidenoteFormat === 'html') {
-				hasSidenotes = SIDENOTE_PATTERN().test(text)
-				SIDENOTE_PATTERN().lastIndex = 0
-			} else {
-				hasSidenotes = /\[\^[^\]]+\](?!:)/.test(text)
-			}
+	private withLeaf(view: MarkdownView, fn: () => void) {
+		const saved = {
+			view: this.viewOverride,
+			cmRoot: this.cmRoot,
+			has: this.documentHasSidenotes,
+			sides: this.documentSidenoteSides
+		}
+		this.viewOverride = view
+		this.cmRoot = view.containerEl.querySelector<HTMLElement>(
+			'.markdown-source-view.mod-cm6'
+		)
+		try {
+			this.scanDocumentForSidenotes(false)
+			fn()
+		} finally {
+			this.viewOverride = saved.view
+			this.cmRoot = saved.cmRoot
+			this.documentHasSidenotes = saved.has
+			this.documentSidenoteSides = saved.sides
+		}
+	}
 
-			for (const root of this.rootsOf(view)) {
-				if (!root.isConnected) continue
-				const width = root.getBoundingClientRect().width
-				if (width === 0) continue
-				applyRootMetrics(this.settings, root, width)
-				const isSource =
-					root.classList.contains('mod-cm6') &&
-					!root.classList.contains('is-live-preview')
-				const editingHasNotes =
-					this.settings.sidenoteFormat === 'html' ||
-					this.settings.sidenoteFormat === 'footnote-edit'
-				root.dataset.hasSidenotes = (
-					root.classList.contains('mod-cm6')
-						? hasSidenotes && editingHasNotes && !isSource
-						: hasSidenotes
-				)
-					? 'true'
-					: 'false'
-			}
+	/**
+	 * Lay out every pane other than the active one, against that pane's own
+	 * width and its own note's sidenotes. With a note open on each side, each
+	 * pane is sized and positioned for itself, not just the active one.
+	 */
+	private layoutOtherLeaves() {
+		if (this.viewOverride) return
+		for (const view of this.otherLeafViews(this.getMarkdownView())) {
+			this.withLeaf(view, () => {
+				this.layout()
+				this.layoutReadingRoot(view, false)
+			})
 		}
 	}
 
@@ -1476,8 +1498,6 @@ export default class SidenotePlugin
 	// ==================== Main Layout ====================
 
 	private layout() {
-		this.applyMetricsToOtherLeaves()
-
 		const cmRoot = this.cmRoot
 		if (!cmRoot) {
 			return
@@ -1485,7 +1505,6 @@ export default class SidenotePlugin
 
 		const cmRootRect = cmRoot.getBoundingClientRect()
 		const editorWidth = cmRootRect.width
-		const mode = calculateMode(this.settings, editorWidth)
 
 		// console.log("[Sidenotes] layout():", {
 		// 	editorWidth,
@@ -1498,7 +1517,7 @@ export default class SidenotePlugin
 		// 		.length,
 		// });
 
-		applyRootMetrics(this.settings, cmRoot, editorWidth)
+		const mode = applyRootMetrics(this.settings, cmRoot, editorWidth)
 
 		// Check if we're in Source mode (not Live Preview)
 		const isSourceMode = !cmRoot.classList.contains('is-live-preview')
@@ -1524,8 +1543,9 @@ export default class SidenotePlugin
 
 			// Run positioning and collision avoidance for widget-created margins
 			if (mode !== 'hidden' && this.documentHasSidenotes) {
+				const sides = this.documentSidenoteSides
 				window.setTimeout(() => {
-					positionEditingSidenotes(this, cmRoot)
+					positionEditingSidenotes(this, cmRoot, sides)
 				}, TIMING.WIDGET_LAYOUT_DELAY)
 			}
 			return
